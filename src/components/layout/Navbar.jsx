@@ -41,7 +41,7 @@ const Navbar = () => {
             <NavLink to="/" className={navLinkClass}>
               Home
             </NavLink>
-            <NavLink to="/product" className={navLinkClass}>
+            <NavLink to="/products" className={navLinkClass}>
               Shop
             </NavLink>
             <NavLink to="/about" className={navLinkClass}>
@@ -109,7 +109,7 @@ const Navbar = () => {
         <NavLink to="/" className={navLinkClass} onClick={toggleMenu}>
           Home
         </NavLink>
-        <NavLink to="/product" className={navLinkClass} onClick={toggleMenu}>
+        <NavLink to="/products" className={navLinkClass} onClick={toggleMenu}>
           Shop
         </NavLink>
         <NavLink to="/about" className={navLinkClass} onClick={toggleMenu}>
