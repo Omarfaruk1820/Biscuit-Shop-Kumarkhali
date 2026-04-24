@@ -5,10 +5,17 @@ import NotFound from "../components/home/NotFound";
 import ProductCard from "../components/products/ProductCard";
 import ProductDetails from "../components/products/ProductDetails";
 import Checkout from "../components/products/Checkout";
-import AddToCarts from "../components/cart/AddToCarts";
+
 import About from "../pages/About";
 import Login from "../Auth/Login";
 import Register from "../Auth/Register";
+
+import Contact from "../pages/Contact";
+import AddBiscuit from "../pages/AddBiscuit";
+import Cart from "../components/cart/Cart";
+import Success from "../pages/Success";
+import OrderHistory from "../pages/OrderHistory";
+import AllOrder from "../pages/AllOrder";
 
 const router = createBrowserRouter([
   {
@@ -32,10 +39,9 @@ const router = createBrowserRouter([
         path: "/product/:id",
         element: <ProductDetails />,
       },
-
       {
-        path: "/carts",
-        element: <AddToCarts />,
+        path: "/Cart",
+        element: <Cart></Cart>,
       },
 
       {
@@ -47,11 +53,15 @@ const router = createBrowserRouter([
         path: "/about",
         element: <About />,
       },
+      {
+        path: "/add-biscuit",
+        element: <AddBiscuit />,
+      },
 
       // ✅ ADD THIS (missing before)
       {
         path: "/contact",
-        element: <div className="p-10 text-center">Contact Page</div>,
+        element: <Contact></Contact>,
       },
 
       {
@@ -62,6 +72,18 @@ const router = createBrowserRouter([
       {
         path: "/register",
         element: <Register />,
+      },
+      {
+        path: "/success",
+        element: <Success></Success>,
+      },
+      {
+        path: "/OrderHistory",
+        element: <OrderHistory></OrderHistory>,
+      },
+      {
+        path: "/AllOrder",
+        element: <AllOrder></AllOrder>,
       },
     ],
   },

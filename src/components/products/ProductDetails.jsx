@@ -1,128 +1,242 @@
-import React, { useState } from "react";
+import React, { useEffect, useState, useContext } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { FaStar, FaShoppingCart, FaBolt } from "react-icons/fa";
-import products from "../../data/productCard.json";
-
-const Toast = ({ message }) =>
-  message && (
-    <div className="fixed top-5 right-5 bg-green-600 text-white px-4 py-2 rounded shadow z-50">
-      {message}
-    </div>
-  );
+import axios from "axios";
+import { FaStar, FaShoppingCart } from "react-icons/fa";
+import { AuthContext } from "../../Auth/AuthProvider";
 
 const ProductDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useContext(AuthContext);
 
-  const product = products.find((p) => p._id === String(id));
+  // ✅ normalize email
+  const email = user?.email?.toLowerCase().trim();
 
-  const [qty, setQty] = useState(1);
+  const [product, setProduct] = useState(null);
+  const [related, setRelated] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [toast, setToast] = useState("");
+  const [adding, setAdding] = useState(false);
 
-  if (!product) return <p>Product not found</p>;
+  // ================= FETCH =================
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        setError("");
 
-  const discount = product.discount || 0;
-  const finalPrice = product.price - (product.price * discount) / 100;
+        const res = await axios.get(
+          `http://localhost:5000/products/${id}`
+        );
 
-  // 🔥 GLOBAL ADD TO CART
-  const addToCart = (item, quantity = 1) => {
-    const stored = JSON.parse(localStorage.getItem("cart")) || [];
+        const data = res.data?.data;
 
-    const exist = stored.find((i) => i._id === item._id);
+        if (!data) {
+          setError("Product not found");
+          return;
+        }
 
-    let updated;
+        setProduct(data);
 
-    if (exist) {
-      updated = stored.map((i) =>
-        i._id === item._id
-          ? { ...i, quantity: i.quantity + quantity }
-          : i
-      );
-    } else {
-      updated = [...stored, { ...item, quantity }];
+        // 👉 Fetch related products
+        const allRes = await axios.get(
+          "http://localhost:5000/products"
+        );
+
+        const allProducts = Array.isArray(allRes.data?.data)
+          ? allRes.data.data
+          : [];
+
+        const relatedItems = allProducts
+          .filter(
+            (p) =>
+              p.category === data.category &&
+              p._id !== data._id
+          )
+          .slice(0, 4);
+
+        setRelated(relatedItems);
+      } catch (err) {
+        console.error("Fetch error:", err);
+        setError("Server error");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [id]);
+
+  // ================= ADD TO CART =================
+  const handleAddToCart = async () => {
+    if (!email) {
+      setToast("❌ Please login first");
+      setTimeout(() => setToast(""), 1500);
+      return;
     }
 
-    localStorage.setItem("cart", JSON.stringify(updated));
+    if (!product) return;
 
-    setToast(`${item.name} added 🛒`);
-    setTimeout(() => setToast(""), 1500);
+    try {
+      setAdding(true);
+
+      const res = await axios.post(
+        "http://localhost:5000/cart",
+        {
+          email,
+          productId: product._id,
+          name: product.name,
+          image: product.image,
+          price: product.price,
+          discount: product.discount,
+          quantity: 1,
+        }
+      );
+
+      if (res.data?.success) {
+        setToast(`✅ ${product.name} added to cart`);
+      } else {
+        setToast("❌ Failed to add");
+      }
+    } catch (err) {
+      console.error("Add to cart error:", err);
+      setToast("❌ Server error");
+    } finally {
+      setAdding(false);
+      setTimeout(() => setToast(""), 1500);
+    }
   };
 
-  const related = products
-    .filter(
-      (p) => p.category === product.category && p._id !== product._id
-    )
-    .slice(0, 4);
+  // ================= STATES =================
+  if (loading) {
+    return (
+      <div className="text-center py-20 text-amber-600 font-semibold">
+        Loading product...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="text-center py-20">
+        <p className="text-red-500 font-bold">{error}</p>
+        <button
+          onClick={() => navigate("/")}
+          className="mt-4 bg-amber-500 text-white px-4 py-2 rounded"
+        >
+          Go Home
+        </button>
+      </div>
+    );
+  }
+
+  if (!product) return null;
+
+  // ================= PRICE =================
+  const price = Number(product.price) || 0;
+  const discount = Number(product.discount) || 0;
+  const final = price - (price * discount) / 100;
 
   return (
-    <div className="max-w-6xl  mx-auto p-6">
+    <div className="max-w-6xl mx-auto px-4 py-10">
 
-      <Toast message={toast} />
+      {/* TOAST */}
+      {toast && (
+        <div className="fixed top-5 right-5 bg-green-600 text-white px-4 py-2 rounded shadow z-50">
+          {toast}
+        </div>
+      )}
 
-      {/* MAIN */}
-      <div className="grid md:grid-cols-2 mt-10 gap-10 bg-base-100 p-6 rounded-xl shadow">
+      {/* PRODUCT */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 bg-white dark:bg-gray-900 p-6 rounded-xl shadow">
 
-        <img src={product.image} className="w-64 mx-auto" />
+        {/* IMAGE */}
+        <img
+          src={product.image}
+          alt={product.name}
+          className="w-full h-72 md:h-96 object-cover rounded-lg"
+        />
 
-        <div>
-          <h1 className="text-2xl font-bold">{product.name}</h1>
+        {/* DETAILS */}
+        <div className="flex flex-col justify-center">
 
-          <div className="flex items-center text-yellow-400">
-            <FaStar /> {product.rating}
+          <h1 className="text-2xl md:text-3xl font-bold">
+            {product.name}
+          </h1>
+
+          {/* RATING */}
+          <div className="flex items-center gap-2 text-yellow-500 mt-2">
+            <FaStar />
+            <span>{product.rating || 0}</span>
           </div>
 
-          <p>{product.description}</p>
-
-          <p className="text-xl font-bold text-primary">
-            ৳{finalPrice}
+          {/* DESCRIPTION */}
+          <p className="mt-3 text-gray-600">
+            {product.description || "No description"}
           </p>
 
-          <div className="flex gap-3 mt-4">
-            <button
-              onClick={() => addToCart(product, qty)}
-              className="btn btn-primary"
-            >
-              <FaShoppingCart /> Add
-            </button>
+          {/* PRICE */}
+          <div className="mt-4">
+            <p className="text-2xl font-bold text-amber-600">
+              ৳{final.toFixed(2)}
+            </p>
 
-            <button
-              onClick={() =>
-                navigate("/checkout", { state: { product, qty } })
-              }
-              className="btn btn-outline"
-            >
-              <FaBolt /> Buy
-            </button>
+            {discount > 0 && (
+              <p className="text-gray-400 line-through text-sm">
+                ৳{price}
+              </p>
+            )}
           </div>
+
+          {/* BUTTON */}
+          <button
+            onClick={handleAddToCart}
+            disabled={adding}
+            className="mt-5 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white px-5 py-2 rounded flex items-center gap-2 w-fit"
+          >
+            <FaShoppingCart />
+            {adding ? "Adding..." : "Add to Cart"}
+          </button>
+
+          {/* EXTRA */}
+          <div className="mt-5 text-sm text-gray-500">
+            <p>Brand: {product.brand || "N/A"}</p>
+            <p>Category: {product.category}</p>
+            <p>Stock: {product.stock || 0}</p>
+          </div>
+
         </div>
       </div>
 
       {/* RELATED */}
-      <h2 className="mt-10 font-bold text-xl">Related</h2>
+      <h2 className="mt-10 text-xl font-bold">
+        Related Products
+      </h2>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
-
-        {related.map((item) => (
-          <div key={item._id} className="p-3 shadow rounded">
-
-            <Link to={`/product/${item._id}`}>
-              <img src={item.image} className="h-20 mx-auto" />
-              <p className="text-center">{item.name}</p>
-            </Link>
-
-            <p className="text-center text-primary">
-              ৳{item.price}
-            </p>
-
-            <button
-              onClick={() => addToCart(item)}
-              className="btn btn-xs btn-primary w-full mt-2"
+      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+        {related.length > 0 ? (
+          related.map((item) => (
+            <Link
+              key={item._id}
+              to={`/product/${item._id}`}
+              className="bg-white dark:bg-gray-900 p-3 rounded shadow hover:shadow-lg transition"
             >
-              Add
-            </button>
-          </div>
-        ))}
-
+              <img
+                src={item.image}
+                alt={item.name}
+                className="h-24 w-full object-cover rounded"
+              />
+              <p className="text-center text-sm mt-2 line-clamp-1">
+                {item.name}
+              </p>
+            </Link>
+          ))
+        ) : (
+          <p className="text-gray-500 col-span-full text-center">
+            No related products
+          </p>
+        )}
       </div>
     </div>
   );

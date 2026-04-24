@@ -1,6 +1,6 @@
  [
   {
-    "_id": "1",
+   
     "name": "Oreo Chocolate Biscuit",
     "price": 30,
     "image": "https://i.ibb.co.com/FbXJVjhH/toast.jpg",
@@ -16,7 +16,7 @@
     "discount": 5
   },
   {
-    "_id": "2",
+
     "name": "Marie Gold Biscuit",
     "price": 25,
     "image": "https://i.ibb.co/SXHRXLQV/seriously-low-carb-MIb-Quo8-EWCo-unsplash.jpg",
@@ -32,7 +32,7 @@
     "discount": 0
   },
   {
-    "_id": "3",
+   
     "name": "Good Day Butter Cookies",
     "price": 35,
     "image": "https://i.ibb.co/8D7SCyY9/charles-chen-w2-ZFj-Dn-UL3w-unsplash.jpg",
@@ -48,7 +48,7 @@
     "discount": 10
   },
   {
-    "_id": "4",
+  
     "name": "Tiger Energy Biscuit",
     "price": 20,
     "image": "https://i.ibb.co/1J9VRNZT/dick-hoogerdijk-2-Yqa-Vmzjb-YM-unsplash.jpg",
@@ -64,7 +64,7 @@
     "discount": 0
   },
   {
-    "_id": "5",
+    
     "name": "Milk Cream Biscuit",
     "price": 28,
     "image": "https://i.ibb.co/53LjYHm/jason-leung-GLG6-EA4w-Vt-Q-unsplash.jpg",
@@ -80,7 +80,7 @@
     "discount": 5
   },
   {
-    "_id": "6",
+   
     "name": "Chocolate Sandwich Biscuit",
     "price": 32,
     "image": "https://i.ibb.co/Py8DxSf/david-abeln-Yagh-WU3-X3-M-unsplash.jpg",
@@ -96,7 +96,7 @@
     "discount": 8
   },
   {
-    "_id": "7",
+    
     "name": "Digestive Wheat Biscuit",
     "price": 40,
     "image": "https://i.ibb.co/KxLtQ9zY/vishal-bonthapally-YKx-Me-Gbt-Jgk-unsplash.jpg",
@@ -112,7 +112,7 @@
     "discount": 12
   },
   {
-    "_id": "8",
+    
     "name": "Butter Deluxe Biscuit",
     "price": 45,
     "image": "https://i.ibb.co/6Rd2YFGp/mae-mu-pp-OPjq-AJ3-Mw-unsplash.jpg",
@@ -128,7 +128,7 @@
     "discount": 15
   },
   {
-    "_id": "9",
+  
     "name": "Strawberry Cream Biscuit",
     "price": 34,
     "image": "https://i.ibb.co/DPGwD2zw/julissa-capdevilla-t-Do-Hiq-Xl9b8-unsplash.jpg",
@@ -144,7 +144,7 @@
     "discount": 6
   },
   {
-    "_id": "10",
+    
     "name": "Coconut Crunch Biscuit",
     "price": 38,
     "image": "https://i.ibb.co/kTP1Csx/mae-mu-k-ID9sxb-J3-BQ-unsplash.jpg",
@@ -161,7 +161,7 @@
   },
 
   {
-    "_id": "11",
+    
     "name": "Spicy Chanachur Mix",
     "price": 25,
     "image": "https://i.ibb.co.com/C3VhQ5zZ/Chanachur.jpg",
@@ -178,7 +178,7 @@
   },
 
   {
-    "_id": "12",
+    
     "name": "Salted Packet Chips",
     "price": 15,
     "image": "https://i.ibb.co/6cHRwqCc/amirali-mirhashemian-8rgwg-Z76o-Fc-unsplash.jpg",
@@ -195,7 +195,7 @@
   },
 
   {
-    "_id": "13",
+    
     "name": "Non Packet Fresh Bread",
     "price": 20,
     "image": "https://i.ibb.co/wF6bKzPK/james-trenda-7-QGrlo-Nqx6w-unsplash-1.jpg",
@@ -212,7 +212,7 @@
   },
   
   {
-    "_id": "14",
+   
     "name": "Classic Butter Toast",
     "price": 22,
     "image": "https://i.ibb.co.com/rNMtBms/yulia-khlebnikova-mo-BQMk-6g-unsplash.jpg",
@@ -228,7 +228,7 @@
     "discount": 2
   },
   {
-    "_id": "15",
+    
     "name": "Sweet Milk Bun",
     "price": 18,
     "image": "https://i.ibb.co/6cHRwqCc/amirali-mirhashemian-8rgwg-Z76o-Fc-unsplash.jpg",
@@ -244,7 +244,7 @@
     "discount": 0
   },
   {
-    "_id": "16",
+   
     "name": "Spicy Chanachur Mix",
     "price": 25,
     "image": "https://i.ibb.co/5V9Rsh8/thea-hdc-HQ5uo-UW2-Bq8-unsplash.jpg",
@@ -260,7 +260,7 @@
     "discount": 0
   },
   {
-    "_id": "17",
+    
     "name": "Masala Chanachur Crunch",
     "price": 30,
     "image": "https://i.ibb.co/8D7SCyY9/charles-chen-w2-ZFj-Dn-UL3w-unsplash.jpg",
@@ -276,7 +276,7 @@
     "discount": 5
   },
   {
-    "_id": "18",
+   
     "name": "Chocolate Cake Slice",
     "price": 60,
     "image": "https://i.ibb.co/3mK11yjy/clint-patterson-p-EIbyo-GACuk-unsplash.jpg",
@@ -292,7 +292,7 @@
     "discount": 10
   },
   {
-    "_id": "19",
+   
     "name": "Vanilla Cream Cake",
     "price": 55,
     "image": "https://i.ibb.co/FLLPt0cZ/food-photographer-jennifer-pallian-Ofd-Diqx8-Cz8-unsplash.jpg",
@@ -308,7 +308,7 @@
     "discount": 8
   },
   {
-    "_id": "20",
+    
     "name": "Chocolate Chip Cookies Pack",
     "price": 45,
     "image": "https://i.ibb.co/zV4F8jZD/deepthi-clicks-m-Kz-BN37-Apg-unsplash.jpg",
@@ -324,7 +324,7 @@
     "discount": 10
   },
   {
-    "_id": "21",
+   
     "name": "Butter Cookies Premium",
     "price": 50,
     "image": "https://i.ibb.co/6Rd2YFGp/mae-mu-pp-OPjq-AJ3-Mw-unsplash.jpg",
@@ -340,7 +340,7 @@
     "discount": 12
   },
   {
-    "_id": "22",
+   
     "name": "Salted Chips Pack",
     "price": 15,
     "image": "https://i.ibb.co/53LjYHm/jason-leung-GLG6-EA4w-Vt-Q-unsplash.jpg",
@@ -356,7 +356,7 @@
     "discount": 0
   },
   {
-    "_id": "23",
+  
     "name": "Masala Chips Packet",
     "price": 18,
     "image": "https://i.ibb.co/Py8DxSf/david-abeln-Yagh-WU3-X3-M-unsplash.jpg",
@@ -372,7 +372,7 @@
     "discount": 3
   },
   {
-    "_id": "24",
+   
     "name": "White Toast Bread",
     "price": 25,
     "image": "https://i.ibb.co/kTP1Csx/mae-mu-k-ID9sxb-J3-BQ-unsplash.jpg",
@@ -388,7 +388,7 @@
     "discount": 0
   },
   {
-    "_id": "25",
+   
     "name": "Brown Whole Wheat Bread",
     "price": 30,
     "image": "https://i.ibb.co/DPGwD2zw/julissa-capdevilla-t-Do-Hiq-Xl9b8-unsplash.jpg",
@@ -404,7 +404,7 @@
     "discount": 5
   },
   {
-    "_id": "26",
+   
     "name": "Mini Butter Cake",
     "price": 40,
     "image": "https://i.ibb.co/nMhT2kwh/jon-lanzieri-Rd21-Kr-Lt3-EE-unsplash.jpg",
@@ -420,7 +420,7 @@
     "discount": 6
   },
   {
-    "_id": "27",
+   
     "name": "Strawberry Cup Cake",
     "price": 35,
     "image": "https://i.ibb.co/1Jf9qZbZ/scotty-turner-S9-Wxl-7adf-Y-unsplash.jpg",
@@ -437,7 +437,7 @@
   },
   
   {
-    "_id": "28",
+  
     "name": "Chocolate Lava Cup Cake",
     "price": 45,
     "image": "https://i.ibb.co/6cHRwqCc/amirali-mirhashemian-8rgwg-Z76o-Fc-unsplash.jpg",
@@ -453,7 +453,7 @@
     "discount": 10
   },
   {
-    "_id": "29",
+    
     "name": "Vanilla Sponge Cake",
     "price": 40,
     "image": "https://i.ibb.co/5V9Rsh8/thea-hdc-HQ5uo-UW2-Bq8-unsplash.jpg",
@@ -469,7 +469,7 @@
     "discount": 5
   },
   {
-    "_id": "30",
+    
     "name": "Blueberry Cream Cake",
     "price": 55,
     "image": "https://i.ibb.co/8D7SCyY9/charles-chen-w2-ZFj-Dn-UL3w-unsplash.jpg",
@@ -485,7 +485,7 @@
     "discount": 8
   },
   {
-    "_id": "31",
+   
     "name": "Red Velvet Cup Cake",
     "price": 60,
     "image": "https://i.ibb.co/3mK11yjy/clint-patterson-p-EIbyo-GACuk-unsplash.jpg",
@@ -501,7 +501,7 @@
     "discount": 12
   },
   {
-    "_id": "32",
+   
     "name": "Black Forest Cake Slice",
     "price": 70,
     "image": "https://i.ibb.co/FLLPt0cZ/food-photographer-jennifer-pallian-Ofd-Diqx8-Cz8-unsplash.jpg",
@@ -517,7 +517,7 @@
     "discount": 15
   },
   {
-    "_id": "33",
+ 
     "name": "Butter Cookies Classic",
     "price": 38,
     "image": "https://i.ibb.co/zV4F8jZD/deepthi-clicks-m-Kz-BN37-Apg-unsplash.jpg",
@@ -533,7 +533,7 @@
     "discount": 5
   },
   {
-    "_id": "34",
+   
     "name": "Chocolate Chip Cookies",
     "price": 42,
     "image": "https://i.ibb.co/6Rd2YFGp/mae-mu-pp-OPjq-AJ3-Mw-unsplash.jpg",
@@ -549,7 +549,7 @@
     "discount": 8
   },
   {
-    "_id": "35",
+    
     "name": "Oatmeal Raisin Cookies",
     "price": 36,
     "image": "https://i.ibb.co/DPGwD2zw/julissa-capdevilla-t-Do-Hiq-Xl9b8-unsplash.jpg",
@@ -565,7 +565,7 @@
     "discount": 0
   },
   {
-    "_id": "36",
+    
     "name": "Spicy Chanachur Extra Mix",
     "price": 28,
     "image": "https://i.ibb.co/kTP1Csx/mae-mu-k-ID9sxb-J3-BQ-unsplash.jpg",
@@ -581,7 +581,7 @@
     "discount": 0
   },
   {
-    "_id": "37",
+    
     "name": "Sweet Chanachur Mix",
     "price": 30,
     "image": "https://i.ibb.co/1Jf9qZbZ/scotty-turner-S9-Wxl-7adf-Y-unsplash.jpg",
@@ -597,7 +597,7 @@
     "discount": 3
   },
   {
-    "_id": "38",
+    
     "name": "Salted Cracker Pack",
     "price": 18,
     "image": "https://i.ibb.co/nsyj8Z1p/deepthi-clicks-g-Pzq-Pq-Ejwtk-unsplash.jpg",
@@ -613,7 +613,7 @@
     "discount": 0
   },
   {
-    "_id": "39",
+  
     "name": "Masala Chips Packet",
     "price": 22,
     "image": "https://i.ibb.co/53LjYHm/jason-leung-GLG6-EA4w-Vt-Q-unsplash.jpg",
@@ -629,7 +629,7 @@
     "discount": 5
   },
   {
-    "_id": "40",
+   
     "name": "Classic Salt Biscuit",
     "price": 20,
     "image": "https://i.ibb.co/5V9Rsh8/thea-hdc-HQ5uo-UW2-Bq8-unsplash.jpg",

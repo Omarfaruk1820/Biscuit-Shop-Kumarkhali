@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useContext, useState } from "react";
 import { useForm } from "react-hook-form";
 import {
   FaEnvelope,
@@ -7,13 +7,22 @@ import {
   FaEye,
   FaEyeSlash,
 } from "react-icons/fa";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useToast } from "../context/ToastProvider";
+import { AuthContext } from "./AuthProvider";
+import GoogleSign from "./GoogleSign";
 
 const Login = () => {
+  const { loginUser } = useContext(AuthContext);
   const { addToast } = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // ✅ redirect back after login
+  const from = location.state?.from?.pathname || "/";
+
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   const {
     register,
@@ -23,19 +32,31 @@ const Login = () => {
   } = useForm();
 
   // 🔐 Submit
-  const onSubmit = (data) => {
-    console.log("LOGIN DATA:", data);
+  const onSubmit = async (data) => {
+    setLoading(true);
 
-    if (data.email === "admin@gmail.com" && data.password === "123456") {
+    try {
+      // ✅ REAL LOGIN
+      await loginUser(data.email, data.password);
+
       addToast("Login successful 🎉", "success");
 
       reset();
 
-      setTimeout(() => {
-        navigate("/");
-      }, 1200);
-    } else {
-      addToast("Invalid email or password ❌", "error");
+      // ✅ FIXED: go back to previous page
+      navigate(from, { replace: true });
+
+    } catch (error) {
+      console.log(error);
+
+      // better error message handling
+      const message =
+        error?.message || "Invalid email or password ❌";
+
+      addToast(message, "error");
+
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -45,7 +66,7 @@ const Login = () => {
       {/* CONTAINER */}
       <div className="w-full max-w-6xl mx-auto grid md:grid-cols-2 bg-white shadow-2xl rounded-2xl overflow-hidden">
 
-        {/* LEFT SIDE (BRANDING) */}
+        {/* LEFT SIDE */}
         <div className="hidden md:flex flex-col justify-center items-center bg-amber-500 text-white p-10">
 
           <img
@@ -65,7 +86,7 @@ const Login = () => {
 
         </div>
 
-        {/* RIGHT SIDE (FORM) */}
+        {/* RIGHT SIDE */}
         <div className="p-6 sm:p-8 md:p-10">
 
           {/* HEADER */}
@@ -79,10 +100,7 @@ const Login = () => {
           </div>
 
           {/* FORM */}
-          <form
-            onSubmit={handleSubmit(onSubmit)}
-            className="space-y-5"
-          >
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
 
             {/* EMAIL */}
             <div>
@@ -90,6 +108,7 @@ const Login = () => {
 
               <div className="flex items-center border rounded-lg px-3 mt-1 focus-within:ring-2 focus-within:ring-amber-400">
                 <FaEnvelope className="text-gray-400" />
+
                 <input
                   type="email"
                   placeholder="Enter your email"
@@ -131,10 +150,11 @@ const Login = () => {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="text-gray-400"
+                  className="text-gray-400 ml-2"
                 >
                   {showPassword ? <FaEyeSlash /> : <FaEye />}
                 </button>
+
               </div>
 
               {errors.password && (
@@ -147,10 +167,13 @@ const Login = () => {
             {/* BUTTON */}
             <button
               type="submit"
-              className="w-full bg-amber-500 hover:bg-amber-600 text-white py-3 rounded-lg font-semibold flex items-center justify-center gap-2 transition shadow-md hover:shadow-lg"
+              disabled={loading}
+              className="w-full bg-amber-500 hover:bg-amber-600 text-white py-3 rounded-lg font-semibold flex items-center justify-center gap-2 transition shadow-md disabled:opacity-60"
             >
-              <FaSignInAlt /> Login
+              <FaSignInAlt />
+              {loading ? "Logging in..." : "Login"}
             </button>
+            <GoogleSign></GoogleSign>
 
           </form>
 
