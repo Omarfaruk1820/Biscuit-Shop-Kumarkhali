@@ -1,12 +1,18 @@
-import { useContext, useState, useEffect } from "react";
+import { useContext, useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import {
   FaBars,
   FaTimes,
-  FaMoon,
-  FaSun,
   FaShoppingCart,
   FaSignOutAlt,
+  FaHome,
+  FaBox,
+  FaPlus,
+  FaInfoCircle,
+  FaPhone,
+  FaClipboardList,
+  FaHistory,
+  FaUser,
 } from "react-icons/fa";
 import { AuthContext } from "../../Auth/AuthProvider";
 import { useToast } from "../../context/ToastProvider";
@@ -19,47 +25,28 @@ const Navbar = () => {
   const navigate = useNavigate();
 
   const [isOpen, setIsOpen] = useState(false);
-  const [dark, setDark] = useState(
-    localStorage.getItem("theme") === "dark"
-  );
 
-  const email = user?.email?.toLowerCase().trim();
+  const email = user?.email;
 
-  // ================= FETCH CART COUNT =================
+  // ================= CART COUNT =================
   const { data: cart = [] } = useQuery({
     queryKey: ["cart", email],
+    enabled: !!email,
     queryFn: async () => {
-      if (!email) return [];
-
       const res = await axios.get(
         `http://localhost:5000/cart?email=${email}`
       );
-
       return res.data?.data || [];
     },
-    enabled: !!email,
   });
 
-  // ✅ TOTAL COUNT
   const cartCount = cart.reduce(
     (sum, item) => sum + (item.quantity || 1),
     0
   );
 
-  // ================= DARK MODE =================
-  useEffect(() => {
-    if (dark) {
-      document.documentElement.classList.add("dark");
-      localStorage.setItem("theme", "dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-      localStorage.setItem("theme", "light");
-    }
-  }, [dark]);
-
-  const toggleMenu = () => setIsOpen((prev) => !prev);
+  const toggleMenu = () => setIsOpen(!isOpen);
   const closeMenu = () => setIsOpen(false);
-  const toggleTheme = () => setDark((prev) => !prev);
 
   // ================= LOGOUT =================
   const handleLogout = async () => {
@@ -73,17 +60,54 @@ const Navbar = () => {
     }
   };
 
-  // ================= ACTIVE LINK =================
+  // ================= ACTIVE STYLE =================
   const navLinkClass = ({ isActive }) =>
-    `block px-3 py-2 text-sm font-semibold transition ${
+    `flex items-center gap-2 px-3 py-2 text-sm font-semibold transition ${
       isActive
         ? "text-amber-600 border-b-2 border-amber-600"
-        : "text-gray-700 dark:text-gray-300 hover:text-amber-500"
+        : "text-gray-700 hover:text-amber-500"
     }`;
 
+  // ================= NAV LINKS =================
+  const navLinks = (
+    <>
+      <NavLink to="/" onClick={closeMenu} className={navLinkClass}>
+        <FaHome /> Home
+      </NavLink>
+
+      <NavLink to="/products" onClick={closeMenu} className={navLinkClass}>
+        <FaBox /> Shop
+      </NavLink>
+
+      <NavLink to="/add-biscuit" onClick={closeMenu} className={navLinkClass}>
+        <FaPlus /> Add Biscuit
+      </NavLink>
+
+      <NavLink to="/about" onClick={closeMenu} className={navLinkClass}>
+        <FaInfoCircle /> About
+      </NavLink>
+
+      <NavLink to="/contact" onClick={closeMenu} className={navLinkClass}>
+        <FaPhone /> Contact
+      </NavLink>
+
+      <NavLink to="/allOrder" onClick={closeMenu} className={navLinkClass}>
+        <FaClipboardList /> Orders
+      </NavLink>
+
+      <NavLink to="/orderHistory" onClick={closeMenu} className={navLinkClass}>
+        <FaHistory /> History
+      </NavLink>
+
+      <NavLink to="/dashboard" onClick={closeMenu} className={navLinkClass}>
+        <FaUser /> Dashboard
+      </NavLink>
+    </>
+  );
+
   return (
-    <nav className="bg-white dark:bg-gray-900 shadow-md fixed w-full z-50">
-      <div className="max-w-7xl mx-auto px-4">
+    <nav className="bg-white shadow-md fixed w-full z-50">
+      <div className="max-w-7xl mx-auto px-3">
         <div className="flex justify-between items-center h-16">
 
           {/* LOGO */}
@@ -99,85 +123,73 @@ const Navbar = () => {
           </Link>
 
           {/* DESKTOP MENU */}
-          <div className="hidden md:flex items-center gap-6">
-            <NavLink to="/" className={navLinkClass}>Home</NavLink>
-            <NavLink to="/products" className={navLinkClass}>Shop</NavLink>
-            <NavLink to="/add-biscuit" className={navLinkClass}>Add Biscuit</NavLink>
-            <NavLink to="/about" className={navLinkClass}>About</NavLink>
-            <NavLink to="/contact" className={navLinkClass}>Contact</NavLink>
-            <NavLink to="/AllOrder" className={navLinkClass}>All Orders</NavLink>
+          <div className="hidden md:flex items-center gap-2">
+            {navLinks}
 
-            {/* ✅ LIVE CART */}
+            {/* CART */}
             <NavLink to="/cart" className="relative">
-              <FaShoppingCart className="text-xl text-gray-700 dark:text-gray-300" />
-
+              <FaShoppingCart className="text-xl text-gray-700" />
               {cartCount > 0 && (
-                <span className="absolute -top-2 -right-2 bg-amber-500 text-white text-xs px-1.5 rounded-full">
+                <span className="absolute -top-2 -right-2 bg-amber-500 text-white text-xs  rounded-full">
                   {cartCount}
                 </span>
               )}
-            </NavLink>
-
-            <NavLink to="/OrderHistory" className={navLinkClass}>
-              Order History
-            </NavLink>
-            <NavLink to="/dashboard" className={navLinkClass}>
-              Dashboard
             </NavLink>
           </div>
 
           {/* RIGHT SIDE */}
           <div className="hidden md:flex items-center gap-4">
 
-            {/* THEME */}
-            <button
-              onClick={toggleTheme}
-              className="p-2 rounded-full bg-gray-100 dark:bg-gray-800"
-            >
-              {dark ? <FaSun /> : <FaMoon />}
-            </button>
-
-            {/* USER */}
             {user ? (
               <div className="flex items-center gap-3">
-                <img
-                  src={user.photoURL || "https://i.ibb.co/4pDNDk1/avatar.png"}
-                  className="w-9 h-9 rounded-full"
-                  alt="user"
-                />
+
+                <div className="flex items-center gap-2">
+                  <img
+                    src={
+                      user.photoURL ||
+                      "https://i.ibb.co/4pDNDk1/avatar.png"
+                    }
+                    className="w-9 h-9 ml-2 rounded-full border"
+                    alt="user"
+                  />
+
+                  <div className="hidden lg:block">
+                    <p className="text-sm font-semibold">
+                      {user.displayName || "User"}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {user.email}
+                    </p>
+                  </div>
+                </div>
 
                 <button
                   onClick={handleLogout}
-                  className="flex items-center gap-2 px-3 py-2 bg-red-500 text-white rounded-lg"
+                  className="flex items-center gap-2 px-3 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
                 >
-                  <FaSignOutAlt />
-                  Logout
+                  <FaSignOutAlt /> Logout
                 </button>
               </div>
             ) : (
-              <div className="flex gap-2">
+              <>
                 <Link to="/login">
-                  <button className="px-4 py-2 border border-amber-500 text-amber-600 rounded-lg">
+                  <button className="px-4 py-2 border border-amber-500 text-amber-600 rounded-lg hover:bg-amber-500 hover:text-white">
                     Login
                   </button>
                 </Link>
 
                 <Link to="/register">
-                  <button className="px-4 py-2 bg-amber-500 text-white rounded-lg">
+                  <button className="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600">
                     Register
                   </button>
                 </Link>
-              </div>
+              </>
             )}
           </div>
 
           {/* MOBILE BUTTON */}
           <div className="md:hidden flex items-center gap-3">
-            <button onClick={toggleTheme}>
-              {dark ? <FaSun /> : <FaMoon />}
-            </button>
-
-            <button onClick={toggleMenu}>
+            <button onClick={toggleMenu} className="text-xl">
               {isOpen ? <FaTimes /> : <FaBars />}
             </button>
           </div>
@@ -186,17 +198,61 @@ const Navbar = () => {
 
       {/* MOBILE MENU */}
       <div
-        className={`md:hidden bg-white dark:bg-gray-900 px-4 pb-4 ${
+        className={`md:hidden bg-white px-4 pb-4 ${
           isOpen ? "block" : "hidden"
         }`}
       >
-        <NavLink to="/" onClick={closeMenu} className={navLinkClass}>Home</NavLink>
-        <NavLink to="/products" onClick={closeMenu} className={navLinkClass}>Shop</NavLink>
+        {navLinks}
 
         {/* MOBILE CART */}
         <NavLink to="/cart" onClick={closeMenu} className={navLinkClass}>
-          Cart ({cartCount})
+          <FaShoppingCart /> Cart ({cartCount})
         </NavLink>
+
+        {/* USER MOBILE */}
+        {user ? (
+          <div className="mt-4 border-t pt-4">
+            <div className="flex items-center gap-3 mb-3">
+              <img
+                src={
+                  user.photoURL ||
+                  "https://i.ibb.co/4pDNDk1/avatar.png"
+                }
+                className="w-10 h-10 rounded-full"
+                alt="user"
+              />
+              <div>
+                <p className="font-semibold">
+                  {user.displayName || "User"}
+                </p>
+                <p className="text-xs text-gray-500">
+                  {user.email}
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={handleLogout}
+              className="w-full bg-red-500 text-white py-2 rounded"
+            >
+              Logout
+            </button>
+          </div>
+        ) : (
+          <div className="mt-4 flex flex-col gap-2">
+            <Link to="/login" onClick={closeMenu}>
+              <button className="w-full border border-amber-500 py-2 rounded">
+                Login
+              </button>
+            </Link>
+
+            <Link to="/register" onClick={closeMenu}>
+              <button className="w-full bg-amber-500 text-white py-2 rounded">
+                Register
+              </button>
+            </Link>
+          </div>
+        )}
       </div>
     </nav>
   );
