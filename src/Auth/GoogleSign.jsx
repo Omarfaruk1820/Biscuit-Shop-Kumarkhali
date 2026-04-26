@@ -1,6 +1,8 @@
 import React, { useContext, useState } from "react";
 import { FcGoogle } from "react-icons/fc";
 import { useNavigate, useLocation } from "react-router-dom";
+import axios from "axios";
+
 import { AuthContext } from "../Auth/AuthProvider";
 import { useToast } from "../context/ToastProvider";
 
@@ -14,25 +16,43 @@ const GoogleSign = () => {
 
   const from = location.state?.from?.pathname || "/";
 
+  // ================= GOOGLE LOGIN =================
   const handleGoogleSignIn = async () => {
     try {
       setLoading(true);
 
-      // ✅ Firebase Google Login
+      // ✅ Firebase Google login
       const result = await signInGoogle();
-
       const user = result.user;
 
-      console.log("Google User:", user);
+      // ================= JWT STEP =================
+      // 🔥 Send user info to backend to get token
+      const res = await axios.post(
+        "http://localhost:5000/jwt",
+        {
+          email: user.email,
+        },
+        {
+          withCredentials: true, // ✅ important for cookie
+        }
+      );
 
-      addToast(`Welcome ${user.displayName} 🎉`, "success");
+      // (optional) if you also return token manually
+      // localStorage.setItem("token", res.data.token);
 
-      // ✅ Redirect properly
+      // ================= SUCCESS =================
+      addToast(`Welcome ${user.displayName || "User"} 🎉`, "success");
+
       navigate(from, { replace: true });
 
     } catch (error) {
       console.error(error);
-      addToast("Google sign-in failed ❌", "error");
+
+      addToast(
+        error?.response?.data?.message ||
+          "Google sign-in failed ❌",
+        "error"
+      );
     } finally {
       setLoading(false);
     }

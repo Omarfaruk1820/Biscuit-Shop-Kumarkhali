@@ -11,6 +11,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useToast } from "../context/ToastProvider";
 import { AuthContext } from "./AuthProvider";
 import GoogleSign from "./GoogleSign";
+import axios from "axios";
 
 const Login = () => {
   const { loginUser } = useContext(AuthContext);
@@ -18,7 +19,6 @@ const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // ✅ redirect back after login
   const from = location.state?.from?.pathname || "/";
 
   const [showPassword, setShowPassword] = useState(false);
@@ -31,25 +31,33 @@ const Login = () => {
     formState: { errors },
   } = useForm();
 
-  // 🔐 Submit
+  // 🔐 LOGIN + JWT
   const onSubmit = async (data) => {
     setLoading(true);
 
     try {
-      // ✅ REAL LOGIN
-      await loginUser(data.email, data.password);
+      // ✅ Firebase login
+      const result = await loginUser(data.email, data.password);
+
+      const user = result.user;
+
+      // 🔥 IMPORTANT: Send email to backend for JWT
+      await axios.post(
+        "http://localhost:5000/jwt",
+        { email: user.email },
+        { withCredentials: true } // ✅ MUST
+      );
 
       addToast("Login successful 🎉", "success");
 
       reset();
 
-      // ✅ FIXED: go back to previous page
+      // ✅ redirect
       navigate(from, { replace: true });
 
     } catch (error) {
       console.log(error);
 
-      // better error message handling
       const message =
         error?.message || "Invalid email or password ❌";
 
@@ -83,7 +91,6 @@ const Login = () => {
             Freshly baked biscuits 🍪 with love and quality.
             Login to continue your delicious journey.
           </p>
-
         </div>
 
         {/* RIGHT SIDE */}
@@ -112,7 +119,7 @@ const Login = () => {
                 <input
                   type="email"
                   placeholder="Enter your email"
-                  className="w-full p-2 outline-none text-sm sm:text-base"
+                  className="w-full p-2 outline-none"
                   {...register("email", {
                     required: "Email is required",
                   })}
@@ -137,7 +144,7 @@ const Login = () => {
                 <input
                   type={showPassword ? "text" : "password"}
                   placeholder="Enter password"
-                  className="w-full p-2 outline-none text-sm sm:text-base"
+                  className="w-full p-2 outline-none"
                   {...register("password", {
                     required: "Password is required",
                     minLength: {
@@ -154,7 +161,6 @@ const Login = () => {
                 >
                   {showPassword ? <FaEyeSlash /> : <FaEye />}
                 </button>
-
               </div>
 
               {errors.password && (
@@ -173,7 +179,9 @@ const Login = () => {
               <FaSignInAlt />
               {loading ? "Logging in..." : "Login"}
             </button>
-            <GoogleSign></GoogleSign>
+
+            {/* GOOGLE */}
+            <GoogleSign />
 
           </form>
 

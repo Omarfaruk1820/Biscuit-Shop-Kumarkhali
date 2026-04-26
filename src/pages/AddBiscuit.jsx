@@ -63,7 +63,7 @@ const AddBiscuit = () => {
     <div className="min-h-screen bg-gray-100 dark:bg-gray-950 px-4 py-10">
       <div className="max-w-6xl mx-auto bg-white dark:bg-gray-900 rounded-2xl shadow-xl overflow-hidden">
         {/* HEADER */}
-        <div className="bg-amber-500 text-white px-6 py-5">
+        <div className="bg-amber-500 mt-10 text-white px-6 py-5">
           <h2 className="text-2xl font-bold">🍪 Add New Biscuit Product</h2>
           <p className="text-sm opacity-90">
             Fill the form and publish your product

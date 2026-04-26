@@ -62,7 +62,7 @@ const Navbar = () => {
 
   // ================= ACTIVE STYLE =================
   const navLinkClass = ({ isActive }) =>
-    `flex items-center gap-2 px-3 py-2 text-sm font-semibold transition ${
+    `flex items-center gap-2 px-1 py-2 text-sm font-semibold transition ${
       isActive
         ? "text-amber-600 border-b-2 border-amber-600"
         : "text-gray-700 hover:text-amber-500"
@@ -99,8 +99,8 @@ const Navbar = () => {
         <FaHistory /> History
       </NavLink>
 
-      <NavLink to="/dashboard" onClick={closeMenu} className={navLinkClass}>
-        <FaUser /> Dashboard
+      <NavLink to="/users" onClick={closeMenu} className={navLinkClass}>
+        <FaUser /> user
       </NavLink>
     </>
   );

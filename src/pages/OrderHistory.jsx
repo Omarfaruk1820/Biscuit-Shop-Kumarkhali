@@ -41,7 +41,7 @@ const OrderHistory = () => {
     <div className="max-w-6xl mx-auto px-4 py-10">
 
       {/* HEADER */}
-      <h1 className="text-2xl md:text-3xl font-bold text-center mb-10">
+      <h1 className="text-2xl md:text-3xl  mt-10 font-bold text-center mb-10">
         📦 My Order History
       </h1>
 
