@@ -17,6 +17,7 @@ import Success from "../pages/Success";
 import OrderHistory from "../pages/OrderHistory";
 import AllOrder from "../pages/AllOrder";
 import Users from "../pages/Dashboard/Users";
+import OwnProduct from "../components/products/OwnProduct";
 
 const router = createBrowserRouter([
   {
@@ -89,6 +90,10 @@ const router = createBrowserRouter([
       {
         path: "/users",
         element: <Users></Users>,
+      },
+      {
+        path: "/own-product",
+        element: <OwnProduct></OwnProduct>,
       },
     ],
   },

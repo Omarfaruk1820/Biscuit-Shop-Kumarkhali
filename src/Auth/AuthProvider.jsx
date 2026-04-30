@@ -17,33 +17,23 @@ const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // ================= CREATE USER =================
-  const createUser = (email, password) => {
-    return createUserWithEmailAndPassword(auth, email, password);
-  };
+  const createUser = (email, password) =>
+    createUserWithEmailAndPassword(auth, email, password);
 
-  // ================= LOGIN =================
-  const loginUser = (email, password) => {
-    return signInWithEmailAndPassword(auth, email, password);
-  };
+  const loginUser = (email, password) =>
+    signInWithEmailAndPassword(auth, email, password);
 
-  // ================= GOOGLE LOGIN =================
-  const signInGoogle = () => {
-    return signInWithPopup(auth, googleProvider);
-  };
+  const signInGoogle = () => signInWithPopup(auth, googleProvider);
 
-  // ================= LOGOUT =================
-  const signOutUser = () => {
-    return signOut(auth);
-  };
+  const signOutUser = () => signOut(auth);
 
-  // ================= AUTH STATE OBSERVER (FIXED) =================
+  // ================= AUTH STATE =================
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       if (currentUser) {
         setUser({
           uid: currentUser.uid,
-          email: currentUser.email?.toLowerCase().trim(),
+          email: currentUser.email,
           displayName: currentUser.displayName,
           photoURL: currentUser.photoURL,
         });
@@ -51,25 +41,23 @@ const AuthProvider = ({ children }) => {
         setUser(null);
       }
 
-      // 🔥 IMPORTANT: always stop loading after first check
       setLoading(false);
     });
 
     return () => unsubscribe();
   }, []);
 
-  // ================= CONTEXT VALUE =================
-  const value = {
-    user,
-    loading,
-    createUser,
-    loginUser,
-    signOutUser,
-    signInGoogle,
-  };
-
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider
+      value={{
+        user,
+        loading,
+        createUser,
+        loginUser,
+        signInGoogle,
+        signOutUser,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

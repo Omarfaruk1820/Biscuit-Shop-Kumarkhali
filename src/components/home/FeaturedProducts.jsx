@@ -1,88 +1,69 @@
 import React, { useState } from "react";
 import axios from "axios";
-import {
-  FaCartPlus,
-  FaCookieBite,
-  FaStar,
-} from "react-icons/fa";
+import { FaCartPlus, FaCookieBite, FaStar } from "react-icons/fa";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "../../context/ToastProvider";
 
-const ITEMS_PER_PAGE = 8;
+const API = import.meta.env.VITE_API_URL;
 
 const FeaturedProducts = () => {
   const { addToast } = useToast();
   const [currentPage, setCurrentPage] = useState(1);
 
-  // ================= FETCH (React Query) =================
-  const {
-    data: products = [],
-    isLoading,
-    isError,
-  } = useQuery({
-    queryKey: ["products"],
-    queryFn: async () => {
-      const res = await axios.get(
-        "http://localhost:5000/products"
-      );
+  // ================= FETCH PRODUCTS =================
+  const fetchProducts = async () => {
+    const res = await axios.get(`${API}/products`, {
+      params: {
+        page: currentPage,
+        limit: 8,
+      },
+    });
 
-      return res.data?.data || res.data || [];
-    },
-    staleTime: 1000 * 60 * 5, // 5 min cache
+    return res.data;
+  };
+
+  // ================= QUERY =================
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["products", currentPage],
+    queryFn: fetchProducts,
+    keepPreviousData: true,
   });
 
-  // ================= PAGINATION =================
-  const totalPages = Math.ceil(
-    products.length / ITEMS_PER_PAGE
-  );
-
-  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-
-  const currentProducts = products.slice(
-    startIndex,
-    startIndex + ITEMS_PER_PAGE
-  );
+  const products = data?.data || [];
+  const totalPages = data?.pagination?.totalPages || 1;
 
   // ================= ADD TO CART =================
-  const handleAddToCart = (product) => {
-    const cart =
-      JSON.parse(localStorage.getItem("cart")) || [];
+  const handleAddToCart = async (product) => {
+    try {
+      const payload = {
+        productId: product._id,
+        name: product.name,
+        price: product.price,
+        discount: product.discount || 0,
+        image: product.image,
+        quantity: 1,
+      };
 
-    const exist = cart.find(
-      (item) => item._id === product._id
-    );
+      const res = await axios.post(`${API}/carts`, payload, {
+        withCredentials: true,
+      });
 
-    let updatedCart;
-
-    if (exist) {
-      updatedCart = cart.map((item) =>
-        item._id === product._id
-          ? {
-              ...item,
-              quantity: item.quantity + 1,
-            }
-          : item
-      );
-    } else {
-      updatedCart = [
-        ...cart,
-        { ...product, quantity: 1 },
-      ];
+      if (res.data?.success) {
+        addToast("Added to cart 🛒", "success");
+      } else {
+        addToast(res.data?.message || "Failed to add", "error");
+      }
+    } catch (error) {
+      console.log(error);
+      addToast("Server error ❌", "error");
     }
-
-    localStorage.setItem(
-      "cart",
-      JSON.stringify(updatedCart)
-    );
-
-    addToast("Added to cart 🛒", "success");
   };
 
   // ================= LOADING =================
   if (isLoading) {
     return (
       <div className="text-center py-20 text-amber-600 font-semibold">
-        Loading biscuits 🍪...
+        Loading products... ⚡
       </div>
     );
   }
@@ -90,134 +71,118 @@ const FeaturedProducts = () => {
   // ================= ERROR =================
   if (isError) {
     return (
-      <div className="text-center py-20 text-red-500 font-semibold">
-        Failed to load products
+      <div className="text-center py-20 text-red-500">
+        Failed to load products ❌
       </div>
     );
   }
 
   return (
-    <section className="py-10 md:py-14 max-w-7xl mx-auto px-3 sm:px-4">
+    <section className="py-12 max-w-7xl mx-auto px-4">
 
       {/* HEADER */}
-      <div className="text-center mb-8 md:mb-12">
-        <div className="flex justify-center items-center gap-2 text-amber-600 text-xl md:text-2xl font-bold">
+      <div className="text-center mb-10">
+        <div className="flex justify-center items-center gap-2 text-amber-600 text-2xl font-bold">
           <FaCookieBite />
           Fresh Biscuit Collection
         </div>
 
-        <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold mt-2">
-          Delicious Biscuits Made with Love 🍪
+        <h2 className="text-3xl font-extrabold mt-2">
+          Delicious Biscuits 🍪
         </h2>
-
-        <p className="text-gray-500 mt-2 text-sm md:text-base max-w-xl mx-auto">
-          Explore our premium handmade biscuits collection.
-        </p>
       </div>
 
-      {/* GRID */}
-      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5">
+      {/* PRODUCTS */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-5">
 
-        {currentProducts.map((product) => {
+        {products.map((product) => {
           const price = Number(product.price) || 0;
           const discount = Number(product.discount) || 0;
-          const finalPrice =
-            price - (price * discount) / 100;
+
+          const finalPrice = price - (price * discount) / 100;
 
           return (
             <div
               key={product._id}
-              className="bg-white dark:bg-gray-900 shadow rounded-xl p-3 sm:p-4 hover:shadow-lg transition duration-300"
+              className="bg-white shadow-md hover:shadow-xl transition rounded-xl p-4"
             >
+
               {/* IMAGE */}
               <img
-                src={product.image}
+                src={product.image || "https://via.placeholder.com/150"}
                 alt={product.name}
-                className="h-24 sm:h-28 md:h-32 w-full object-contain"
+                className="h-32 w-full object-contain"
               />
 
               {/* NAME */}
-              <h3 className="text-xs sm:text-sm font-semibold mt-2 line-clamp-1">
+              <h3 className="text-sm font-semibold mt-3 line-clamp-1">
                 {product.name}
               </h3>
 
               {/* RATING */}
-              <div className="flex items-center gap-1 text-yellow-400 text-xs mt-1">
+              <div className="flex items-center gap-1 text-yellow-500 text-xs">
                 <FaStar />
-                <span>{product.rating || 0}</span>
+                {product.rating || 0}
               </div>
 
-              {/* PRICE */}
-              <div className="flex justify-between items-center mt-2">
-                <div>
-                  <p className="font-bold text-amber-600 text-sm">
-                    ৳{finalPrice.toFixed(2)}
-                  </p>
+              {/* PRICE SECTION (UPDATED) */}
+              <div className="mt-2">
 
-                  {discount > 0 && (
-                    <p className="text-xs text-gray-400 line-through">
+                {/* FINAL PRICE */}
+                <p className="text-amber-600 font-bold">
+                  ৳{finalPrice.toFixed(2)}
+                </p>
+
+                {/* ORIGINAL + DISCOUNT */}
+                {discount > 0 && (
+                  <div className="flex items-center gap-2 text-xs text-gray-500">
+                    <span className="line-through">
                       ৳{price}
-                    </p>
-                  )}
-                </div>
+                    </span>
 
-                {/* BUTTON */}
+                    <span className="text-green-600 font-semibold">
+                      -{discount}% OFF
+                    </span>
+                  </div>
+                )}
+
+              </div>
+
+              {/* CART BUTTON */}
+              <div className="flex justify-end mt-2">
                 <button
-                  onClick={() =>
-                    handleAddToCart(product)
-                  }
-                  className="bg-amber-500 hover:bg-amber-600 text-white p-2 rounded-lg"
+                  onClick={() => handleAddToCart(product)}
+                  className="bg-amber-500 hover:bg-amber-600 text-white p-2 rounded"
                 >
                   <FaCartPlus />
                 </button>
               </div>
+
             </div>
           );
         })}
+
       </div>
 
       {/* PAGINATION */}
-      {totalPages > 1 && (
-        <div className="flex flex-wrap justify-center mt-8 gap-2">
+      <div className="flex justify-center mt-8 gap-2 flex-wrap">
 
+        {Array.from({ length: totalPages }).map((_, i) => (
           <button
-            disabled={currentPage === 1}
-            onClick={() =>
-              setCurrentPage((p) => p - 1)
-            }
-            className="px-3 py-1 border rounded disabled:opacity-40"
+            key={i}
+            onClick={() => setCurrentPage(i + 1)}
+            className={`px-3 py-1 border rounded transition ${
+              currentPage === i + 1
+                ? "bg-amber-500 text-white"
+                : "bg-white hover:bg-gray-100"
+            }`}
           >
-            Prev
+            {i + 1}
           </button>
+        ))}
 
-          {[...Array(totalPages)].map((_, i) => (
-            <button
-              key={i}
-              onClick={() =>
-                setCurrentPage(i + 1)
-              }
-              className={`px-3 py-1 border rounded ${
-                currentPage === i + 1
-                  ? "bg-amber-500 text-white"
-                  : ""
-              }`}
-            >
-              {i + 1}
-            </button>
-          ))}
+      </div>
 
-          <button
-            disabled={currentPage === totalPages}
-            onClick={() =>
-              setCurrentPage((p) => p + 1)
-            }
-            className="px-3 py-1 border rounded disabled:opacity-40"
-          >
-            Next
-          </button>
-
-        </div>
-      )}
     </section>
   );
 };

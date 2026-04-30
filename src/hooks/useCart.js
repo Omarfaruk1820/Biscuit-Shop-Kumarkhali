@@ -8,7 +8,7 @@ export const useCart = (email) => {
     queryFn: async () => {
       if (!email) return [];
 
-      const res = await axios.get(`http://localhost:5000/cart?email=${email}`);
+      const res = await axios.get(`http://localhost:5173/cart?email=${email}`);
 
       return res.data?.data || [];
     },

@@ -13,7 +13,7 @@ import {
 // ================= FETCH =================
 const fetchOrders = async (page) => {
   const res = await axios.get(
-    `http://localhost:5000/orders?page=${page}&limit=8`
+    `http://localhost:5173/orders?page=${page}&limit=8`
   );
 
   return res.data;

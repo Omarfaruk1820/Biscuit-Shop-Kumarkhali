@@ -1,12 +1,15 @@
-import React, { useState } from "react";
+import React, { useState, useContext } from "react";
 import axios from "axios";
 import { useForm } from "react-hook-form";
 import { useToast } from "../context/ToastProvider";
 import { useNavigate } from "react-router-dom";
+import { AuthContext } from "../Auth/AuthProvider";
 
 const AddBiscuit = () => {
-  const navigate = useNavigate();
+  const { user } = useContext(AuthContext);
   const { addToast } = useToast();
+  const navigate = useNavigate();
+
   const [preview, setPreview] = useState("");
 
   const {
@@ -25,12 +28,16 @@ const AddBiscuit = () => {
 
   // ================= SUBMIT =================
   const onSubmit = async (data) => {
+    if (!user?.email) {
+      return addToast("Please login first ❌", "error");
+    }
+
     try {
       const payload = {
-        name: data.name?.trim(),
+        name: data.name.trim(),
         price: Number(data.price),
         stock: Number(data.stock),
-        image: data.image?.trim(),
+        image: data.image.trim(),
         rating: Number(data.rating) || 4.5,
         category: data.category,
         reviews: Number(data.reviews) || 0,
@@ -42,148 +49,166 @@ const AddBiscuit = () => {
         discount: Number(data.discount) || 0,
       };
 
-      const res = await axios.post("http://localhost:5000/products", payload);
+      const res = await axios.post(
+        "http://localhost:5173/products",
+        payload,
+        {
+          withCredentials: true, // ✅ JWT cookie
+        }
+      );
 
-      if (res.data?.success || res.status === 201) {
+      if (res.data?.success) {
         addToast("🍪 Product added successfully!", "success");
         reset();
         setPreview("");
         navigate("/products");
       }
+
     } catch (error) {
-      addToast(
-        error.response?.data?.message || "Failed to add product",
-        "error",
-      );
+      console.error(error);
+
+      if (error.response?.status === 403) {
+        addToast("Only admin can add product ❌", "errror");
+      } else {
+        addToast(
+          error.response?.data?.message || "Failed to add products ❌",
+          "error"
+        );
+      }
     }
   };
 
   // ================= UI =================
   return (
-    <div className="min-h-screen bg-gray-100 dark:bg-gray-950 px-4 py-10">
-      <div className="max-w-6xl mx-auto bg-white dark:bg-gray-900 rounded-2xl shadow-xl overflow-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-gray-100 to-gray-200 px-4 py-10">
+      <div className="max-w-6xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden">
+
         {/* HEADER */}
-        <div className="bg-amber-500 mt-10 text-white px-6 py-5">
-          <h2 className="text-2xl font-bold">🍪 Add New Biscuit Product</h2>
+        <div className="bg-amber-500 text-white px-6 py-5">
+          <h2 className="text-2xl font-bold">🍪 Add Biscuit Product</h2>
           <p className="text-sm opacity-90">
-            Fill the form and publish your product
+            Only admin can publish products
           </p>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3">
+
           {/* FORM */}
           <form
             onSubmit={handleSubmit(onSubmit)}
             className="lg:col-span-2 p-6 space-y-4"
           >
+
             {/* NAME */}
             <input
               type="text"
-              placeholder="Enter product name (e.g. Butter Biscuit)"
+              placeholder="Product Name"
               className="input"
               {...register("name", { required: "Name is required" })}
             />
             {errors.name && <p className="error">{errors.name.message}</p>}
 
             {/* PRICE + STOCK */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-4">
               <input
                 type="number"
-                placeholder="Price (e.g. 50)"
+                placeholder="Price (e.g. 100)"
                 className="input"
-                {...register("price", { required: true })}
+                {...register("price", {
+                  required: "Price required",
+                  min: { value: 1, message: "Must be positive" },
+                })}
               />
-
               <input
                 type="number"
-                placeholder="Stock (e.g. 100)"
+                placeholder="Stock (e.g. 50)"
                 className="input"
-                {...register("stock", { required: true })}
+                {...register("stock", {
+                  required: "Stock required",
+                  min: { value: 0, message: "Invalid stock" },
+                })}
               />
             </div>
 
             {/* IMAGE */}
             <input
               type="text"
-              placeholder="Image URL (https://...)"
+              placeholder="Image URL"
               className="input"
-              {...register("image", { required: true })}
+              {...register("image", { required: "Image required" })}
               onChange={(e) => setPreview(e.target.value)}
             />
 
-            {/* BRAND + CATEGORY */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <input
-                type="text"
-                placeholder="Brand name (e.g. Oreo, Milk Biscuit)"
-                className="input"
-                {...register("brand")}
-              />
-
+            {/* CATEGORY + BRAND */}
+            <div className="grid grid-cols-2 gap-4">
               <select className="input" {...register("category")}>
                 <option value="biscuit">Biscuit</option>
                 <option value="cookie">Cookie</option>
                 <option value="cake">Cake</option>
-                <option value="cracker">Cracker</option>
               </select>
+
+              <input
+                type="text"
+                placeholder="Brand (e.g. Nurani toast)"
+                className="input"
+                {...register("brand")}
+              />
             </div>
 
             {/* RATING + REVIEWS + DISCOUNT */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <input
                 type="number"
                 step="0.1"
-                placeholder="Rating (e.g. 4.5)"
+                placeholder="Rating"
                 className="input"
                 {...register("rating")}
               />
-
               <input
                 type="number"
-                placeholder="Reviews (e.g. 120)"
+                placeholder="Reviews"
                 className="input"
                 {...register("reviews")}
               />
-
               <input
                 type="number"
-                placeholder="Discount % (e.g. 10)"
+                placeholder="Discount %"
                 className="input"
                 {...register("discount")}
               />
             </div>
 
             {/* WEIGHT + EXPIRY */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-4">
               <input
                 type="text"
-                placeholder="Weight (e.g. 200g)"
+                placeholder="Weight (e.g. 160g)"
                 className="input"
                 {...register("weight")}
               />
-
-              <input type="date" className="input" {...register("expiry")} />
+              <input
+                type="date"
+                className="input"
+                {...register("expiry")}
+              />
             </div>
 
             {/* DESCRIPTION */}
             <textarea
-              rows="3"
-              placeholder="Write product description..."
+              placeholder="Description"
               className="input"
               {...register("description")}
             />
 
             {/* INGREDIENTS */}
             <textarea
-              rows="2"
-              placeholder="Ingredients (e.g. flour, sugar, butter)"
+              placeholder="Ingredients (e.g. Sugar, water, oil)"
               className="input"
               {...register("ingredients")}
             />
 
             {/* SUBMIT */}
             <button
-              type="submit"
               disabled={isSubmitting}
               className="w-full bg-amber-500 hover:bg-amber-600 text-white py-3 rounded-xl font-semibold transition"
             >
@@ -191,51 +216,50 @@ const AddBiscuit = () => {
             </button>
           </form>
 
-          {/* PREVIEW PANEL */}
-          <div className="p-6 bg-gray-50 dark:bg-gray-800 border-t lg:border-t-0 lg:border-l">
+          {/* PREVIEW */}
+          <div className="p-6 bg-gray-50 border-l">
             <h3 className="text-sm font-semibold mb-3">Live Preview</h3>
 
             {preview ? (
               <img
                 src={preview}
                 alt="preview"
+                onError={(e) =>
+                  (e.target.src =
+                    "https://via.placeholder.com/300?text=Invalid+Image")
+                }
                 className="h-48 w-full object-cover rounded-lg shadow"
               />
             ) : (
-              <div className="h-48 flex items-center justify-center bg-gray-200 dark:bg-gray-700 rounded-lg text-gray-500">
-                No Image Preview
+              <div className="h-48 flex items-center justify-center bg-gray-200 rounded-lg">
+                No Preview
               </div>
             )}
 
-            <div className="mt-4 text-sm space-y-2 text-gray-600 dark:text-gray-300">
+            <div className="mt-4 text-sm text-gray-500">
               <p>🍪 Product preview will appear here</p>
-              <p>⭐ Rating will be shown after input</p>
-              <p>📦 Stock status auto updates</p>
+              <p>⭐ Rating & details will be saved</p>
+              <p>📦 Stock handled automatically</p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* STYLES */}
+      {/* STYLE */}
       <style>{`
         .input {
           width: 100%;
-          padding: 10px 12px;
+          padding: 10px;
           border-radius: 10px;
           border: 1px solid #ddd;
-          outline: none;
-          margin-top: 6px;
-          background: white;
         }
-
         .input:focus {
           border-color: #f59e0b;
+          outline: none;
         }
-
         .error {
           color: red;
           font-size: 12px;
-          margin-top: 4px;
         }
       `}</style>
     </div>

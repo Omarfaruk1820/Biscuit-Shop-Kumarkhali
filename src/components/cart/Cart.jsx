@@ -1,146 +1,137 @@
 import React, { useContext } from "react";
 import axios from "axios";
-import {
-  useQuery,
-  useQueryClient,
-  useMutation,
-} from "@tanstack/react-query";
-import { FaTrash } from "react-icons/fa";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { FaTrash, FaArrowRight } from "react-icons/fa";
 import { useNavigate } from "react-router-dom";
 import { AuthContext } from "../../Auth/AuthProvider";
 
-// ================= FETCH =================
-const fetchCart = async (email) => {
-  if (!email) return [];
+const API = import.meta.env.VITE_API_URL;
 
-  const res = await axios.get(
-    `http://localhost:5000/cart?email=${email}`
-  );
-
-  return res.data?.data || [];
+// ================= FETCH CART =================
+const fetchCart = async () => {
+  const res = await axios.get(`${API}/carts`, {
+    withCredentials: true,
+  });
+  return res.data;
 };
 
-const Cart = () => {
-  const { user, loading: authLoading } =
-    useContext(AuthContext);
-
+const Carts = () => {
+  const { user } = useContext(AuthContext);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
-  const email = user?.email?.toLowerCase().trim();
-
-  // ================= GET CART =================
-  const { data: cart = [], isLoading } = useQuery({
-    queryKey: ["cart", email],
-    queryFn: () => fetchCart(email),
-    enabled: !!email,
+  const { data, isLoading } = useQuery({
+    queryKey: ["cart"],
+    queryFn: fetchCart,
+    enabled: !!user,
+    staleTime: 0,
   });
+
+  const cart = data?.data || [];
+  const summary = data?.summary || {};
 
   // ================= DELETE ITEM =================
   const deleteItem = useMutation({
     mutationFn: (id) =>
-      axios.delete(`http://localhost:5000/cart/${id}`),
+      axios.delete(`${API}/carts/${id}`, {
+        withCredentials: true,
+      }),
 
     onSuccess: () => {
-      queryClient.invalidateQueries(["cart", email]);
+      queryClient.invalidateQueries({ queryKey: ["cart"] });
     },
   });
 
-  // ================= PRICE =================
-  const getPrice = (item) => {
-    const price = Number(item.price) || 0;
-    const discount = Number(item.discount) || 0;
+  const getFinalPrice = (item) => {
+    const price = Number(item.price);
+    const discount = Number(item.discount || 0);
     return price - (price * discount) / 100;
   };
 
-  const totalItems = cart.reduce(
-    (sum, item) => sum + (item.quantity || 1),
-    0
-  );
-
-  const totalPrice = cart.reduce((sum, item) => {
-    return sum + getPrice(item) * item.quantity;
-  }, 0);
-
-  // ================= STATES =================
-  if (authLoading) {
-    return <div className="text-center py-20">Checking user...</div>;
-  }
-
-  if (!email) {
+  if (!user) {
     return (
-      <div className="text-center py-20 text-gray-500">
+      <p className="text-center py-20 text-gray-600">
         Please login first
-      </div>
+      </p>
     );
   }
 
   if (isLoading) {
-    return <div className="text-center py-20">Loading cart...</div>;
+    return (
+      <p className="text-center py-20 text-amber-600">
+        Loading cart...
+      </p>
+    );
   }
 
-  // ================= UI =================
   return (
-    <div className="max-w-6xl mx-auto px-4 py-10">
+    <div className="max-w-6xl mx-auto p-6">
 
-      <h2 className="text-2xl font-bold text-center mb-6">
-        🛒 Your Cart ({totalItems})
+      <h2 className="text-3xl font-bold text-center mb-6">
+        🛒 My Cart
       </h2>
 
+      {/* SUMMARY */}
+      <div className="bg-gray-100 p-5 rounded-xl mb-6 text-center shadow">
+
+        <p>Total Products: {summary.totalItems}</p>
+        <p>Total Quantity: {summary.totalQuantity}</p>
+
+        <p className="text-amber-600 font-bold text-xl">
+          Total Price: ৳{summary.totalPrice?.toFixed(2)}
+        </p>
+
+        <button
+          onClick={() => navigate("/checkout")}
+          disabled={!cart.length}
+          className="mt-4 bg-amber-500 hover:bg-amber-600 text-white px-6 py-3 rounded-xl font-semibold flex items-center gap-2 mx-auto disabled:opacity-50"
+        >
+          Proceed to Checkout <FaArrowRight />
+        </button>
+      </div>
+
+      {/* CART ITEMS */}
       {cart.length === 0 ? (
         <p className="text-center text-gray-500">
-          Your cart is empty
+          Cart is empty 🛒
         </p>
       ) : (
         <div className="grid md:grid-cols-3 gap-6">
 
-          {/* ITEMS */}
-          <div className="md:col-span-2 space-y-4">
+          {cart.map((item) => {
+            const price = getFinalPrice(item);
 
-            {cart.map((item) => (
+            return (
               <div
                 key={item._id}
-                className="flex justify-between items-center bg-white p-4 rounded shadow"
+                className="bg-white shadow rounded-xl overflow-hidden"
               >
+                <img
+                  src={item.image}
+                  alt={item.name}
+                  className="h-40 w-full object-cover"
+                />
 
-                <div>
-                  <h3>{item.name}</h3>
-                  <p>৳{getPrice(item).toFixed(2)}</p>
+                <div className="p-4">
+                  <h3 className="font-bold">{item.name}</h3>
+
+                  <p>Price: ৳{price.toFixed(2)}</p>
                   <p>Qty: {item.quantity}</p>
+
+                  <p className="font-bold text-amber-600">
+                    Total: ৳{(price * item.quantity).toFixed(2)}
+                  </p>
+
+                  <button
+                    onClick={() => deleteItem.mutate(item._id)}
+                    className="w-full mt-3 bg-red-500 text-white py-2 rounded flex items-center justify-center gap-2"
+                  >
+                    <FaTrash /> Remove
+                  </button>
                 </div>
-
-                <button
-                  onClick={() =>
-                    deleteItem.mutate(item._id)
-                  }
-                  className="text-red-500"
-                >
-                  <FaTrash />
-                </button>
-
               </div>
-            ))}
-
-          </div>
-
-          {/* SUMMARY */}
-          <div className="bg-white p-5 rounded shadow">
-
-            <h3 className="font-bold mb-4">
-              Order Summary
-            </h3>
-
-            <p>Total Items: {totalItems}</p>
-            <p>Total: ৳{totalPrice.toFixed(2)}</p>
-
-            <button
-              onClick={() => navigate("/checkout")}
-              className="w-full mt-4 bg-amber-500 text-white py-2 rounded"
-            >
-              Checkout
-            </button>
-
-          </div>
+            );
+          })}
 
         </div>
       )}
@@ -148,4 +139,4 @@ const Cart = () => {
   );
 };
 
-export default Cart;
+export default Carts;

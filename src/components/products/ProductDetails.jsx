@@ -1,210 +1,220 @@
-import React, { useEffect, useState, useContext } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import React, { useContext, useMemo, useRef, useState } from "react";
+import { useParams, Link } from "react-router-dom";
 import axios from "axios";
 import { FaStar, FaShoppingCart } from "react-icons/fa";
+import { useQuery } from "@tanstack/react-query";
 import { AuthContext } from "../../Auth/AuthProvider";
+import { useToast } from "../../context/ToastProvider";
+
+const API = import.meta.env.VITE_API_URL;
+
+// ================= FETCH =================
+const fetchProduct = async (id) => {
+  const res = await axios.get(`${API}/products/${id}`);
+  return res.data?.data || null;
+};
+
+const fetchProducts = async () => {
+  const res = await axios.get(`${API}/products`);
+  return res.data?.data || [];
+};
 
 const ProductDetails = () => {
   const { id } = useParams();
-  const navigate = useNavigate();
   const { user } = useContext(AuthContext);
+  const { addToast } = useToast();
 
-  // ✅ normalize email
-  const email = user?.email?.toLowerCase().trim();
+  const imageRef = useRef(null);
+  const cartIconRef = useRef(null);
 
-  const [product, setProduct] = useState(null);
-  const [related, setRelated] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [toast, setToast] = useState("");
-  const [adding, setAdding] = useState(false);
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [cloneStyle, setCloneStyle] = useState({});
 
-  // ================= FETCH =================
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        setError("");
+  const isValidId = /^[0-9a-fA-F]{24}$/.test(id);
 
-        const res = await axios.get(
-          `http://localhost:5000/products/${id}`
-        );
+  // ================= DATA =================
+  const { data: product, isLoading, isError } = useQuery({
+    queryKey: ["product", id],
+    queryFn: () => fetchProduct(id),
+    enabled: !!id,
+  });
 
-        const data = res.data?.data;
+  const { data: allProducts = [] } = useQuery({
+    queryKey: ["products"],
+    queryFn: fetchProducts,
+  });
 
-        if (!data) {
-          setError("Product not found");
-          return;
-        }
-
-        setProduct(data);
-
-        // 👉 Fetch related products
-        const allRes = await axios.get(
-          "http://localhost:5000/products"
-        );
-
-        const allProducts = Array.isArray(allRes.data?.data)
-          ? allRes.data.data
-          : [];
-
-        const relatedItems = allProducts
-          .filter(
-            (p) =>
-              p.category === data.category &&
-              p._id !== data._id
-          )
-          .slice(0, 4);
-
-        setRelated(relatedItems);
-      } catch (err) {
-        console.error("Fetch error:", err);
-        setError("Server error");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, [id]);
+  const related = useMemo(() => {
+    if (!product) return [];
+    return allProducts
+      .filter(
+        (p) =>
+          p.category === product.category &&
+          p._id !== product._id
+      )
+      .slice(0, 4);
+  }, [allProducts, product]);
 
   // ================= ADD TO CART =================
   const handleAddToCart = async () => {
-    if (!email) {
-      setToast("❌ Please login first");
-      setTimeout(() => setToast(""), 1500);
-      return;
-    }
-
-    if (!product) return;
-
     try {
-      setAdding(true);
+      if (!user) {
+        addToast("Please login first ❌", "error");
+        return;
+      }
 
-      const res = await axios.post(
-        "http://localhost:5000/cart",
-        {
-          email,
-          productId: product._id,
-          name: product.name,
-          image: product.image,
-          price: product.price,
-          discount: product.discount,
-          quantity: 1,
-        }
-      );
+      // 🎯 ANIMATION START
+      if (imageRef.current && cartIconRef.current) {
+        const imgRect = imageRef.current.getBoundingClientRect();
+        const cartRect = cartIconRef.current.getBoundingClientRect();
+
+        setCloneStyle({
+          top: imgRect.top,
+          left: imgRect.left,
+          width: imgRect.width,
+          height: imgRect.height,
+        });
+
+        setIsAnimating(true);
+
+        setTimeout(() => {
+          setCloneStyle({
+            top: cartRect.top,
+            left: cartRect.left,
+            width: 30,
+            height: 30,
+            opacity: 0.5,
+          });
+        }, 50);
+
+        setTimeout(() => {
+          setIsAnimating(false);
+        }, 600);
+      }
+
+      // ================= API =================
+      const payload = {
+        productId: product._id,
+        name: product.name,
+        price: product.price,
+        discount: product.discount || 0,
+        image: product.image,
+        quantity: 1,
+      };
+
+      const res = await axios.post(`${API}/carts`, payload, {
+        withCredentials: true,
+      });
 
       if (res.data?.success) {
-        setToast(`✅ ${product.name} added to cart`);
+        addToast("Added to cart 🛒", "success");
       } else {
-        setToast("❌ Failed to add");
+        addToast(res.data?.message || "Failed", "error");
       }
     } catch (err) {
-      console.error("Add to cart error:", err);
-      setToast("❌ Server error");
-    } finally {
-      setAdding(false);
-      setTimeout(() => setToast(""), 1500);
+      console.log(err);
+      addToast("Server error ❌", "error");
     }
   };
 
-  // ================= STATES =================
-  if (loading) {
+  if (isLoading) return <div className="text-center py-20">Loading...</div>;
+
+  if (!isValidId || isError || !product) {
     return (
-      <div className="text-center py-20 text-amber-600 font-semibold">
-        Loading product...
+      <div className="text-center py-20 text-red-500">
+        Product not found ❌
       </div>
     );
   }
 
-  if (error) {
-    return (
-      <div className="text-center py-20">
-        <p className="text-red-500 font-bold">{error}</p>
-        <button
-          onClick={() => navigate("/")}
-          className="mt-4 bg-amber-500 text-white px-4 py-2 rounded"
-        >
-          Go Home
-        </button>
-      </div>
-    );
-  }
-
-  if (!product) return null;
-
-  // ================= PRICE =================
   const price = Number(product.price) || 0;
   const discount = Number(product.discount) || 0;
-  const final = price - (price * discount) / 100;
+  const finalPrice = price - (price * discount) / 100;
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-10">
+    <div className="max-w-6xl mx-auto px-4 py-10 relative">
 
-      {/* TOAST */}
-      {toast && (
-        <div className="fixed top-5 right-5 bg-green-600 text-white px-4 py-2 rounded shadow z-50">
-          {toast}
-        </div>
+      {/* 🔥 CART ICON (TARGET) */}
+      <div
+        ref={cartIconRef}
+        className="fixed top-6 right-6 bg-amber-500 p-3 rounded-full text-white shadow-lg z-50"
+      >
+        <FaShoppingCart />
+      </div>
+
+      {/* 🔥 CLONE IMAGE FOR ANIMATION */}
+      {isAnimating && (
+        <img
+          src={product.image}
+          style={{
+            position: "fixed",
+            zIndex: 9999,
+            borderRadius: "10px",
+            transition: "all 0.6s ease-in-out",
+            pointerEvents: "none",
+            ...cloneStyle,
+          }}
+        />
       )}
 
       {/* PRODUCT */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 bg-white dark:bg-gray-900 p-6 rounded-xl shadow">
+      <div className="grid md:grid-cols-2 gap-8 bg-white p-6 rounded-xl shadow relative overflow-hidden">
+
+        {/* 🔥 FLOATING SALE BADGE */}
+        {discount > 0 && (
+          <div className="absolute top-4 left-4 bg-red-500 text-white px-4 py-1 text-xs font-bold rounded-full animate-bounce shadow">
+            SALE -{discount}%
+          </div>
+        )}
 
         {/* IMAGE */}
         <img
+          ref={imageRef}
           src={product.image}
           alt={product.name}
-          className="w-full h-72 md:h-96 object-cover rounded-lg"
+          className="h-80 w-full object-contain"
         />
 
-        {/* DETAILS */}
-        <div className="flex flex-col justify-center">
+        {/* INFO */}
+        <div>
 
-          <h1 className="text-2xl md:text-3xl font-bold">
+          <h1 className="text-2xl font-bold">
             {product.name}
           </h1>
 
-          {/* RATING */}
-          <div className="flex items-center gap-2 text-yellow-500 mt-2">
+          <div className="flex items-center gap-1 text-yellow-500 mt-2">
             <FaStar />
-            <span>{product.rating || 0}</span>
+            {product.rating || 4.5}
           </div>
 
-          {/* DESCRIPTION */}
           <p className="mt-3 text-gray-600">
-            {product.description || "No description"}
+            {product.description}
           </p>
 
           {/* PRICE */}
           <div className="mt-4">
             <p className="text-2xl font-bold text-amber-600">
-              ৳{final.toFixed(2)}
+              ৳{finalPrice.toFixed(2)}
             </p>
 
             {discount > 0 && (
-              <p className="text-gray-400 line-through text-sm">
-                ৳{price}
-              </p>
+              <div className="flex gap-2 text-sm text-gray-500">
+                <span className="line-through">৳{price}</span>
+                <span className="text-green-600">
+                  Save {discount}%
+                </span>
+              </div>
             )}
           </div>
 
-          {/* BUTTON */}
+          {/* ADD BUTTON */}
           <button
             onClick={handleAddToCart}
-            disabled={adding}
-            className="mt-5 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white px-5 py-2 rounded flex items-center gap-2 w-fit"
+            className="mt-4 bg-amber-500 text-white px-4 py-2 rounded flex items-center gap-2 hover:bg-amber-600 transition"
           >
             <FaShoppingCart />
-            {adding ? "Adding..." : "Add to Cart"}
+            Add to Cart
           </button>
-
-          {/* EXTRA */}
-          <div className="mt-5 text-sm text-gray-500">
-            <p>Brand: {product.brand || "N/A"}</p>
-            <p>Category: {product.category}</p>
-            <p>Stock: {product.stock || 0}</p>
-          </div>
 
         </div>
       </div>
@@ -214,30 +224,22 @@ const ProductDetails = () => {
         Related Products
       </h2>
 
-      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-4 mt-4">
-        {related.length > 0 ? (
-          related.map((item) => (
-            <Link
-              key={item._id}
-              to={`/product/${item._id}`}
-              className="bg-white dark:bg-gray-900 p-3 rounded shadow hover:shadow-lg transition"
-            >
-              <img
-                src={item.image}
-                alt={item.name}
-                className="h-24 w-full object-cover rounded"
-              />
-              <p className="text-center text-sm mt-2 line-clamp-1">
-                {item.name}
-              </p>
-            </Link>
-          ))
-        ) : (
-          <p className="text-gray-500 col-span-full text-center">
-            No related products
-          </p>
-        )}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+        {related.map((item) => (
+          <Link
+            key={item._id}
+            to={`/product/${item._id}`}
+            className="bg-white p-3 rounded shadow hover:shadow-md"
+          >
+            <img
+              src={item.image}
+              className="h-24 w-full object-contain"
+            />
+            <p className="text-sm mt-2">{item.name}</p>
+          </Link>
+        ))}
       </div>
+
     </div>
   );
 };

@@ -1,138 +1,166 @@
-import React, { useEffect, useState } from "react";
-import { FaTrash, FaPlus, FaMinus, FaShoppingCart } from "react-icons/fa";
-import { Link, useNavigate } from "react-router-dom";
+import React, { useContext } from "react";
+import axios from "axios";
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
+import {
+  FaTrash,
+  FaPlus,
+  FaMinus,
+  FaShoppingCart,
+} from "react-icons/fa";
+import { AuthContext } from "../../Auth/AuthProvider";
 
-const AddToCarts = () => {
-  const [cart, setCart] = useState([]);
-  const navigate = useNavigate();
+const API = import.meta.env.VITE_API_URL;
 
-  // 🔥 Load cart safely
-  useEffect(() => {
-    try {
-      const storedCart = JSON.parse(localStorage.getItem("cart")) || [];
-      setCart(storedCart);
-    } catch (error) {
-      console.error("Cart load error:", error);
-      setCart([]);
-    }
-  }, []);
+// ================= FETCH CART =================
+const fetchCart = async () => {
+  const res = await axios.get(`${API}/cart`, {
+    withCredentials: true,
+  });
 
-  // 🔄 Update cart
-  const updateCart = (updatedCart) => {
-    setCart(updatedCart);
-    localStorage.setItem("cart", JSON.stringify(updatedCart));
+  return res.data?.data || [];
+};
+
+const Carts = () => {
+  const { user } = useContext(AuthContext);
+  const queryClient = useQueryClient();
+
+  // ================= GET CART =================
+  const { data: cart = [], isLoading } = useQuery({
+    queryKey: ["cart"],
+    queryFn: fetchCart,
+    enabled: !!user,
+  });
+
+  // ================= UPDATE QUANTITY =================
+  const updateQty = useMutation({
+    mutationFn: ({ id, quantity }) =>
+      axios.put(
+        `${API}/cart/${id}`,
+        { quantity },
+        { withCredentials: true }
+      ),
+
+    onSuccess: () => {
+      queryClient.invalidateQueries(["cart"]);
+    },
+  });
+
+  // ================= DELETE ITEM =================
+  const deleteItem = useMutation({
+    mutationFn: (id) =>
+      axios.delete(`${API}/cart/${id}`, {
+        withCredentials: true,
+      }),
+
+    onSuccess: () => {
+      queryClient.invalidateQueries(["cart"]);
+    },
+  });
+
+  // ================= PRICE CALCULATION =================
+  const getPrice = (item) => {
+    const price = Number(item.price) || 0;
+    const discount = Number(item.discount) || 0;
+    return price - (price * discount) / 100;
   };
 
-  // ➕ Increase quantity
-  const increaseQty = (id) => {
-    const updated = cart.map((item) =>
-      item._id === id
-        ? { ...item, quantity: item.quantity + 1 }
-        : item
+  // ================= TOTALS =================
+  const totalItems = cart.reduce(
+    (sum, item) => sum + item.quantity,
+    0
+  );
+
+  const totalPrice = cart.reduce(
+    (sum, item) =>
+      sum + getPrice(item) * item.quantity,
+    0
+  );
+
+  // ================= LOADING =================
+  if (isLoading) {
+    return (
+      <p className="text-center py-20">
+        Loading cart...
+      </p>
     );
-    updateCart(updated);
-  };
+  }
 
-  // ➖ Decrease quantity
-  const decreaseQty = (id) => {
-    const updated = cart.map((item) =>
-      item._id === id && item.quantity > 1
-        ? { ...item, quantity: item.quantity - 1 }
-        : item
+  // ================= LOGIN CHECK =================
+  if (!user) {
+    return (
+      <p className="text-center py-20">
+        Please login first
+      </p>
     );
-    updateCart(updated);
-  };
-
-  // ❌ Remove item
-  const removeItem = (id) => {
-    const updated = cart.filter((item) => item._id !== id);
-    updateCart(updated);
-  };
-
-  // 🧹 Clear cart (bonus feature)
-  const clearCart = () => {
-    updateCart([]);
-  };
-
-  // 💰 Total
-  const totalPrice = cart.reduce((sum, item) => {
-    const final =
-      item.price - (item.price * (item.discount || 0)) / 100;
-    return sum + final * item.quantity;
-  }, 0);
-
-  const totalItems = cart.reduce((sum, i) => sum + i.quantity, 0);
-
-  // 🚀 Go to checkout (safe)
-  const handleCheckout = () => {
-    if (cart.length === 0) {
-      alert("Cart is empty!");
-      return;
-    }
-    navigate("/checkout");
-  };
+  }
 
   return (
-    <div className="max-w-6xl  mx-auto p-6">
+    <div className="max-w-6xl mx-auto p-6">
 
       {/* TITLE */}
-      <h2 className="text-3xl font-bold mb-6 text-center flex items-center justify-center gap-2">
+      <h2 className="text-3xl font-bold text-center mb-8 flex items-center justify-center gap-2">
         <FaShoppingCart /> My Cart
       </h2>
 
-      {/* EMPTY */}
+      {/* EMPTY CART */}
       {cart.length === 0 ? (
-        <div className="text-center text-gray-500 space-y-3">
-          <p>Your cart is empty 🛒</p>
-
-          <Link
-            to="/"
-            className="btn btn-outline btn-primary"
-          >
-            Continue Shopping
-          </Link>
-        </div>
+        <p className="text-center text-gray-500 text-lg">
+          Your cart is empty 🛒
+        </p>
       ) : (
-        <>
-          {/* LIST */}
-          <div className="space-y-4">
+        <div className="grid md:grid-cols-3 gap-6">
+
+          {/* LEFT SIDE - CART ITEMS */}
+          <div className="md:col-span-2 space-y-4">
+
             {cart.map((item) => {
-              const finalPrice =
-                item.price -
-                (item.price * (item.discount || 0)) / 100;
+              const price = getPrice(item);
 
               return (
                 <div
                   key={item._id}
-                  className="flex items-center gap-4 bg-base-100 p-4 rounded-xl shadow hover:shadow-lg transition"
+                  className="flex items-center gap-4 bg-white shadow-md p-4 rounded-xl hover:shadow-lg transition"
                 >
+
                   {/* IMAGE */}
                   <img
                     src={item.image}
                     alt={item.name}
-                    className="w-20 h-20 object-contain"
+                    className="w-20 h-20 object-cover rounded"
                   />
 
                   {/* INFO */}
                   <div className="flex-1">
-                    <h3 className="font-semibold">
+                    <h3 className="font-semibold text-lg">
                       {item.name}
                     </h3>
 
-                    <p className="text-sm text-gray-500">
-                      ৳{finalPrice.toFixed(2)} × {item.quantity}
+                    <p className="text-gray-500 text-sm">
+                      ৳{price.toFixed(2)} × {item.quantity}
                     </p>
 
-                    <p className="font-bold text-primary">
-                      ৳{(finalPrice * item.quantity).toFixed(2)}
+                    <p className="font-bold text-amber-600">
+                      ৳{(price * item.quantity).toFixed(2)}
                     </p>
                   </div>
 
-                  {/* QTY */}
+                  {/* QTY CONTROLS */}
                   <div className="flex items-center gap-2">
+
                     <button
-                      onClick={() => decreaseQty(item._id)}
-                      className="btn btn-sm"
+                      onClick={() =>
+                        item.quantity > 1 &&
+                        updateQty.mutate({
+                          id: item._id,
+                          quantity:
+                            item.quantity - 1,
+                        })
+                      }
+                      className="bg-gray-200 px-2 py-1 rounded"
                     >
                       <FaMinus />
                     </button>
@@ -140,8 +168,14 @@ const AddToCarts = () => {
                     <span>{item.quantity}</span>
 
                     <button
-                      onClick={() => increaseQty(item._id)}
-                      className="btn btn-sm"
+                      onClick={() =>
+                        updateQty.mutate({
+                          id: item._id,
+                          quantity:
+                            item.quantity + 1,
+                        })
+                      }
+                      className="bg-gray-200 px-2 py-1 rounded"
                     >
                       <FaPlus />
                     </button>
@@ -149,8 +183,10 @@ const AddToCarts = () => {
 
                   {/* DELETE */}
                   <button
-                    onClick={() => removeItem(item._id)}
-                    className="btn btn-sm btn-error text-white"
+                    onClick={() =>
+                      deleteItem.mutate(item._id)
+                    }
+                    className="bg-red-500 text-white px-3 py-2 rounded hover:bg-red-600"
                   >
                     <FaTrash />
                   </button>
@@ -159,45 +195,29 @@ const AddToCarts = () => {
             })}
           </div>
 
-          {/* SUMMARY */}
-          <div className="mt-8 bg-base-100 p-6 rounded-xl shadow space-y-3">
+          {/* RIGHT SIDE - SUMMARY */}
+          <div className="bg-white shadow-lg p-6 rounded-xl h-fit sticky top-10">
 
-            <h3 className="text-xl font-bold">
+            <h3 className="text-xl font-bold mb-4">
               Order Summary
             </h3>
 
-            <div className="flex justify-between">
-              <span>Total Items:</span>
-              <span>{totalItems}</span>
+            <div className="space-y-2 text-gray-600">
+              <p>Total Items: {totalItems}</p>
+
+              <p className="text-lg font-bold text-amber-600">
+                Total: ৳{totalPrice.toFixed(2)}
+              </p>
             </div>
 
-            <div className="flex justify-between">
-              <span>Total Price:</span>
-              <span className="font-bold text-primary">
-                ৳{totalPrice.toFixed(2)}
-              </span>
-            </div>
-
-            {/* ACTIONS */}
-            <Link to="/checkout"
-              onClick={handleCheckout}
-              className="btn btn-primary w-full"
-              
-            >
-              Proceed to Checkout
-            </Link>
-
-            <button
-              onClick={clearCart}
-              className="btn btn-outline w-full"
-            >
-              Clear Cart
+            <button className="w-full mt-5 bg-amber-500 text-white py-2 rounded hover:bg-amber-600 transition">
+              Checkout
             </button>
           </div>
-        </>
+        </div>
       )}
     </div>
   );
 };
 
-export default AddToCarts;
+export default Carts;

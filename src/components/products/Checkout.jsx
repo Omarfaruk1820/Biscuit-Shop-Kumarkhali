@@ -1,27 +1,33 @@
-import React, { useContext, useState } from "react";
+import React, { useContext, useState, useEffect } from "react";
 import axios from "axios";
 import {
-  FaCreditCard,
   FaMoneyBillWave,
   FaShoppingBag,
 } from "react-icons/fa";
-import {
-  useQuery,
-  useMutation,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { AuthContext } from "../../Auth/AuthProvider";
 
+const API = import.meta.env.VITE_API_URL;
+
+// ================= FETCH CART =================
+const fetchCart = async () => {
+  const res = await axios.get(`${API}/carts`, {
+    withCredentials: true,
+  });
+  return res.data;
+};
+
 const Checkout = () => {
   const { user } = useContext(AuthContext);
-  const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
-  const email = user?.email?.toLowerCase()?.trim();
+  const [error, setError] = useState("");
+  const [isRedirecting, setIsRedirecting] = useState(false);
 
   const [form, setForm] = useState({
-    name: "",
+    name: user?.displayName || "",
     phone: "",
     address: "",
     city: "",
@@ -29,19 +35,24 @@ const Checkout = () => {
     paymentMethod: "cod",
   });
 
-  // ================= FETCH CART =================
-  const { data: cart = [], isLoading } = useQuery({
-    queryKey: ["cart", email],
-    enabled: !!email,
-    queryFn: async () => {
-      const res = await axios.get(
-        `http://localhost:5000/cart?email=${email}`
-      );
-      return res.data?.data || [];
-    },
+  // ================= CART =================
+  const { data, isLoading } = useQuery({
+    queryKey: ["cart"],
+    queryFn: fetchCart,
+    enabled: !!user,
+    staleTime: 0,
   });
 
-  // ================= PRICE CALC =================
+  const cart = data?.data || [];
+
+  // ================= SAFE REDIRECT =================
+  useEffect(() => {
+    if (!isLoading && user && cart.length === 0 && !isRedirecting) {
+      navigate("/cart");
+    }
+  }, [cart, isLoading, user, navigate, isRedirecting]);
+
+  // ================= PRICE =================
   const getPrice = (item) => {
     const price = Number(item.price) || 0;
     const discount = Number(item.discount) || 0;
@@ -53,53 +64,70 @@ const Checkout = () => {
     0
   );
 
-  const shipping = cart.length > 0 ? 50 : 0;
+  const shipping = cart.length ? 50 : 0;
   const total = subtotal + shipping;
 
-  // ================= ORDER MUTATION =================
+  // ================= MUTATION =================
   const orderMutation = useMutation({
     mutationFn: async () => {
-      const res = await axios.post(
-        "http://localhost:5000/orders",
+      // 🔥 Backend already uses cart + user email
+      return axios.post(
+        `${API}/orders`,
         {
-          email,
           customer: form,
-          items: cart,
-          total,
-        }
+        },
+        { withCredentials: true }
       );
-      return res.data;
     },
 
     onSuccess: async () => {
-      // 🔥 REFRESH CART (NO MANUAL STATE)
-      await queryClient.invalidateQueries({
-        queryKey: ["cart", email],
+      setIsRedirecting(true);
+
+      await queryClient.invalidateQueries({ queryKey: ["cart"] });
+
+      setForm({
+        name: "",
+        phone: "",
+        address: "",
+        city: "",
+        zip: "",
+        paymentMethod: "cod",
       });
 
-      // 👉 GO SUCCESS PAGE
-      navigate("/success");
+      // 🔥 better UX delay
+      setTimeout(() => {
+        navigate("/success");
+      }, 800);
+    },
+
+    onError: () => {
+      setError("Order failed. Please try again.");
     },
   });
 
-  // ================= HANDLE SUBMIT =================
+  const handleChange = (e) => {
+    setForm({ ...form, [e.target.name]: e.target.value });
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
+    setError("");
+
+    if (orderMutation.isPending || isRedirecting) return;
 
     if (!form.name || !form.phone || !form.address) {
-      alert("Please fill required fields ❌");
+      setError("Please fill required fields");
       return;
     }
 
     if (!cart.length) {
-      alert("Cart is empty 🛒");
+      setError("Cart is empty");
       return;
     }
 
     orderMutation.mutate();
   };
 
-  // ================= LOADING =================
   if (isLoading) {
     return (
       <div className="text-center py-20 text-amber-600 font-semibold">
@@ -111,154 +139,108 @@ const Checkout = () => {
   return (
     <div className="max-w-7xl mx-auto px-4 py-10 grid lg:grid-cols-3 gap-8">
 
-      {/* ================= LEFT FORM ================= */}
+      {/* FORM */}
       <form onSubmit={handleSubmit} className="lg:col-span-2 space-y-6">
 
-        {/* SHIPPING */}
-        <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow">
+        <div className="bg-white p-6 mt-10 rounded-2xl shadow border">
           <h2 className="text-xl font-bold mb-4">
             🏠 Shipping Address
           </h2>
 
           <div className="grid md:grid-cols-2 gap-4">
+
             <input
+              name="name"
+              value={form.name}
+              onChange={handleChange}
               placeholder="Full Name *"
-              className="border p-2 rounded w-full"
-              onChange={(e) =>
-                setForm({ ...form, name: e.target.value })
-              }
+              className="input"
             />
 
             <input
+              name="phone"
+              value={form.phone}
+              onChange={handleChange}
               placeholder="Phone *"
-              className="border p-2 rounded w-full"
-              onChange={(e) =>
-                setForm({ ...form, phone: e.target.value })
-              }
+              className="input"
             />
 
             <input
+              name="city"
+              value={form.city}
+              onChange={handleChange}
               placeholder="City"
-              className="border p-2 rounded w-full"
-              onChange={(e) =>
-                setForm({ ...form, city: e.target.value })
-              }
+              className="input"
             />
 
             <input
+              name="zip"
+              value={form.zip}
+              onChange={handleChange}
               placeholder="ZIP"
-              className="border p-2 rounded w-full"
-              onChange={(e) =>
-                setForm({ ...form, zip: e.target.value })
-              }
+              className="input"
             />
 
             <textarea
-              placeholder="Full Address *"
-              className="border p-2 rounded md:col-span-2 w-full"
-              onChange={(e) =>
-                setForm({ ...form, address: e.target.value })
-              }
+              name="address"
+              value={form.address}
+              onChange={handleChange}
+              placeholder="Address *"
+              className="input md:col-span-2"
             />
           </div>
         </div>
 
         {/* PAYMENT */}
-        <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow">
+        <div className="bg-white p-6 rounded-2xl shadow border">
+
           <h2 className="text-xl font-bold mb-4">
             💳 Payment Method
           </h2>
 
-          <div className="space-y-3">
-            <label className="flex items-center gap-3 p-3 border rounded cursor-pointer">
-              <input
-                type="radio"
-                checked={form.paymentMethod === "cod"}
-                onChange={() =>
-                  setForm({ ...form, paymentMethod: "cod" })
-                }
-              />
-              <FaMoneyBillWave /> Cash on Delivery
-            </label>
-
-            <label className="flex items-center gap-3 p-3 border rounded cursor-pointer">
-              <input
-                type="radio"
-                checked={form.paymentMethod === "stripe"}
-                onChange={() =>
-                  setForm({ ...form, paymentMethod: "stripe" })
-                }
-              />
-              <FaCreditCard /> Online Payment
-            </label>
-          </div>
+          <label className="flex items-center gap-3 p-3 border rounded-lg">
+            <input
+              type="radio"
+              name="paymentMethod"
+              value="cod"
+              checked={form.paymentMethod === "cod"}
+              onChange={handleChange}
+            />
+            <FaMoneyBillWave /> Cash on Delivery
+          </label>
         </div>
+
+        {error && (
+          <p className="text-red-500">{error}</p>
+        )}
       </form>
 
-      {/* ================= RIGHT SUMMARY ================= */}
-      <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow h-fit">
+      {/* SUMMARY */}
+      <div className="bg-white p-6 mt-10 rounded-2xl shadow border">
 
         <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
           <FaShoppingBag /> Order Summary
         </h2>
 
-        {/* ITEMS */}
-        <div className="space-y-3 max-h-64 overflow-y-auto">
-          {cart.length === 0 ? (
-            <p className="text-gray-500 text-center">
-              Cart is empty
-            </p>
-          ) : (
-            cart.map((item) => {
-              const final = getPrice(item);
+        <p>Subtotal: ৳{subtotal.toFixed(2)}</p>
+        <p>Shipping: ৳{shipping}</p>
 
-              return (
-                <div
-                  key={item._id}
-                  className="flex justify-between text-sm"
-                >
-                  <span>
-                    {item.name} × {item.quantity}
-                  </span>
-                  <span>
-                    ৳{(final * item.quantity).toFixed(2)}
-                  </span>
-                </div>
-              );
-            })
-          )}
-        </div>
+        <h3 className="text-xl font-bold text-amber-600 mt-3">
+          Total: ৳{total.toFixed(2)}
+        </h3>
 
-        {/* TOTAL */}
-        <div className="border-t mt-4 pt-4 space-y-2 text-sm">
-          <div className="flex justify-between">
-            <span>Subtotal</span>
-            <span>৳{subtotal.toFixed(2)}</span>
-          </div>
-
-          <div className="flex justify-between">
-            <span>Shipping</span>
-            <span>৳{shipping}</span>
-          </div>
-
-          <div className="flex justify-between font-bold text-lg">
-            <span>Total</span>
-            <span className="text-amber-600">
-              ৳{total.toFixed(2)}
-            </span>
-          </div>
-        </div>
-
-        {/* BUTTON */}
         <button
           onClick={handleSubmit}
-          disabled={orderMutation.isPending}
-          className="w-full mt-6 bg-amber-500 hover:bg-amber-600 text-white py-3 rounded-xl font-semibold disabled:opacity-50"
+          disabled={orderMutation.isPending || !cart.length || isRedirecting}
+          className="w-full mt-6 bg-amber-500 text-white py-3 rounded-xl disabled:opacity-60"
         >
           {orderMutation.isPending
             ? "Processing..."
-            : "Place Order 🚀"}
+            : isRedirecting
+            ? "Redirecting..."
+            : "Place Order"}
         </button>
+
       </div>
     </div>
   );

@@ -34,7 +34,7 @@ const Navbar = () => {
     enabled: !!email,
     queryFn: async () => {
       const res = await axios.get(
-        `http://localhost:5000/cart?email=${email}`
+        `http://localhost:5173/cart?email=${email}`
       );
       return res.data?.data || [];
     },
@@ -83,13 +83,13 @@ const Navbar = () => {
         <FaPlus /> Add Biscuit
       </NavLink>
 
-      <NavLink to="/about" onClick={closeMenu} className={navLinkClass}>
+      {/* <NavLink to="/about" onClick={closeMenu} className={navLinkClass}>
         <FaInfoCircle /> About
       </NavLink>
 
       <NavLink to="/contact" onClick={closeMenu} className={navLinkClass}>
         <FaPhone /> Contact
-      </NavLink>
+      </NavLink> */}
 
       <NavLink to="/allOrder" onClick={closeMenu} className={navLinkClass}>
         <FaClipboardList /> Orders
@@ -101,6 +101,9 @@ const Navbar = () => {
 
       <NavLink to="/users" onClick={closeMenu} className={navLinkClass}>
         <FaUser /> user
+      </NavLink>
+      <NavLink to="/own-product" onClick={closeMenu} className={navLinkClass}>
+        <FaUser /> Own Product
       </NavLink>
     </>
   );
