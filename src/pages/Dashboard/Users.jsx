@@ -32,7 +32,7 @@ const Users = () => {
     try {
       const res = await axios.patch(
         `${API}/users/role/${user._id}`,
-        {}, // 🔥 no need to send role anymore
+        {},
         { withCredentials: true }
       );
 
@@ -55,8 +55,8 @@ const Users = () => {
   // ================= LOADING =================
   if (isLoading) {
     return (
-      <div className="text-center py-20 text-lg text-gray-500">
-        Loading users...
+      <div className="flex justify-center items-center py-20">
+        <span className="loading loading-spinner loading-lg text-amber-500"></span>
       </div>
     );
   }
@@ -65,29 +65,28 @@ const Users = () => {
   if (isError) {
     return (
       <div className="text-center py-20 text-red-500">
-        Failed to load users
+        Failed to load users ❌
       </div>
     );
   }
 
   return (
-    <div className="max-w-7xl mx-auto p-6">
+    <div className="max-w-7xl mx-auto px-4 md:px-6 py-6">
 
       {/* HEADER */}
       <div className="mb-6">
-        <h2 className="text-3xl font-bold text-amber-600">
+        <h2 className="text-2xl md:text-3xl font-bold text-amber-600">
           👥 Manage Users
         </h2>
-        <p className="text-gray-500">
-          Click button to toggle Admin/User role
+        <p className="text-gray-500 text-sm md:text-base">
+          Toggle Admin/User role easily
         </p>
       </div>
 
-      {/* TABLE */}
-      <div className="overflow-x-auto bg-white shadow rounded-xl">
+      {/* ================= DESKTOP TABLE ================= */}
+      <div className="hidden md:block overflow-x-auto bg-white shadow rounded-xl">
         <table className="min-w-full text-sm">
 
-          {/* HEAD */}
           <thead className="bg-amber-500 text-white">
             <tr>
               <th className="py-3 px-4 text-left">#</th>
@@ -98,18 +97,14 @@ const Users = () => {
             </tr>
           </thead>
 
-          {/* BODY */}
           <tbody>
             {users.map((user, index) => (
               <tr
                 key={user._id}
                 className="border-b hover:bg-gray-50 transition"
               >
-
-                {/* INDEX */}
                 <td className="py-3 px-4">{index + 1}</td>
 
-                {/* USER */}
                 <td className="py-3 px-4 flex items-center gap-3">
                   <img
                     src={
@@ -117,19 +112,17 @@ const Users = () => {
                       "https://i.ibb.co/4pDNDk1/avatar.png"
                     }
                     alt="user"
-                    className="w-10 h-10 rounded-full border object-cover"
+                    className="w-10 h-10 rounded-full object-cover border"
                   />
                   <span className="font-medium">
                     {user.name || "User"}
                   </span>
                 </td>
 
-                {/* EMAIL */}
                 <td className="py-3 px-4 text-gray-600">
                   {user.email}
                 </td>
 
-                {/* ROLE */}
                 <td className="py-3 px-4">
                   {user.role === "admin" ? (
                     <span className="px-3 py-1 bg-green-100 text-green-600 rounded-full text-xs font-semibold">
@@ -142,7 +135,6 @@ const Users = () => {
                   )}
                 </td>
 
-                {/* ACTION (TOGGLE BUTTON) */}
                 <td className="py-3 px-4 text-center">
                   <button
                     onClick={() => toggleRole(user)}
@@ -157,7 +149,6 @@ const Users = () => {
                       : "Make Admin"}
                   </button>
                 </td>
-
               </tr>
             ))}
           </tbody>
@@ -165,10 +156,68 @@ const Users = () => {
         </table>
       </div>
 
+      {/* ================= MOBILE CARD VIEW ================= */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:hidden">
+        {users.map((user, index) => (
+          <div
+            key={user._id}
+            className="bg-white shadow rounded-xl p-4 flex flex-col gap-3"
+          >
+
+            {/* Top */}
+            <div className="flex items-center gap-3">
+              <img
+                src={
+                  user.photo ||
+                  "https://i.ibb.co/4pDNDk1/avatar.png"
+                }
+                alt="user"
+                className="w-12 h-12 rounded-full object-cover border"
+              />
+              <div>
+                <h4 className="font-semibold">
+                  {user.name || "User"}
+                </h4>
+                <p className="text-xs text-gray-500">
+                  {user.email}
+                </p>
+              </div>
+            </div>
+
+            {/* Role */}
+            <div>
+              {user.role === "admin" ? (
+                <span className="px-3 py-1 bg-green-100 text-green-600 rounded-full text-xs font-semibold">
+                  Admin 👑
+                </span>
+              ) : (
+                <span className="px-3 py-1 bg-gray-100 text-gray-600 rounded-full text-xs">
+                  User 👤
+                </span>
+              )}
+            </div>
+
+            {/* Action */}
+            <button
+              onClick={() => toggleRole(user)}
+              className={`w-full py-2 text-white rounded text-sm transition ${
+                user.role === "admin"
+                  ? "bg-red-500 hover:bg-red-600"
+                  : "bg-amber-500 hover:bg-amber-600"
+              }`}
+            >
+              {user.role === "admin"
+                ? "Remove Admin"
+                : "Make Admin"}
+            </button>
+          </div>
+        ))}
+      </div>
+
       {/* EMPTY */}
       {users.length === 0 && (
         <div className="text-center py-10 text-gray-500">
-          No users found
+          No users found 😔
         </div>
       )}
 

@@ -18,6 +18,7 @@ import { AuthContext } from "../../Auth/AuthProvider";
 import { useToast } from "../../context/ToastProvider";
 import axios from "axios";
 import { useQuery } from "@tanstack/react-query";
+import MarqueeBar from "../home/MarqueeBar";
 
 const Navbar = () => {
   const { user, signOutUser } = useContext(AuthContext);
@@ -111,6 +112,7 @@ const Navbar = () => {
   return (
     <nav className="bg-white shadow-md fixed w-full z-50">
       <div className="max-w-7xl mx-auto px-3">
+        <MarqueeBar></MarqueeBar>
         <div className="flex justify-between items-center h-16">
 
           {/* LOGO */}

@@ -17,16 +17,21 @@ const Contact = () => {
     register,
     handleSubmit,
     reset,
-    formState: { errors },
+    formState: { errors, isSubmitting },
   } = useForm();
 
   // ================= SUBMIT =================
-  const onSubmit = (data) => {
-    console.log("CONTACT DATA:", data);
+  const onSubmit = async (data) => {
+    try {
+      console.log("CONTACT DATA:", data);
 
-    addToast("Message sent successfully 🎉", "success");
+      // 👉 future: send API / email service here
 
-    reset();
+      addToast("Message sent successfully 🎉", "success");
+      reset();
+    } catch (err) {
+      addToast("Failed to send message ❌", "error");
+    }
   };
 
   return (
@@ -34,25 +39,26 @@ const Contact = () => {
 
       {/* ================= HEADER ================= */}
       <div className="text-center max-w-3xl mx-auto">
-        <h1 className="text-4xl sm:text-5xl font-bold text-amber-600">
+        <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold text-amber-600">
           Contact Us 📞
         </h1>
-        <p className="text-gray-600 dark:text-gray-300 mt-3">
-          We are always here to help you. Send us a message anytime.
+        <p className="text-gray-600 dark:text-gray-300 mt-3 text-sm md:text-base">
+          আমরা সবসময় আপনার পাশে আছি। যেকোনো প্রশ্ন বা প্রয়োজন হলে আমাদের জানান।
         </p>
       </div>
 
-      {/* ================= MAIN SECTION ================= */}
-      <div className="max-w-6xl mx-auto mt-12 grid md:grid-cols-2 gap-10">
+      {/* ================= MAIN ================= */}
+      <div className="max-w-6xl mx-auto mt-12 grid lg:grid-cols-2 gap-10">
 
-        {/* ================= CONTACT INFO ================= */}
-        <div className="space-y-6">
+        {/* ================= LEFT INFO ================= */}
+        <div className="grid sm:grid-cols-2 lg:grid-cols-1 gap-5">
 
-          <div className="bg-white dark:bg-gray-900 p-6 rounded-xl shadow">
-            <div className="flex items-center gap-3">
-              <FaMapMarkerAlt className="text-amber-500 text-xl" />
+          {/* LOCATION */}
+          <div className="bg-white dark:bg-gray-900 p-5 rounded-xl shadow hover:shadow-lg transition">
+            <div className="flex items-start gap-3">
+              <FaMapMarkerAlt className="text-amber-500 text-xl mt-1" />
               <div>
-                <h3 className="font-bold">Our Location</h3>
+                <h3 className="font-semibold">Our Location</h3>
                 <p className="text-gray-500 text-sm">
                   Kumarkhali, Kushtia, Bangladesh
                 </p>
@@ -60,35 +66,38 @@ const Contact = () => {
             </div>
           </div>
 
-          <div className="bg-white dark:bg-gray-900 p-6 rounded-xl shadow">
-            <div className="flex items-center gap-3">
-              <FaPhone className="text-amber-500 text-xl" />
+          {/* PHONE */}
+          <div className="bg-white dark:bg-gray-900 p-5 rounded-xl shadow hover:shadow-lg transition">
+            <div className="flex items-start gap-3">
+              <FaPhone className="text-amber-500 text-xl mt-1" />
               <div>
-                <h3 className="font-bold">Phone</h3>
+                <h3 className="font-semibold">Phone</h3>
                 <p className="text-gray-500 text-sm">
-                  +880 1822637989
+                  +880 1822-637989
                 </p>
               </div>
             </div>
           </div>
 
-          <div className="bg-white dark:bg-gray-900 p-6 rounded-xl shadow">
-            <div className="flex items-center gap-3">
-              <FaEnvelope className="text-amber-500 text-xl" />
+          {/* EMAIL */}
+          <div className="bg-white dark:bg-gray-900 p-5 rounded-xl shadow hover:shadow-lg transition">
+            <div className="flex items-start gap-3">
+              <FaEnvelope className="text-amber-500 text-xl mt-1" />
               <div>
-                <h3 className="font-bold">Email</h3>
+                <h3 className="font-semibold">Email</h3>
                 <p className="text-gray-500 text-sm">
-                  mamun@biscuitshop.com
+                  support@biscuitshop.com
                 </p>
               </div>
             </div>
           </div>
 
-          <div className="bg-white dark:bg-gray-900 p-6 rounded-xl shadow">
-            <div className="flex items-center gap-3">
-              <FaClock className="text-amber-500 text-xl" />
+          {/* HOURS */}
+          <div className="bg-white dark:bg-gray-900 p-5 rounded-xl shadow hover:shadow-lg transition">
+            <div className="flex items-start gap-3">
+              <FaClock className="text-amber-500 text-xl mt-1" />
               <div>
-                <h3 className="font-bold">Working Hours</h3>
+                <h3 className="font-semibold">Working Hours</h3>
                 <p className="text-gray-500 text-sm">
                   Sat - Thu: 9:00 AM - 11:00 PM
                 </p>
@@ -98,10 +107,10 @@ const Contact = () => {
 
         </div>
 
-        {/* ================= CONTACT FORM ================= */}
-        <div className="bg-white dark:bg-gray-900 p-6 rounded-xl shadow">
+        {/* ================= FORM ================= */}
+        <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow">
 
-          <h2 className="text-2xl font-bold text-amber-600 mb-6">
+          <h2 className="text-xl md:text-2xl font-bold text-amber-600 mb-6">
             Send Message ✉️
           </h2>
 
@@ -110,7 +119,7 @@ const Contact = () => {
             {/* NAME */}
             <div>
               <label className="text-sm font-medium">Name</label>
-              <div className="flex items-center border rounded-lg px-3 mt-1">
+              <div className="flex items-center border rounded-lg px-3 mt-1 focus-within:ring-2 focus-within:ring-amber-400">
                 <FaUser className="text-gray-400" />
                 <input
                   type="text"
@@ -131,7 +140,7 @@ const Contact = () => {
             {/* EMAIL */}
             <div>
               <label className="text-sm font-medium">Email</label>
-              <div className="flex items-center border rounded-lg px-3 mt-1">
+              <div className="flex items-center border rounded-lg px-3 mt-1 focus-within:ring-2 focus-within:ring-amber-400">
                 <FaEnvelope className="text-gray-400" />
                 <input
                   type="email"
@@ -152,7 +161,7 @@ const Contact = () => {
             {/* PHONE */}
             <div>
               <label className="text-sm font-medium">Phone</label>
-              <div className="flex items-center border rounded-lg px-3 mt-1">
+              <div className="flex items-center border rounded-lg px-3 mt-1 focus-within:ring-2 focus-within:ring-amber-400">
                 <FaPhone className="text-gray-400" />
                 <input
                   type="text"
@@ -169,7 +178,7 @@ const Contact = () => {
               <textarea
                 rows="4"
                 placeholder="Write your message..."
-                className="w-full border rounded-lg p-3 mt-1 outline-none bg-transparent"
+                className="w-full border rounded-lg p-3 mt-1 outline-none focus:ring-2 focus:ring-amber-400 bg-transparent"
                 {...register("message", {
                   required: "Message is required",
                 })}
@@ -185,10 +194,11 @@ const Contact = () => {
             {/* BUTTON */}
             <button
               type="submit"
-              className="w-full bg-amber-500 hover:bg-amber-600 text-white py-3 rounded-lg font-semibold flex items-center justify-center gap-2 transition"
+              disabled={isSubmitting}
+              className="w-full bg-amber-500 hover:bg-amber-600 text-white py-3 rounded-lg font-semibold flex items-center justify-center gap-2 transition disabled:opacity-60"
             >
               <FaPaperPlane />
-              Send Message
+              {isSubmitting ? "Sending..." : "Send Message"}
             </button>
 
           </form>
@@ -197,14 +207,18 @@ const Contact = () => {
 
       {/* ================= MAP ================= */}
       <div className="max-w-6xl mx-auto mt-12">
-        <iframe
-          title="map"
-          className="w-full h-64 rounded-xl shadow"
-          src="https://www.google.com/maps/embed?pb=!1m18..."
-          loading="lazy"
-        ></iframe>
-      </div>
+        <div className="rounded-2xl overflow-hidden shadow-lg border">
 
+          <iframe
+            title="Kumarkhali Map"
+            className="w-full h-[250px] sm:h-[350px] md:h-[400px]"
+            loading="lazy"
+            allowFullScreen
+            src="https://www.google.com/maps?q=Kumarkhali,Kushtia,Bangladesh&output=embed"
+          ></iframe>
+
+        </div>
+      </div>
     </div>
   );
 };

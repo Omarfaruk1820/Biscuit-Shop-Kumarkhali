@@ -18,6 +18,7 @@ import OrderHistory from "../pages/OrderHistory";
 import AllOrder from "../pages/AllOrder";
 import Users from "../pages/Dashboard/Users";
 import OwnProduct from "../components/products/OwnProduct";
+import PrivateRoute from "./PrivateRoute";
 
 const router = createBrowserRouter([
   {
@@ -39,16 +40,29 @@ const router = createBrowserRouter([
       // ✅ product details
       {
         path: "/product/:id",
-        element: <ProductDetails />,
+        element: (
+          <PrivateRoute>
+            <ProductDetails />
+          </PrivateRoute>
+        ),
       },
       {
         path: "/Cart",
-        element: <Cart></Cart>,
+        element: (
+          <PrivateRoute>
+            <Cart />
+          </PrivateRoute>
+        ),
       },
 
       {
         path: "/checkout",
-        element: <Checkout />,
+        element: (
+          <PrivateRoute>
+            {" "}
+            <Checkout />
+          </PrivateRoute>
+        ),
       },
 
       {
@@ -81,19 +95,35 @@ const router = createBrowserRouter([
       },
       {
         path: "/OrderHistory",
-        element: <OrderHistory></OrderHistory>,
+        element: (
+          <PrivateRoute>
+            <OrderHistory></OrderHistory>
+          </PrivateRoute>
+        ),
       },
       {
         path: "/AllOrder",
-        element: <AllOrder></AllOrder>,
+        element: (
+          <PrivateRoute>
+            <AllOrder></AllOrder>
+          </PrivateRoute>
+        ),
       },
       {
         path: "/users",
-        element: <Users></Users>,
+        element: (
+          <PrivateRoute>
+            <Users></Users>
+          </PrivateRoute>
+        ),
       },
       {
         path: "/own-product",
-        element: <OwnProduct></OwnProduct>,
+        element: (
+          <PrivateRoute>
+            <OwnProduct></OwnProduct>
+          </PrivateRoute>
+        ),
       },
     ],
   },

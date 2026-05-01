@@ -1,4 +1,3 @@
-
 import {
   FaFacebookF,
   FaInstagram,
@@ -48,11 +47,22 @@ const Footer = () => {
         <div>
           <h3 className="text-white font-semibold text-lg mb-4">Quick Links</h3>
           <ul className="space-y-2 text-sm">
-            <li className="hover:text-white cursor-pointer">Home</li>
-            <li className="hover:text-white cursor-pointer">Shop</li>
-            <li className="hover:text-white cursor-pointer">Categories</li>
-            <li className="hover:text-white cursor-pointer">Offers</li>
-            <li className="hover:text-white cursor-pointer">Contact</li>
+            <Link to="/">
+              <li className="hover:text-white cursor-pointer">Home</li>
+            </Link>
+            <Link to="/products">
+              {" "}
+              <li className="hover:text-white cursor-pointer">Shop</li>
+            </Link>
+            <Link to="/categories">
+              <li className="hover:text-white cursor-pointer">Categories</li>
+            </Link>
+            <Link to="/offers">
+              <li className="hover:text-white cursor-pointer">Offers</li>
+            </Link>
+            <Link to="/contact">
+              <li className="hover:text-white cursor-pointer">Contact</li>
+            </Link>
           </ul>
         </div>
 
@@ -64,7 +74,8 @@ const Footer = () => {
 
           <div className="space-y-3 text-sm">
             <p className="flex items-center gap-2">
-              <FaMapMarkerAlt />  Rail Station, SonaBondhu Sorok, Kumarkhali,Kusthia, Bangladesh
+              <FaMapMarkerAlt /> Rail Station, SonaBondhu Sorok,
+              Kumarkhali,Kusthia, Bangladesh
             </p>
             <p className="flex items-center gap-2">
               <FaPhone /> +880 1822637989

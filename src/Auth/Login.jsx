@@ -12,6 +12,7 @@ import axios from "axios";
 
 import { AuthContext } from "./AuthProvider";
 import { useToast } from "../context/ToastProvider";
+import GoogleSignIn from "./GoogleSign";
 
 const API = import.meta.env.VITE_API_URL;
 
@@ -31,12 +32,19 @@ const Login = () => {
 
   const navigate = useNavigate();
   const location = useLocation();
+
+  // 👉 redirect where user came from
   const from = location.state?.from?.pathname || "/";
 
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  const { register, handleSubmit, reset } = useForm();
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm();
 
   const onSubmit = async (data) => {
     setLoading(true);
@@ -52,74 +60,134 @@ const Login = () => {
         { withCredentials: true }
       );
 
-      // MongoDB save
+      // Save user (optional but useful)
       await saveUserToDB(user);
 
-      addToast("Login successful 🎉", "success");
+      // ✅ SUCCESS TOAST
+      addToast("🎉 Login successful! Welcome back!", "success");
 
       reset();
-      navigate(from, { replace: true });
+
+      // ✅ redirect to previous page
+      setTimeout(() => {
+        navigate(from, { replace: true });
+      }, 1000);
 
     } catch (err) {
       console.error(err);
-      addToast("Login failed ❌", "error");
+
+      let message = "Login failed ❌";
+
+      if (err.code === "auth/user-not-found") {
+        message = "No account found with this email!";
+      } else if (err.code === "auth/wrong-password") {
+        message = "Incorrect password!";
+      } else if (err.code === "auth/invalid-email") {
+        message = "Invalid email!";
+      }
+
+      addToast(message, "error");
+
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-amber-100 to-white">
-      <div className="w-full max-w-md bg-white shadow-xl rounded-xl p-6">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-100 to-amber-100 px-4">
 
-        <h2 className="text-2xl font-bold text-center text-amber-600 mb-6">
-          Login
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-8">
+
+        {/* Header */}
+        <h2 className="text-2xl font-bold text-center text-gray-800">
+          Welcome Back 👋
         </h2>
+        <p className="text-center text-gray-500 text-sm mt-1">
+          Login to continue your journey
+        </p>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        {/* Form */}
+        <form onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-5">
 
-          {/* EMAIL */}
+          {/* Email */}
           <div>
-            <label>Email</label>
-            <div className="flex items-center border px-3 py-2 rounded mt-1">
-              <FaEnvelope />
+            <label className="text-sm text-gray-600">Email</label>
+
+            <div className="flex items-center border rounded-lg px-3 py-2 mt-1 focus-within:ring-2 focus-within:ring-amber-400">
+              <FaEnvelope className="text-gray-400" />
               <input
                 type="email"
+                placeholder="Enter your email"
                 className="ml-2 w-full outline-none"
-                {...register("email", { required: true })}
+                {...register("email", { required: "Email is required" })}
               />
             </div>
+
+            {errors.email && (
+              <p className="text-red-500 text-sm mt-1">
+                {errors.email.message}
+              </p>
+            )}
           </div>
 
-          {/* PASSWORD */}
+          {/* Password */}
           <div>
-            <label>Password</label>
-            <div className="flex items-center border px-3 py-2 rounded mt-1">
-              <FaLock />
+            <label className="text-sm text-gray-600">Password</label>
+
+            <div className="flex items-center border rounded-lg px-3 py-2 mt-1 focus-within:ring-2 focus-within:ring-amber-400">
+              <FaLock className="text-gray-400" />
+
               <input
                 type={showPassword ? "text" : "password"}
+                placeholder="Enter your password"
                 className="ml-2 w-full outline-none"
-                {...register("password", { required: true })}
+                {...register("password", {
+                  required: "Password is required",
+                })}
               />
-              <button type="button" onClick={() => setShowPassword(!showPassword)}>
+
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="text-gray-500"
+              >
                 {showPassword ? <FaEyeSlash /> : <FaEye />}
               </button>
             </div>
+
+            {errors.password && (
+              <p className="text-red-500 text-sm mt-1">
+                {errors.password.message}
+              </p>
+            )}
           </div>
 
+          {/* Button */}
           <button
+            type="submit"
             disabled={loading}
-            className="w-full bg-amber-500 text-white py-2 rounded flex justify-center gap-2"
+            className="w-full bg-amber-500 hover:bg-amber-600 text-white py-2 rounded-lg flex justify-center items-center gap-2 transition"
           >
+            {loading && (
+              <span className="loading loading-spinner loading-sm"></span>
+            )}
             <FaSignInAlt />
-            {loading ? "Logging..." : "Login"}
+            {loading ? "Logging in..." : "Login"}
           </button>
-
         </form>
 
-        <p className="text-center mt-4 text-sm">
-          No account?{" "}
-          <Link to="/register" className="text-amber-600">
+       
+
+        {/* Google Login */}
+        <GoogleSignIn />
+
+        {/* Footer */}
+        <p className="text-center text-sm text-gray-600 mt-6">
+          Don’t have an account?{" "}
+          <Link
+            to="/register"
+            className="text-amber-600 font-medium hover:underline"
+          >
             Register
           </Link>
         </p>

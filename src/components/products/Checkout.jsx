@@ -4,9 +4,14 @@ import {
   FaMoneyBillWave,
   FaShoppingBag,
 } from "react-icons/fa";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { AuthContext } from "../../Auth/AuthProvider";
+import { useToast } from "../../context/ToastProvider";
 
 const API = import.meta.env.VITE_API_URL;
 
@@ -20,6 +25,7 @@ const fetchCart = async () => {
 
 const Checkout = () => {
   const { user } = useContext(AuthContext);
+  const { addToast } = useToast();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -40,7 +46,6 @@ const Checkout = () => {
     queryKey: ["cart"],
     queryFn: fetchCart,
     enabled: !!user,
-    staleTime: 0,
   });
 
   const cart = data?.data || [];
@@ -70,7 +75,6 @@ const Checkout = () => {
   // ================= MUTATION =================
   const orderMutation = useMutation({
     mutationFn: async () => {
-      // 🔥 Backend already uses cart + user email
       return axios.post(
         `${API}/orders`,
         {
@@ -83,6 +87,8 @@ const Checkout = () => {
     onSuccess: async () => {
       setIsRedirecting(true);
 
+      addToast("🎉 Order placed successfully!", "success");
+
       await queryClient.invalidateQueries({ queryKey: ["cart"] });
 
       setForm({
@@ -94,14 +100,14 @@ const Checkout = () => {
         paymentMethod: "cod",
       });
 
-      // 🔥 better UX delay
       setTimeout(() => {
         navigate("/success");
-      }, 800);
+      }, 1000);
     },
 
     onError: () => {
       setError("Order failed. Please try again.");
+      addToast("Order failed ❌", "error");
     },
   });
 
@@ -128,33 +134,38 @@ const Checkout = () => {
     orderMutation.mutate();
   };
 
+  // ================= LOADING =================
   if (isLoading) {
     return (
-      <div className="text-center py-20 text-amber-600 font-semibold">
-        Loading checkout...
+      <div className="flex justify-center items-center py-20">
+        <span className="loading loading-spinner loading-lg text-amber-500"></span>
       </div>
     );
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-10 grid lg:grid-cols-3 gap-8">
+    <div className="max-w-7xl mx-auto px-4 md:px-6 py-8 grid lg:grid-cols-3 gap-6">
 
-      {/* FORM */}
-      <form onSubmit={handleSubmit} className="lg:col-span-2 space-y-6">
+      {/* ================= FORM ================= */}
+      <form
+        onSubmit={handleSubmit}
+        className="lg:col-span-2 space-y-6"
+      >
 
-        <div className="bg-white p-6 mt-10 rounded-2xl shadow border">
-          <h2 className="text-xl font-bold mb-4">
+        {/* SHIPPING */}
+        <div className="bg-white p-5 md:p-6 mt-10 rounded-2xl shadow border">
+          <h2 className="text-lg md:text-xl font-bold mb-4">
             🏠 Shipping Address
           </h2>
 
-          <div className="grid md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
             <input
               name="name"
               value={form.name}
               onChange={handleChange}
               placeholder="Full Name *"
-              className="input"
+              className="w-full border px-3 py-2 rounded-lg focus:ring-2 focus:ring-amber-400 outline-none"
             />
 
             <input
@@ -162,7 +173,7 @@ const Checkout = () => {
               value={form.phone}
               onChange={handleChange}
               placeholder="Phone *"
-              className="input"
+              className="w-full border px-3 py-2 rounded-lg focus:ring-2 focus:ring-amber-400 outline-none"
             />
 
             <input
@@ -170,7 +181,7 @@ const Checkout = () => {
               value={form.city}
               onChange={handleChange}
               placeholder="City"
-              className="input"
+              className="w-full border px-3 py-2 rounded-lg focus:ring-2 focus:ring-amber-400 outline-none"
             />
 
             <input
@@ -178,7 +189,7 @@ const Checkout = () => {
               value={form.zip}
               onChange={handleChange}
               placeholder="ZIP"
-              className="input"
+              className="w-full border px-3 py-2 rounded-lg focus:ring-2 focus:ring-amber-400 outline-none"
             />
 
             <textarea
@@ -186,19 +197,18 @@ const Checkout = () => {
               value={form.address}
               onChange={handleChange}
               placeholder="Address *"
-              className="input md:col-span-2"
+              className="w-full border px-3 py-2 rounded-lg focus:ring-2 focus:ring-amber-400 outline-none md:col-span-2"
             />
           </div>
         </div>
 
         {/* PAYMENT */}
-        <div className="bg-white p-6 rounded-2xl shadow border">
-
-          <h2 className="text-xl font-bold mb-4">
+        <div className="bg-white p-5 md:p-6 rounded-2xl shadow border">
+          <h2 className="text-lg md:text-xl font-bold mb-4">
             💳 Payment Method
           </h2>
 
-          <label className="flex items-center gap-3 p-3 border rounded-lg">
+          <label className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
             <input
               type="radio"
               name="paymentMethod"
@@ -211,29 +221,48 @@ const Checkout = () => {
         </div>
 
         {error && (
-          <p className="text-red-500">{error}</p>
+          <p className="text-red-500 text-sm">{error}</p>
         )}
       </form>
 
-      {/* SUMMARY */}
-      <div className="bg-white p-6 mt-10 rounded-2xl shadow border">
+      {/* ================= SUMMARY ================= */}
+      <div className="bg-white p-5 md:p-6 rounded-2xl mt-10 shadow border h-fit">
 
-        <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+        <h2 className="text-lg md:text-xl font-bold mb-4 flex items-center gap-2">
           <FaShoppingBag /> Order Summary
         </h2>
 
-        <p>Subtotal: ৳{subtotal.toFixed(2)}</p>
-        <p>Shipping: ৳{shipping}</p>
+        <div className="space-y-2 text-sm md:text-base text-gray-600">
+          <p className="flex justify-between">
+            <span>Subtotal</span>
+            <span>৳{subtotal.toFixed(2)}</span>
+          </p>
 
-        <h3 className="text-xl font-bold text-amber-600 mt-3">
-          Total: ৳{total.toFixed(2)}
-        </h3>
+          <p className="flex justify-between">
+            <span>Shipping</span>
+            <span>৳{shipping}</span>
+          </p>
+
+          <hr />
+
+          <p className="flex justify-between text-lg font-bold text-amber-600">
+            <span>Total</span>
+            <span>৳{total.toFixed(2)}</span>
+          </p>
+        </div>
 
         <button
           onClick={handleSubmit}
-          disabled={orderMutation.isPending || !cart.length || isRedirecting}
-          className="w-full mt-6 bg-amber-500 text-white py-3 rounded-xl disabled:opacity-60"
+          disabled={
+            orderMutation.isPending ||
+            !cart.length ||
+            isRedirecting
+          }
+          className="w-full mt-5 bg-amber-500 hover:bg-amber-600 text-white py-3 rounded-xl font-semibold disabled:opacity-60 flex justify-center items-center gap-2"
         >
+          {orderMutation.isPending && (
+            <span className="loading loading-spinner loading-sm"></span>
+          )}
           {orderMutation.isPending
             ? "Processing..."
             : isRedirecting
