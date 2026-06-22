@@ -39,7 +39,7 @@ const Carts = () => {
   // ================= DELETE ITEM =================
   const deleteItem = useMutation({
     mutationFn: (id) =>
-      axios.delete(`${API}/cart/${id}`, {
+      axios.delete(`${API}/carts/${id}`, {
         withCredentials: true,
       }),
 

@@ -22,7 +22,7 @@ const useAxiosSecure = () => {
 
         return config;
       },
-      (error) => Promise.reject(error)
+      (error) => Promise.reject(error),
     );
 
     // Response interceptor (handle errors)
@@ -35,7 +35,7 @@ const useAxiosSecure = () => {
           navigate("/login");
         }
         return Promise.reject(error);
-      }
+      },
     );
 
     // Cleanup (important!)
