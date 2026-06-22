@@ -25,12 +25,7 @@ const ProductCard = () => {
   };
 
   // ================= QUERY =================
-  const {
-    data,
-    isLoading,
-    isError,
-    isFetching,
-  } = useQuery({
+  const { data, isLoading, isError, isFetching } = useQuery({
     queryKey: ["products", currentPage],
     queryFn: fetchProducts,
     keepPreviousData: true,
@@ -73,10 +68,7 @@ const ProductCard = () => {
     return (
       <div className="max-w-7xl mx-auto px-4 py-10 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-5">
         {[...Array(8)].map((_, i) => (
-          <div
-            key={i}
-            className="h-56 bg-gray-200 animate-pulse rounded-xl"
-          />
+          <div key={i} className="h-56 bg-gray-200 animate-pulse rounded-xl" />
         ))}
       </div>
     );
@@ -93,7 +85,6 @@ const ProductCard = () => {
 
   return (
     <section className="max-w-7xl mx-auto px-4 py-10">
-
       {/* HEADER */}
       <div className="text-center mt-10 mb-10">
         <h2 className="text-2xl md:text-3xl font-bold">
@@ -106,7 +97,6 @@ const ProductCard = () => {
 
       {/* GRID */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 md:gap-6">
-
         {products.length > 0 ? (
           products.map((product) => {
             const price = Number(product.price) || 0;
@@ -120,14 +110,10 @@ const ProductCard = () => {
                 onClick={() => navigate(`/product/${product._id}`)}
                 className="group bg-white rounded-xl shadow-sm hover:shadow-lg transition duration-300 cursor-pointer overflow-hidden flex flex-col"
               >
-
                 {/* IMAGE */}
                 <div className="relative overflow-hidden">
                   <img
-                    src={
-                      product.image ||
-                      "https://via.placeholder.com/300"
-                    }
+                    src={product.image || "https://via.placeholder.com/300"}
                     alt={product.name}
                     className="h-36 sm:h-40 md:h-44 w-full object-cover transition-transform duration-300 group-hover:scale-105"
                   />
@@ -142,7 +128,6 @@ const ProductCard = () => {
 
                 {/* CONTENT */}
                 <div className="p-3 flex flex-col flex-1">
-
                   {/* NAME */}
                   <h3 className="text-sm md:text-base font-semibold line-clamp-1">
                     {product.name}
@@ -178,7 +163,6 @@ const ProductCard = () => {
                     <FaCartPlus />
                     Add
                   </button>
-
                 </div>
               </div>
             );
@@ -188,12 +172,10 @@ const ProductCard = () => {
             No products found
           </p>
         )}
-
       </div>
 
       {/* PAGINATION */}
       <div className="flex justify-center mt-10 gap-2 flex-wrap">
-
         <button
           disabled={currentPage === 1}
           onClick={() => setCurrentPage((prev) => prev - 1)}
@@ -223,16 +205,12 @@ const ProductCard = () => {
         >
           Next
         </button>
-
       </div>
 
       {/* FETCHING STATE */}
       {isFetching && (
-        <p className="text-center text-sm text-gray-400 mt-3">
-          Updating...
-        </p>
+        <p className="text-center text-sm text-gray-400 mt-3">Updating...</p>
       )}
-
     </section>
   );
 };
