@@ -1,9 +1,9 @@
 // ==============================
-// Cart.jsx (PART 1)
-// Imports + Hooks + React Query
+// Cart.jsx — PART 1
+// Setup + Data Fetch
 // ==============================
 
-import React, { useContext, useMemo } from "react";
+import React, { useContext } from "react";
 import axios from "axios";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
@@ -22,7 +22,6 @@ import { useToast } from "../../context/ToastProvider";
 const API = import.meta.env.VITE_API_URL;
 
 const Cart = () => {
-  // ================= CONTEXT =================
   const { user } = useContext(AuthContext);
   const { addToast } = useToast();
   const navigate = useNavigate();
@@ -31,14 +30,9 @@ const Cart = () => {
   const email = user?.email;
 
   // ================= GET CART =================
-  const {
-    data: cartResponse,
-    isLoading,
-    isError,
-  } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ["cart", email],
     enabled: !!email,
-
     queryFn: async () => {
       const res = await axios.get(`${API}/carts`, {
         withCredentials: true,
@@ -47,8 +41,8 @@ const Cart = () => {
     },
   });
 
-  const carts = cartResponse?.data || [];
-  const summary = cartResponse?.summary || {
+  const carts = data?.data || [];
+  const summary = data?.summary || {
     totalItems: 0,
     totalQuantity: 0,
     totalPrice: 0,
@@ -60,18 +54,13 @@ const Cart = () => {
       axios.delete(`${API}/carts/${id}`, {
         withCredentials: true,
       }),
-
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["cart", email] });
-      addToast("🗑️ Item removed", "success");
-    },
-
-    onError: (err) => {
-      addToast(err.response?.data?.message || "Remove failed", "error");
+      addToast("Item removed", "success");
     },
   });
 
-  // ================= UPDATE QUANTITY =================
+  // ================= UPDATE QTY =================
   const updateMutation = useMutation({
     mutationFn: ({ id, quantity }) =>
       axios.patch(
@@ -79,17 +68,11 @@ const Cart = () => {
         { quantity },
         { withCredentials: true },
       ),
-
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["cart", email] });
     },
-
-    onError: (err) => {
-      addToast(err.response?.data?.message || "Update failed", "error");
-    },
   });
 
-  // ================= HANDLERS =================
   const handleRemove = (id) => removeMutation.mutate(id);
 
   const handleIncrease = (item) =>
@@ -106,11 +89,11 @@ const Cart = () => {
     });
   };
   return (
-    <section className="max-w-6xl mx-auto p-4">
+    <section className="max-w-6xl mx-auto p-4 md:p-6">
       {/* ================= HEADER ================= */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between mb-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
         <div>
-          <h1 className="text-2xl font-bold">🛒 My Cart</h1>
+          <h1 className="text-2xl md:text-3xl font-bold">🛒 My Cart</h1>
           <p className="text-gray-500">Review your selected products</p>
         </div>
 
@@ -141,7 +124,7 @@ const Cart = () => {
         <p className="text-center text-red-500 py-10">Failed to load cart</p>
       )}
 
-      {/* ================= EMPTY CART ================= */}
+      {/* ================= EMPTY ================= */}
       {!isLoading && carts.length === 0 && (
         <div className="text-center p-10 bg-white shadow rounded">
           <h2 className="text-xl font-semibold">Cart is empty</h2>
@@ -153,9 +136,9 @@ const Cart = () => {
           </button>
         </div>
       )}
-
-      {/* ================= CART ITEMS ================= */}
+      {/* ================= CART GRID ================= */}
       <div className="grid lg:grid-cols-3 gap-6">
+        {/* ================= ITEMS ================= */}
         <div className="lg:col-span-2 space-y-4">
           {carts.map((item) => (
             <div
@@ -179,7 +162,7 @@ const Cart = () => {
                   Subtotal: ৳{item.subtotal}
                 </p>
 
-                {/* QUANTITY */}
+                {/* QTY */}
                 <div className="flex items-center gap-3 mt-3">
                   <button
                     onClick={() => handleDecrease(item)}
@@ -209,7 +192,8 @@ const Cart = () => {
             </div>
           ))}
         </div>
-        {/* ================= ORDER SUMMARY ================= */}
+
+        {/* ================= SUMMARY ================= */}
         <div className="bg-white p-6 rounded shadow h-fit">
           <h2 className="text-xl font-bold mb-4">Order Summary</h2>
 
@@ -237,13 +221,11 @@ const Cart = () => {
 
           <hr className="my-4" />
 
-          {/* GRAND TOTAL */}
           <div className="flex justify-between text-xl font-bold">
             <span>Total</span>
             <span>৳{summary.totalPrice.toFixed(2)}</span>
           </div>
 
-          {/* CHECKOUT */}
           <button
             onClick={() => navigate("/checkout")}
             className="w-full mt-5 bg-amber-500 text-white py-3 rounded"
