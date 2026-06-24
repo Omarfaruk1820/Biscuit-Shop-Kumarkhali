@@ -19,6 +19,7 @@ import AllOrder from "../pages/AllOrder";
 import Users from "../pages/Dashboard/Users";
 import OwnProduct from "../components/products/OwnProduct";
 import PrivateRoute from "./PrivateRoute";
+import FeaturedProdetails from "../components/home/FeaturedProdetails";
 
 const router = createBrowserRouter([
   {
@@ -36,21 +37,25 @@ const router = createBrowserRouter([
         path: "/products",
         element: <ProductCard />,
       },
+      {
+        path: "/cart",
+        element: (
+          <PrivateRoute>
+            <Cart />
+          </PrivateRoute>
+        ),
+      },
 
-      // ✅ product details
+      {
+        path: "/FeaturedProdetails/:id",
+        element: <FeaturedProdetails></FeaturedProdetails>,
+      },
+
       {
         path: "/product/:id",
         element: (
           <PrivateRoute>
             <ProductDetails />
-          </PrivateRoute>
-        ),
-      },
-      {
-        path: "/Cart",
-        element: (
-          <PrivateRoute>
-            <Cart />
           </PrivateRoute>
         ),
       },

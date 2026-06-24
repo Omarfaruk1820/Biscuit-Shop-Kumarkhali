@@ -1,146 +1,221 @@
-import React, { useContext } from "react";
+// ==============================
+// Cart.jsx (PART 1)
+// Imports + Hooks + React Query
+// ==============================
+
+import React, { useContext, useMemo } from "react";
 import axios from "axios";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { FaTrash, FaArrowRight } from "react-icons/fa";
 import { useNavigate } from "react-router-dom";
+
+import {
+  FaTrash,
+  FaPlus,
+  FaMinus,
+  FaArrowLeft,
+  FaShoppingBag,
+} from "react-icons/fa";
+
 import { AuthContext } from "../../Auth/AuthProvider";
 import { useToast } from "../../context/ToastProvider";
 
 const API = import.meta.env.VITE_API_URL;
 
-// ================= FETCH CART =================
-const fetchCart = async () => {
-  const res = await axios.get(`${API}/carts`, {
-    withCredentials: true,
-  });
-
-  return res.data;
-};
-
-const Carts = () => {
+const Cart = () => {
+  // ================= CONTEXT =================
   const { user } = useContext(AuthContext);
-
   const { addToast } = useToast();
-
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const navigate = useNavigate();
+  const email = user?.email;
 
   // ================= GET CART =================
-  const { data, isLoading } = useQuery({
-    queryKey: ["cart", user?.email],
-    queryFn: fetchCart,
-    enabled: !!user,
+  const {
+    data: cartResponse,
+    isLoading,
+    isError,
+  } = useQuery({
+    queryKey: ["cart", email],
+    enabled: !!email,
+
+    queryFn: async () => {
+      const res = await axios.get(`${API}/carts`, {
+        withCredentials: true,
+      });
+      return res.data;
+    },
   });
 
-  const cart = data?.data || [];
-
-  const summary = data?.summary || {
+  const carts = cartResponse?.data || [];
+  const summary = cartResponse?.summary || {
     totalItems: 0,
     totalQuantity: 0,
     totalPrice: 0,
   };
 
-  // ================= DELETE =================
-  const deleteItem = useMutation({
+  // ================= REMOVE ITEM =================
+  const removeMutation = useMutation({
     mutationFn: (id) =>
       axios.delete(`${API}/carts/${id}`, {
         withCredentials: true,
       }),
 
     onSuccess: () => {
-      addToast("Item removed 🗑️", "success");
-
-      queryClient.invalidateQueries({
-        queryKey: ["cart"],
-      });
+      queryClient.invalidateQueries({ queryKey: ["cart", email] });
+      addToast("🗑️ Item removed", "success");
     },
 
-    onError: () => {
-      addToast("Failed to remove item ❌", "error");
+    onError: (err) => {
+      addToast(err.response?.data?.message || "Remove failed", "error");
     },
   });
 
-  const getFinalPrice = (item) => {
-    const price = Number(item.price);
+  // ================= UPDATE QUANTITY =================
+  const updateMutation = useMutation({
+    mutationFn: ({ id, quantity }) =>
+      axios.patch(
+        `${API}/carts/${id}`,
+        { quantity },
+        { withCredentials: true },
+      ),
 
-    const discount = Number(item.discount || 0);
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["cart", email] });
+    },
 
-    return price - (price * discount) / 100;
+    onError: (err) => {
+      addToast(err.response?.data?.message || "Update failed", "error");
+    },
+  });
+
+  // ================= HANDLERS =================
+  const handleRemove = (id) => removeMutation.mutate(id);
+
+  const handleIncrease = (item) =>
+    updateMutation.mutate({
+      id: item._id,
+      quantity: item.quantity + 1,
+    });
+
+  const handleDecrease = (item) => {
+    if (item.quantity <= 1) return;
+    updateMutation.mutate({
+      id: item._id,
+      quantity: item.quantity - 1,
+    });
   };
-
-  // ================= NOT LOGIN =================
-  if (!user) {
-    return <div className="text-center py-20">Please login first 🔐</div>;
-  }
-
-  // ================= LOADING =================
-  if (isLoading) {
-    return <div className="text-center py-20">Loading...</div>;
-  }
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
-      {/* HEADER */}
-      <h2 className="text-3xl font-bold mb-8 text-center">🛒 My Cart</h2>
-
-      <div className="grid lg:grid-cols-3 gap-6">
-        {/* LEFT SIDE */}
-        <div className="lg:col-span-2">
-          {cart.length === 0 ? (
-            <div className="bg-white rounded-xl shadow p-10 text-center text-gray-500">
-              Cart is empty 🛒
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {cart.map((item) => {
-                const price = getFinalPrice(item);
-
-                return (
-                  <div
-                    key={item._id}
-                    className="bg-white shadow rounded-xl p-4 flex flex-col sm:flex-row gap-4"
-                  >
-                    <img
-                      src={item.image}
-                      alt={item.name}
-                      className="w-full sm:w-28 h-28 object-cover rounded"
-                    />
-
-                    <div className="flex-1">
-                      <h3 className="font-bold text-lg">{item.name}</h3>
-
-                      <p className="text-gray-500 mt-1">
-                        Price: ৳{price.toFixed(2)}
-                      </p>
-
-                      <p className="mt-1">Quantity: {item.quantity}</p>
-
-                      <p className="font-bold text-amber-600 mt-2">
-                        Total: ৳{(price * item.quantity).toFixed(2)}
-                      </p>
-                    </div>
-
-                    <button
-                      onClick={() => deleteItem.mutate(item._id)}
-                      className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 h-fit"
-                    >
-                      <FaTrash />
-                      Remove
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+    <section className="max-w-6xl mx-auto p-4">
+      {/* ================= HEADER ================= */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold">🛒 My Cart</h1>
+          <p className="text-gray-500">Review your selected products</p>
         </div>
 
-        {/* RIGHT SIDE */}
-        <div className="bg-white rounded-xl shadow p-6 h-fit">
-          <h3 className="text-2xl font-bold mb-5">Order Summary</h3>
+        <div className="flex gap-3 mt-3 md:mt-0">
+          <button
+            onClick={() => navigate(-1)}
+            className="px-4 py-2 border rounded flex items-center gap-2"
+          >
+            <FaArrowLeft />
+            Back
+          </button>
 
-          <div className="space-y-3">
+          <button
+            onClick={() => navigate("/products")}
+            className="px-4 py-2 bg-amber-500 text-white rounded flex items-center gap-2"
+          >
+            <FaShoppingBag />
+            Shop More
+          </button>
+        </div>
+      </div>
+
+      {/* ================= LOADING ================= */}
+      {isLoading && <p className="text-center py-10">Loading cart...</p>}
+
+      {/* ================= ERROR ================= */}
+      {isError && (
+        <p className="text-center text-red-500 py-10">Failed to load cart</p>
+      )}
+
+      {/* ================= EMPTY CART ================= */}
+      {!isLoading && carts.length === 0 && (
+        <div className="text-center p-10 bg-white shadow rounded">
+          <h2 className="text-xl font-semibold">Cart is empty</h2>
+          <button
+            onClick={() => navigate("/products")}
+            className="mt-4 bg-amber-500 text-white px-6 py-2 rounded"
+          >
+            Shop Now
+          </button>
+        </div>
+      )}
+
+      {/* ================= CART ITEMS ================= */}
+      <div className="grid lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 space-y-4">
+          {carts.map((item) => (
+            <div
+              key={item._id}
+              className="flex gap-4 bg-white p-4 rounded shadow"
+            >
+              {/* IMAGE */}
+              <img
+                src={item.image}
+                alt={item.name}
+                className="w-24 h-24 object-contain"
+              />
+
+              {/* INFO */}
+              <div className="flex-1">
+                <h3 className="font-semibold">{item.name}</h3>
+
+                <p className="text-gray-600">Price: ৳{item.finalPrice}</p>
+
+                <p className="text-green-600 font-bold">
+                  Subtotal: ৳{item.subtotal}
+                </p>
+
+                {/* QUANTITY */}
+                <div className="flex items-center gap-3 mt-3">
+                  <button
+                    onClick={() => handleDecrease(item)}
+                    className="p-2 border rounded"
+                  >
+                    <FaMinus />
+                  </button>
+
+                  <span>{item.quantity}</span>
+
+                  <button
+                    onClick={() => handleIncrease(item)}
+                    className="p-2 border rounded"
+                  >
+                    <FaPlus />
+                  </button>
+                </div>
+              </div>
+
+              {/* DELETE */}
+              <button
+                onClick={() => handleRemove(item._id)}
+                className="text-red-500"
+              >
+                <FaTrash />
+              </button>
+            </div>
+          ))}
+        </div>
+        {/* ================= ORDER SUMMARY ================= */}
+        <div className="bg-white p-6 rounded shadow h-fit">
+          <h2 className="text-xl font-bold mb-4">Order Summary</h2>
+
+          <div className="space-y-2 text-gray-700">
             <div className="flex justify-between">
-              <span>Total Products</span>
+              <span>Total Items</span>
               <span>{summary.totalItems}</span>
             </div>
 
@@ -149,26 +224,36 @@ const Carts = () => {
               <span>{summary.totalQuantity}</span>
             </div>
 
-            <hr />
-
-            <div className="flex justify-between text-xl font-bold text-amber-600">
+            <div className="flex justify-between">
               <span>Total Price</span>
               <span>৳{summary.totalPrice.toFixed(2)}</span>
             </div>
+
+            <div className="flex justify-between text-green-600">
+              <span>Delivery</span>
+              <span>Free</span>
+            </div>
           </div>
 
+          <hr className="my-4" />
+
+          {/* GRAND TOTAL */}
+          <div className="flex justify-between text-xl font-bold">
+            <span>Total</span>
+            <span>৳{summary.totalPrice.toFixed(2)}</span>
+          </div>
+
+          {/* CHECKOUT */}
           <button
             onClick={() => navigate("/checkout")}
-            disabled={!cart.length}
-            className="w-full mt-6 bg-amber-500 hover:bg-amber-600 text-white py-3 rounded-xl font-semibold flex justify-center items-center gap-2 disabled:opacity-50"
+            className="w-full mt-5 bg-amber-500 text-white py-3 rounded"
           >
-            Proceed To Checkout
-            <FaArrowRight />
+            Proceed to Checkout
           </button>
         </div>
       </div>
-    </div>
+    </section>
   );
 };
 
-export default Carts;
+export default Cart;

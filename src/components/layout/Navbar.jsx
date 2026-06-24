@@ -3,263 +3,439 @@ import { Link, NavLink, useNavigate } from "react-router-dom";
 import {
   FaBars,
   FaTimes,
-  FaShoppingCart,
-  FaSignOutAlt,
   FaHome,
-  FaBox,
-  FaPlus,
+  FaBoxOpen,
   FaInfoCircle,
   FaPhone,
+  FaShoppingCart,
   FaClipboardList,
   FaHistory,
   FaUser,
+  FaSignOutAlt,
+  FaPlusCircle,
+  FaUsers,
+  FaChartLine,
+  FaTachometerAlt,
 } from "react-icons/fa";
-import { AuthContext } from "../../Auth/AuthProvider";
-import { useToast } from "../../context/ToastProvider";
+
 import axios from "axios";
 import { useQuery } from "@tanstack/react-query";
+
+import { useToast } from "../../context/ToastProvider";
 import MarqueeBar from "../home/MarqueeBar";
+import { AuthContext } from "../../Auth/AuthProvider";
 
 const Navbar = () => {
-  const { user, signOutUser } = useContext(AuthContext);
-  const { addToast } = useToast();
+  // ================= AUTH =================
+
+  const { user, role, loading, signOutUser } = useContext(AuthContext);
+
   const navigate = useNavigate();
+
+  const { addToast } = useToast();
+
+  // ================= STATE =================
 
   const [isOpen, setIsOpen] = useState(false);
 
   const email = user?.email;
 
-  // ================= CART COUNT =================
-  const { data: cart = [] } = useQuery({
+  // ================= CART QUERY =================
+
+  const { data: carts = [] } = useQuery({
     queryKey: ["cart", email],
     enabled: !!email,
+
     queryFn: async () => {
       const res = await axios.get(
-        `http://localhost:5173/cart?email=${email}`
+        `${import.meta.env.VITE_API_URL}/carts?email=${email}`,
+        {
+          withCredentials: true,
+        },
       );
-      return res.data?.data || [];
+
+      return Array.isArray(res.data?.data) ? res.data.data : [];
     },
   });
 
-  const cartCount = cart.reduce(
-    (sum, item) => sum + (item.quantity || 1),
-    0
-  );
+  // ================= CART COUNT =================
+  const cartCount = Array.isArray(carts)
+    ? carts.reduce((sum, item) => sum + (item.quantity || 1), 0)
+    : 0;
 
-  const toggleMenu = () => setIsOpen(!isOpen);
-  const closeMenu = () => setIsOpen(false);
+  // ================= MOBILE MENU =================
+
+  const toggleMenu = () => {
+    setIsOpen(!isOpen);
+  };
+
+  const closeMenu = () => {
+    setIsOpen(false);
+  };
 
   // ================= LOGOUT =================
+
   const handleLogout = async () => {
     try {
       await signOutUser();
+
       addToast("Logout successful 👋", "success");
+
       navigate("/login");
+
       closeMenu();
     } catch (error) {
       addToast("Logout failed ❌", "error");
     }
   };
 
-  // ================= ACTIVE STYLE =================
+  // ================= ACTIVE LINK STYLE =================
+
   const navLinkClass = ({ isActive }) =>
-    `flex items-center gap-2 px-1 py-2 text-sm font-semibold transition ${
+    `flex items-center gap-2 px-2 py-2 font-medium transition duration-300 ${
       isActive
-        ? "text-amber-600 border-b-2 border-amber-600"
+        ? "text-amber-600 border-b-2 border-amber-500"
         : "text-gray-700 hover:text-amber-500"
     }`;
 
-  // ================= NAV LINKS =================
-  const navLinks = (
+  // ================= NAVBAR SKELETON =================
+
+  if (loading) {
+    return (
+      <nav className="sticky top-0 z-50 bg-white shadow">
+        <div className="max-w-7xl mx-auto px-4">
+          <div className="h-16 flex items-center justify-between">
+            {/* Logo Skeleton */}
+            <div className="w-40 h-8 rounded bg-gray-200 animate-pulse"></div>
+
+            {/* Desktop Menu Skeleton */}
+            <div className="hidden lg:flex items-center gap-4">
+              <div className="w-20 h-8 rounded bg-gray-200 animate-pulse"></div>
+
+              <div className="w-20 h-8 rounded bg-gray-200 animate-pulse"></div>
+
+              <div className="w-20 h-8 rounded bg-gray-200 animate-pulse"></div>
+
+              <div className="w-20 h-8 rounded bg-gray-200 animate-pulse"></div>
+            </div>
+
+            {/* Right Side Skeleton */}
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 rounded-full bg-gray-200 animate-pulse"></div>
+
+              <div className="w-24 h-10 rounded bg-gray-200 animate-pulse"></div>
+            </div>
+          </div>
+        </div>
+      </nav>
+    );
+  }
+  // ================= PUBLIC ROUTES =================
+
+  const publicLinks = (
     <>
       <NavLink to="/" onClick={closeMenu} className={navLinkClass}>
-        <FaHome /> Home
+        <FaHome />
+        Home
       </NavLink>
 
       <NavLink to="/products" onClick={closeMenu} className={navLinkClass}>
-        <FaBox /> Shop
+        <FaBoxOpen />
+        Shop
       </NavLink>
 
-      <NavLink to="/add-biscuit" onClick={closeMenu} className={navLinkClass}>
-        <FaPlus /> Add Biscuit
-      </NavLink>
-
-      {/* <NavLink to="/about" onClick={closeMenu} className={navLinkClass}>
-        <FaInfoCircle /> About
+      <NavLink to="/about" onClick={closeMenu} className={navLinkClass}>
+        <FaInfoCircle />
+        About
       </NavLink>
 
       <NavLink to="/contact" onClick={closeMenu} className={navLinkClass}>
-        <FaPhone /> Contact
-      </NavLink> */}
-
-      <NavLink to="/allOrder" onClick={closeMenu} className={navLinkClass}>
-        <FaClipboardList /> Orders
-      </NavLink>
-
-      <NavLink to="/orderHistory" onClick={closeMenu} className={navLinkClass}>
-        <FaHistory /> History
-      </NavLink>
-
-      <NavLink to="/users" onClick={closeMenu} className={navLinkClass}>
-        <FaUser /> user
-      </NavLink>
-      <NavLink to="/own-product" onClick={closeMenu} className={navLinkClass}>
-        <FaUser /> Own Product
+        <FaPhone />
+        Contact
       </NavLink>
     </>
   );
 
+  // ================= USER ROUTES =================
+
+  const userLinks = (
+    <>
+      <NavLink to="/cart" onClick={closeMenu} className={navLinkClass}>
+        <FaShoppingCart />
+        Cart
+      </NavLink>
+
+      <NavLink to="/my-orders" onClick={closeMenu} className={navLinkClass}>
+        <FaClipboardList />
+        My Orders
+      </NavLink>
+
+      <NavLink to="/order-history" onClick={closeMenu} className={navLinkClass}>
+        <FaHistory />
+        Order History
+      </NavLink>
+
+      <NavLink to="/profile" onClick={closeMenu} className={navLinkClass}>
+        <FaUser />
+        Profile
+      </NavLink>
+    </>
+  );
+
+  // ================= ADMIN ROUTES =================
+
+  const adminLinks = (
+    <>
+      <NavLink to="/dashboard" onClick={closeMenu} className={navLinkClass}>
+        <FaTachometerAlt />
+        Dashboard
+      </NavLink>
+
+      <NavLink
+        to="/dashboard/add-product"
+        onClick={closeMenu}
+        className={navLinkClass}
+      >
+        <FaPlusCircle />
+        Add Product
+      </NavLink>
+
+      <NavLink
+        to="/dashboard/manage-products"
+        onClick={closeMenu}
+        className={navLinkClass}
+      >
+        <FaBoxOpen />
+        Manage Products
+      </NavLink>
+
+      <NavLink
+        to="/dashboard/manage-orders"
+        onClick={closeMenu}
+        className={navLinkClass}
+      >
+        <FaClipboardList />
+        Manage Orders
+      </NavLink>
+
+      <NavLink
+        to="/dashboard/manage-users"
+        onClick={closeMenu}
+        className={navLinkClass}
+      >
+        <FaUsers />
+        Manage Users
+      </NavLink>
+
+      <NavLink
+        to="/dashboard/sales-analytics"
+        onClick={closeMenu}
+        className={navLinkClass}
+      >
+        <FaChartLine />
+        Sales Analytics
+      </NavLink>
+    </>
+  );
+
+  // ================= ROLE BASED MENU =================
+
+  const roleBasedLinks = (
+    <>
+      {/* Public Routes (Everyone) */}
+      {publicLinks}
+
+      {/* User Routes */}
+      {user && role === "user" && userLinks}
+
+      {/* Admin Routes */}
+      {user && role === "admin" && adminLinks}
+    </>
+  );
+  // ================= RETURN =================
+
   return (
-    <nav className="bg-white shadow-md fixed w-full z-50">
-      <div className="max-w-7xl mx-auto px-3">
-        <MarqueeBar></MarqueeBar>
-        <div className="flex justify-between items-center h-16">
+    <>
+      {/* TOP MARQUEE */}
+      <MarqueeBar />
 
-          {/* LOGO */}
-          <Link to="/" className="flex items-center gap-2">
-            <img
-              src="https://cdn-icons-png.flaticon.com/512/1046/1046784.png"
-              className="w-10 h-10"
-              alt="logo"
-            />
-            <span className="text-xl font-bold text-amber-600">
+      <nav className="sticky top-0 z-50 bg-white shadow-md border-b">
+        <div className="max-w-7xl mx-auto px-4">
+          <div className="h-16 flex items-center justify-between">
+            {/* LOGO */}
+            <Link to="/" className="text-2xl font-bold text-amber-600">
               Biscuit Shop
-            </span>
-          </Link>
+            </Link>
 
-          {/* DESKTOP MENU */}
-          <div className="hidden md:flex items-center gap-2">
-            {navLinks}
+            {/* DESKTOP MENU */}
+            <div className="hidden lg:flex items-center gap-5">
+              {roleBasedLinks}
+            </div>
 
-            {/* CART */}
-            <NavLink to="/cart" className="relative">
-              <FaShoppingCart className="text-xl text-gray-700" />
-              {cartCount > 0 && (
-                <span className="absolute -top-2 -right-2 bg-amber-500 text-white text-xs  rounded-full">
-                  {cartCount}
-                </span>
+            {/* RIGHT SIDE */}
+            <div className="hidden lg:flex items-center gap-5">
+              {/* CART */}
+              {user && (
+                <Link to="/cart" className="relative">
+                  <FaShoppingCart className="text-2xl text-gray-700 hover:text-amber-500 duration-300" />
+
+                  {cartCount > 0 && (
+                    <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs min-w-[20px] h-5 rounded-full flex items-center justify-center px-1">
+                      {cartCount}
+                    </span>
+                  )}
+                </Link>
               )}
-            </NavLink>
-          </div>
 
-          {/* RIGHT SIDE */}
-          <div className="hidden md:flex items-center gap-4">
+              {/* USER */}
+              {user ? (
+                <div className="dropdown dropdown-end">
+                  <div
+                    tabIndex={0}
+                    role="button"
+                    className="flex items-center gap-3 cursor-pointer"
+                  >
+                    <img
+                      src={
+                        user?.photoURL || "https://i.ibb.co/4pDNDk1/avatar.png"
+                      }
+                      alt="user"
+                      className="w-10 h-10 rounded-full border-2 border-amber-500"
+                    />
 
-            {user ? (
-              <div className="flex items-center gap-3">
+                    <div className="hidden xl:block">
+                      <h3 className="font-semibold">
+                        {user?.displayName || "User"}
+                      </h3>
 
-                <div className="flex items-center gap-2">
-                  <img
-                    src={
-                      user.photoURL ||
-                      "https://i.ibb.co/4pDNDk1/avatar.png"
-                    }
-                    className="w-9 h-9 ml-2 rounded-full border"
-                    alt="user"
-                  />
-
-                  <div className="hidden lg:block">
-                    <p className="text-sm font-semibold">
-                      {user.displayName || "User"}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {user.email}
-                    </p>
+                      <p className="text-xs text-gray-500">{user?.email}</p>
+                    </div>
                   </div>
+
+                  {/* DROPDOWN */}
+                  <ul
+                    tabIndex={0}
+                    className="dropdown-content menu bg-base-100 rounded-box z-50 w-64 p-3 shadow"
+                  >
+                    <li className="mb-2">
+                      <div className="flex flex-col">
+                        <span className="font-semibold">
+                          {user?.displayName}
+                        </span>
+
+                        <span className="text-xs text-gray-500">
+                          {user?.email}
+                        </span>
+                      </div>
+                    </li>
+
+                    <li>
+                      <Link to="/profile">
+                        <FaUser />
+                        Profile
+                      </Link>
+                    </li>
+
+                    <li>
+                      <button onClick={handleLogout} className="text-red-500">
+                        <FaSignOutAlt />
+                        Logout
+                      </button>
+                    </li>
+                  </ul>
                 </div>
+              ) : (
+                <>
+                  {/* LOGIN */}
+                  <Link to="/login">
+                    <button className="px-5 py-2 border border-amber-500 rounded-lg text-amber-600 hover:bg-amber-500 hover:text-white duration-300">
+                      Login
+                    </button>
+                  </Link>
 
-                <button
-                  onClick={handleLogout}
-                  className="flex items-center gap-2 px-3 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
-                >
-                  <FaSignOutAlt /> Logout
-                </button>
-              </div>
-            ) : (
-              <>
-                <Link to="/login">
-                  <button className="px-4 py-2 border border-amber-500 text-amber-600 rounded-lg hover:bg-amber-500 hover:text-white">
-                    Login
-                  </button>
-                </Link>
+                  {/* REGISTER */}
+                  <Link to="/register">
+                    <button className="px-5 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 duration-300">
+                      Register
+                    </button>
+                  </Link>
+                </>
+              )}
+            </div>
 
-                <Link to="/register">
-                  <button className="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600">
-                    Register
-                  </button>
-                </Link>
-              </>
-            )}
-          </div>
-
-          {/* MOBILE BUTTON */}
-          <div className="md:hidden flex items-center gap-3">
-            <button onClick={toggleMenu} className="text-xl">
+            {/* MOBILE BUTTON */}
+            <button onClick={toggleMenu} className="lg:hidden text-2xl">
               {isOpen ? <FaTimes /> : <FaBars />}
             </button>
           </div>
         </div>
-      </div>
 
-      {/* MOBILE MENU */}
-      <div
-        className={`md:hidden bg-white px-4 pb-4 ${
-          isOpen ? "block" : "hidden"
-        }`}
-      >
-        {navLinks}
+        {/* MOBILE DRAWER */}
+        <div
+          className={`lg:hidden bg-white border-t shadow-md transition-all duration-300 ${
+            isOpen ? "block" : "hidden"
+          }`}
+        >
+          <div className="px-5 py-4 flex flex-col gap-3">
+            {/* PROFILE */}
+            {user && (
+              <div className="flex items-center gap-3 border-b pb-4">
+                <img
+                  src={user?.photoURL || "https://i.ibb.co/4pDNDk1/avatar.png"}
+                  className="w-12 h-12 rounded-full border"
+                  alt=""
+                />
 
-        {/* MOBILE CART */}
-        <NavLink to="/cart" onClick={closeMenu} className={navLinkClass}>
-          <FaShoppingCart /> Cart ({cartCount})
-        </NavLink>
+                <div>
+                  <h3 className="font-semibold">{user?.displayName}</h3>
 
-        {/* USER MOBILE */}
-        {user ? (
-          <div className="mt-4 border-t pt-4">
-            <div className="flex items-center gap-3 mb-3">
-              <img
-                src={
-                  user.photoURL ||
-                  "https://i.ibb.co/4pDNDk1/avatar.png"
-                }
-                className="w-10 h-10 rounded-full"
-                alt="user"
-              />
-              <div>
-                <p className="font-semibold">
-                  {user.displayName || "User"}
-                </p>
-                <p className="text-xs text-gray-500">
-                  {user.email}
-                </p>
+                  <p className="text-xs text-gray-500">{user?.email}</p>
+                </div>
               </div>
-            </div>
+            )}
 
-            <button
-              onClick={handleLogout}
-              className="w-full bg-red-500 text-white py-2 rounded"
-            >
-              Logout
-            </button>
-          </div>
-        ) : (
-          <div className="mt-4 flex flex-col gap-2">
-            <Link to="/login" onClick={closeMenu}>
-              <button className="w-full border border-amber-500 py-2 rounded">
-                Login
-              </button>
-            </Link>
+            {/* ROUTES */}
+            {roleBasedLinks}
 
-            <Link to="/register" onClick={closeMenu}>
-              <button className="w-full bg-amber-500 text-white py-2 rounded">
-                Register
+            {/* CART */}
+            {user && (
+              <NavLink to="/cart" className={navLinkClass} onClick={closeMenu}>
+                <FaShoppingCart />
+                Cart ({cartCount})
+              </NavLink>
+            )}
+
+            {/* LOGIN REGISTER */}
+            {!user && (
+              <div className="flex flex-col gap-3 mt-3">
+                <Link to="/login" onClick={closeMenu}>
+                  <button className="w-full border border-amber-500 py-2 rounded-lg">
+                    Login
+                  </button>
+                </Link>
+
+                <Link to="/register" onClick={closeMenu}>
+                  <button className="w-full bg-amber-500 text-white py-2 rounded-lg">
+                    Register
+                  </button>
+                </Link>
+              </div>
+            )}
+
+            {/* LOGOUT */}
+            {user && (
+              <button
+                onClick={handleLogout}
+                className="mt-3 bg-red-500 text-white py-2 rounded-lg flex items-center justify-center gap-2"
+              >
+                <FaSignOutAlt />
+                Logout
               </button>
-            </Link>
+            )}
           </div>
-        )}
-      </div>
-    </nav>
+        </div>
+      </nav>
+    </>
   );
 };
 
