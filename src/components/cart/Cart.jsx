@@ -1,11 +1,6 @@
-// ==============================
-// Cart.jsx (PART 1)
-// ==============================
-
-import React, { useContext, useMemo } from "react";
+import React, { useContext } from "react";
 import axios from "axios";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
 
 import {
   FaTrash,
@@ -13,7 +8,12 @@ import {
   FaMinus,
   FaArrowLeft,
   FaShoppingBag,
+  FaShieldAlt,
+  FaTruck,
+  FaCreditCard,
 } from "react-icons/fa";
+
+import { useNavigate } from "react-router-dom";
 
 import { AuthContext } from "../../Auth/AuthProvider";
 import { useToast } from "../../context/ToastProvider";
@@ -23,38 +23,46 @@ const API = import.meta.env.VITE_API_URL;
 const Cart = () => {
   const { user, loading } = useContext(AuthContext);
   const { addToast } = useToast();
+
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   const email = user?.email;
 
-  // ================= GET CART =================
-  const { data, isLoading, isError, isFetching } = useQuery({
+  // ==========================
+  // FETCH CART
+  // ==========================
+
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ["cart", email],
+
     enabled: !!email && !loading,
 
-    staleTime: 1000 * 60 * 2,
-    keepPreviousData: true,
+    staleTime: 1000 * 60 * 5,
+
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
 
     queryFn: async () => {
       const res = await axios.get(`${API}/carts`, {
         withCredentials: true,
       });
+
       return res.data;
     },
   });
 
   const carts = data?.data || [];
+
   const summary = data?.summary || {
     totalItems: 0,
     totalQuantity: 0,
     totalPrice: 0,
   };
+  // ==========================
+  // REMOVE ITEM
+  // ==========================
 
-  const showLoading = loading || isLoading;
-  const showEmpty =
-    !showLoading && !isFetching && carts.length === 0 && !isError;
-  // ================= REMOVE ITEM =================
   const removeMutation = useMutation({
     mutationFn: (id) =>
       axios.delete(`${API}/carts/${id}`, {
@@ -62,61 +70,134 @@ const Cart = () => {
       }),
 
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["cart", email] });
-      addToast("🗑️ Item removed", "success");
+      queryClient.invalidateQueries({
+        queryKey: ["cart", email],
+      });
+
+      addToast("Item removed from cart", "success");
     },
   });
 
-  // ================= UPDATE QTY =================
+  // ==========================
+  // UPDATE QTY
+  // ==========================
+
   const updateMutation = useMutation({
     mutationFn: ({ id, quantity }) =>
       axios.patch(
         `${API}/carts/${id}`,
         { quantity },
-        { withCredentials: true },
+        {
+          withCredentials: true,
+        },
       ),
 
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["cart", email] });
+      queryClient.invalidateQueries({
+        queryKey: ["cart", email],
+      });
     },
   });
 
-  const handleRemove = (id) => removeMutation.mutate(id);
+  const handleRemove = (id) => {
+    removeMutation.mutate(id);
+  };
 
-  const handleIncrease = (item) =>
+  const handleIncrease = (item) => {
     updateMutation.mutate({
       id: item._id,
       quantity: item.quantity + 1,
     });
+  };
 
   const handleDecrease = (item) => {
     if (item.quantity <= 1) return;
+
     updateMutation.mutate({
       id: item._id,
       quantity: item.quantity - 1,
     });
   };
+
+  // ==========================
+  // LOADING
+  // ==========================
+
+  if (loading || isLoading) {
+    return (
+      <section className="max-w-7xl mx-auto px-4 py-10">
+        <div className="space-y-4">
+          {[...Array(4)].map((_, i) => (
+            <div
+              key={i}
+              className="h-32 rounded-xl bg-base-200 animate-pulse"
+            />
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  // ==========================
+  // ERROR
+  // ==========================
+
+  if (isError) {
+    return (
+      <div className="text-center py-20">
+        <h2 className="text-xl text-red-500">
+          {error?.message || "Failed to load cart"}
+        </h2>
+      </div>
+    );
+  }
+
+  // ==========================
+  // EMPTY CART
+  // ==========================
+
+  if (!carts.length) {
+    return (
+      <section className="max-w-5xl mx-auto px-4 py-20">
+        <div className="bg-white rounded-3xl shadow-xl p-10 text-center">
+          <div className="text-7xl mb-5">🛒</div>
+
+          <h2 className="text-3xl font-bold">Your Cart is Empty</h2>
+
+          <p className="mt-3 text-gray-500">
+            Looks like you haven’t added anything yet.
+          </p>
+
+          <button
+            onClick={() => navigate("/products")}
+            className="mt-6 btn btn-warning text-white"
+          >
+            Continue Shopping
+          </button>
+        </div>
+      </section>
+    );
+  }
   return (
-    <section className="max-w-6xl mx-auto p-4">
-      {/* ================= HEADER ================= */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between mb-6">
+    <section className="max-w-7xl mx-auto px-4 py-8">
+      {/* HEADER */}
+
+      <div className="flex flex-col lg:flex-row justify-between gap-4 mb-8">
         <div>
-          <h1 className="text-2xl font-bold">🛒 My Cart</h1>
-          <p className="text-gray-500">Review your selected products</p>
+          <h1 className="text-4xl font-bold">Shopping Cart</h1>
+
+          <p className="text-gray-500 mt-2">{summary.totalItems} Items</p>
         </div>
 
-        <div className="flex gap-3 mt-3 md:mt-0">
-          <button
-            onClick={() => navigate(-1)}
-            className="px-4 py-2 border rounded flex items-center gap-2"
-          >
+        <div className="flex gap-3">
+          <button onClick={() => navigate(-1)} className="btn btn-outline">
             <FaArrowLeft />
             Back
           </button>
 
           <button
             onClick={() => navigate("/products")}
-            className="px-4 py-2 bg-amber-500 text-white rounded flex items-center gap-2"
+            className="btn btn-warning text-white"
           >
             <FaShoppingBag />
             Shop More
@@ -124,89 +205,71 @@ const Cart = () => {
         </div>
       </div>
 
-      {/* ================= LOADING ================= */}
-      {showLoading && <p className="text-center py-10">Loading cart...</p>}
+      <div className="grid lg:grid-cols-3 gap-8">
+        {/* LEFT SIDE */}
 
-      {/* ================= EMPTY ================= */}
-      {showEmpty && (
-        <div className="text-center p-10 bg-white shadow rounded">
-          <h2 className="text-xl font-semibold">Cart is empty</h2>
-          <button
-            onClick={() => navigate("/products")}
-            className="mt-4 bg-amber-500 text-white px-6 py-2 rounded"
-          >
-            Shop Now
-          </button>
-        </div>
-      )}
-
-      {/* ================= CART GRID ================= */}
-      {!showLoading && carts.length > 0 && (
-        <div className="grid lg:grid-cols-3 gap-6">
-          {/* ITEMS */}
-          <div className="lg:col-span-2 space-y-4">
-            {carts.map((item) => (
-              <div
-                key={item._id}
-                className="flex gap-4 bg-white p-4 rounded shadow"
-              >
-                {/* IMAGE */}
+        <div className="lg:col-span-2 space-y-4">
+          {carts.map((item) => (
+            <div
+              key={item._id}
+              className="bg-white rounded-2xl shadow-sm border p-4 hover:shadow-md transition"
+            >
+              <div className="flex flex-col md:flex-row gap-5">
                 <img
-                  src={item.image || "https://via.placeholder.com/300"}
-                  alt={item.name || "Product"}
-                  className="w-24 h-24 object-contain"
+                  loading="lazy"
+                  src={item.image}
+                  alt={item.name}
+                  className="w-32 h-32 object-contain mx-auto md:mx-0"
                 />
 
-                {/* INFO */}
                 <div className="flex-1">
-                  <h3 className="font-semibold">
-                    {item.name || "Unknown Product"}
-                  </h3>
+                  <h3 className="font-bold text-lg">{item.name}</h3>
 
-                  <p className="text-gray-600">
-                    Price: ৳{Number(item.finalPrice || 0).toFixed(2)}
+                  <p className="text-gray-500 mt-2">
+                    Unit Price: ৳{item.finalPrice}
                   </p>
 
-                  <p className="text-green-600 font-bold">
-                    Subtotal: ৳{Number(item.subtotal || 0).toFixed(2)}
+                  <p className="text-green-600 font-bold mt-1">
+                    Subtotal: ৳{item.subtotal}
                   </p>
 
-                  {/* QTY */}
-                  <div className="flex items-center gap-3 mt-3">
+                  <div className="flex items-center gap-3 mt-4">
                     <button
                       onClick={() => handleDecrease(item)}
-                      className="p-2 border rounded"
+                      className="btn btn-sm btn-outline"
                     >
                       <FaMinus />
                     </button>
 
-                    <span>{item.quantity}</span>
+                    <span className="font-bold">{item.quantity}</span>
 
                     <button
                       onClick={() => handleIncrease(item)}
-                      className="p-2 border rounded"
+                      className="btn btn-sm btn-outline"
                     >
                       <FaPlus />
                     </button>
                   </div>
                 </div>
 
-                {/* DELETE */}
                 <button
                   onClick={() => handleRemove(item._id)}
-                  className="text-red-500"
+                  className="btn btn-circle btn-error btn-outline"
                 >
                   <FaTrash />
                 </button>
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
+        </div>
 
-          {/* SUMMARY */}
-          <div className="bg-white p-6 rounded shadow h-fit">
-            <h2 className="text-xl font-bold mb-4">Order Summary</h2>
+        {/* RIGHT SIDE */}
 
-            <div className="space-y-2 text-gray-700">
+        <div>
+          <div className="sticky top-24 bg-white rounded-2xl border shadow-sm p-6">
+            <h2 className="text-2xl font-bold mb-5">Order Summary</h2>
+
+            <div className="space-y-3">
               <div className="flex justify-between">
                 <span>Total Items</span>
                 <span>{summary.totalItems}</span>
@@ -218,32 +281,45 @@ const Cart = () => {
               </div>
 
               <div className="flex justify-between">
-                <span>Total Price</span>
-                <span>৳{Number(summary.totalPrice || 0).toFixed(2)}</span>
+                <span>Shipping</span>
+                <span className="text-green-600">Free</span>
               </div>
 
-              <div className="flex justify-between text-green-600">
-                <span>Delivery</span>
-                <span>Free</span>
+              <hr />
+
+              <div className="flex justify-between text-xl font-bold">
+                <span>Total</span>
+
+                <span>৳{summary.totalPrice.toFixed(2)}</span>
               </div>
-            </div>
-
-            <hr className="my-4" />
-
-            <div className="flex justify-between text-xl font-bold">
-              <span>Total</span>
-              <span>৳{Number(summary.totalPrice || 0).toFixed(2)}</span>
             </div>
 
             <button
               onClick={() => navigate("/checkout")}
-              className="w-full mt-5 bg-amber-500 text-white py-3 rounded"
+              className="btn btn-warning text-white w-full mt-6"
             >
-              Proceed to Checkout
+              Proceed To Checkout
             </button>
+
+            <div className="mt-6 space-y-3 text-sm text-gray-600">
+              <div className="flex items-center gap-2">
+                <FaTruck />
+                Free Shipping
+              </div>
+
+              <div className="flex items-center gap-2">
+                <FaShieldAlt />
+                Secure Shopping
+              </div>
+
+              <div className="flex items-center gap-2">
+                <FaCreditCard />
+                Safe Payment
+              </div>
+            </div>
           </div>
         </div>
-      )}
+      </div>
     </section>
   );
 };
