@@ -99,10 +99,7 @@ const FeaturedProducts = () => {
         "error",
       );
     }
-
-    
   };
-  
 
   // ==========================
   // LOADING STATE
@@ -153,7 +150,7 @@ const FeaturedProducts = () => {
       </section>
     );
   }
-  
+
   return (
     <section className="max-w-7xl mx-auto px-4 py-10">
       {/* ==========================
@@ -182,7 +179,7 @@ const FeaturedProducts = () => {
       {/* ==========================
           PRODUCT GRID
       =========================== */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
         {products.map((p) => {
           const price = Number(p.price || 0);
 
@@ -349,27 +346,6 @@ const FeaturedProducts = () => {
           </p>
         </div>
       )}
-
-      {/* ==========================
-          ACTION BUTTONS
-      =========================== */}
-      <div className="flex flex-col sm:flex-row justify-center gap-4 mt-12">
-        {/* Back Button */}
-        <button
-          onClick={() => navigate(-1)}
-          className="px-6 py-3 rounded-xl bg-gray-100 hover:bg-gray-200 transition"
-        >
-          ← Back
-        </button>
-
-        {/* Continue Shopping */}
-        <button
-          onClick={() => navigate("/shop")}
-          className="px-6 py-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white transition"
-        >
-          Continue Shopping
-        </button>
-      </div>
     </section>
   );
 };
