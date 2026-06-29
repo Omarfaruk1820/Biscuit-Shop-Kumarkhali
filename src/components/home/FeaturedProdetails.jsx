@@ -19,13 +19,19 @@ const API = import.meta.env.VITE_API_URL;
 
 const FeaturedProdetails = () => {
   const { id } = useParams();
-  const { user } = useContext(AuthContext);
-  const { addToast } = useToast();
-  const queryClient = useQueryClient();
 
-  // ================= FETCH PRODUCT =================
+  const { user } = useContext(AuthContext);
+
+  const { addToast } = useToast();
+
+  const queryClient = useQueryClient();
   const fetchProduct = async () => {
     const res = await axios.get(`${API}/products/${id}`);
+
+    if (!res.data.success) {
+      throw new Error("Product not found");
+    }
+
     return res.data.data;
   };
 
@@ -33,69 +39,100 @@ const FeaturedProdetails = () => {
     data: product,
     isLoading,
     isError,
+    refetch,
   } = useQuery({
     queryKey: ["product", id],
     queryFn: fetchProduct,
+    staleTime: 1000 * 60,
+    refetchOnWindowFocus: false,
   });
 
-  // ================= ADD TO CART =================
   const handleAddToCart = async () => {
-    try {
-      const payload = {
-        productId: product._id,
-        quantity: 1,
-      };
+    if (!user) {
+      addToast("Please login first", "error");
+      return;
+    }
 
-      const { data } = await axios.post(`${API}/carts`, payload, {
-        withCredentials: true,
-      });
+    try {
+      const { data } = await axios.post(
+        `${API}/carts`,
+        {
+          productId: product._id,
+          quantity: 1,
+        },
+        {
+          withCredentials: true,
+        },
+      );
+      
 
       if (data.success) {
         addToast(`🛒 ${product.name} added to cart`, "success");
 
         queryClient.invalidateQueries({
-          queryKey: ["cart", user?.email],
+          queryKey: ["cart", user.email],
         });
       }
     } catch (error) {
       addToast(error.response?.data?.message || "Failed to add cart", "error");
     }
   };
-
   if (isLoading) {
     return (
-      <div className="p-6 grid md:grid-cols-2 gap-6 animate-pulse">
-        <div className="h-[400px] bg-gray-200 rounded-xl"></div>
-        <div className="space-y-4">
-          <div className="h-6 bg-gray-200 w-2/3 rounded"></div>
-          <div className="h-4 bg-gray-200 w-1/2 rounded"></div>
-          <div className="h-10 bg-gray-200 w-full rounded"></div>
+      <section className="max-w-7xl mx-auto px-4 py-12">
+        <div className="grid md:grid-cols-2 gap-10">
+          <div className="h-[450px] bg-gray-200 rounded-2xl animate-pulse"></div>
+
+          <div className="space-y-4">
+            <div className="h-10 bg-gray-200 rounded animate-pulse"></div>
+
+            <div className="h-6 bg-gray-200 rounded animate-pulse w-1/2"></div>
+
+            <div className="h-20 bg-gray-200 rounded animate-pulse"></div>
+
+            <div className="h-12 bg-gray-200 rounded animate-pulse"></div>
+          </div>
         </div>
-      </div>
+      </section>
     );
   }
 
   if (isError || !product) {
     return (
-      <p className="text-center text-red-500 mt-10">Product not found ❌</p>
+      <section className="text-center py-20">
+        <h2 className="text-2xl font-bold text-red-500">
+          Product not found ❌
+        </h2>
+
+        <button
+          onClick={() => refetch()}
+          className="mt-5 px-6 py-3 bg-amber-500 text-white rounded-xl"
+        >
+          Try Again
+        </button>
+      </section>
     );
   }
+
   const price = Number(product.price || 0);
+
   const discount = Number(product.discount || 0);
+
   const finalPrice = price - (price * discount) / 100;
+
   const saveAmount = price - finalPrice;
 
-  const imageUrl = product.image?.replace(/\[|\]|\(|\)/g, "");
+  const imageUrl = product.image?.replace(/\[|\]|\(|\)/g, "").trim();
 
   return (
-    <section className="max-w-6xl mx-auto px-4 py-8">
-      <div className="grid md:grid-cols-2 gap-10">
-        {/* ================= IMAGE ================= */}
-        <div className="bg-white rounded-2xl shadow p-6 sticky top-20 h-fit">
+    <section className="max-w-7xl mx-auto px-4 py-10">
+      <div className="grid md:grid-cols-2 gap-10 bg-white rounded-3xl shadow-lg p-6 md:p-10">
+        {/* IMAGE */}
+        <div>
           <img
             src={imageUrl}
             alt={product.name}
-            className="w-full h-[350px] object-contain"
+            className="w-full rounded-2xl object-contain bg-gray-50 p-6"
           />
 
           {discount > 10 && (
@@ -106,84 +143,90 @@ const FeaturedProdetails = () => {
           )}
         </div>
 
-        {/* ================= DETAILS ================= */}
+        {/* DETAILS */}
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-800">
-            {product.name}
-          </h1>
+          <h1 className="text-3xl font-bold text-gray-800">{product.name}</h1>
 
-          {/* RATING */}
-          <div className="flex items-center gap-2 mt-3 text-sm">
+          <div className="flex items-center gap-2 mt-3">
             <FaStar className="text-yellow-500" />
+
             <span>{Number(product.rating || 0).toFixed(1)}</span>
+
             <span className="text-gray-400">
               ({product.reviews || 0} reviews)
             </span>
           </div>
 
-          {/* PRICE BOX */}
-          <div className="mt-6 bg-amber-50 border p-4 rounded-xl">
-            <p className="text-3xl font-bold text-amber-600">
+          <div className="mt-6 bg-amber-50 border rounded-xl p-5">
+            <h2 className="text-4xl font-bold text-amber-600">
               ৳{finalPrice.toFixed(2)}
-            </p>
+            </h2>
 
             {discount > 0 && (
               <>
                 <p className="line-through text-gray-400">৳{price}</p>
 
                 <p className="text-green-600 font-semibold">
-                  You save ৳{saveAmount.toFixed(2)} ({discount}% OFF)
+                  Save ৳{saveAmount.toFixed(2)}({discount}% OFF)
                 </p>
               </>
             )}
           </div>
 
-          {/* STOCK */}
           <p className="mt-4 text-red-500 font-semibold">
             Only {product.stock || 0} left in stock
           </p>
 
-          {/* INFO GRID */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-6 text-gray-700 text-sm">
+          <div className="grid sm:grid-cols-2 gap-4 mt-6">
             <div className="flex items-center gap-2">
               <FaTag className="text-amber-500" />
-              Brand: {product.brand || "No Brand"}
+              {product.brand || "No Brand"}
             </div>
 
             <div className="flex items-center gap-2">
               <FaBoxOpen className="text-amber-500" />
-              Category: {product.category}
+              {product.category}
             </div>
 
             <div className="flex items-center gap-2">
               <FaWeightHanging className="text-amber-500" />
-              Weight: {product.weight || "N/A"}
+              {product.weight || "N/A"}
             </div>
           </div>
-          {/* DESCRIPTION */}
+
           <div className="mt-8">
-            <h3 className="text-lg font-bold mb-2">Product Description</h3>
+            <h3 className="font-bold text-lg mb-2">Product Description</h3>
 
-            <p className="text-gray-600 leading-7">{product.description}</p>
-          </div>
-
-          {/* EXTRA INFO */}
-          <div className="mt-6 text-sm text-gray-600 space-y-1">
-            <p>
-              <b>Ingredients:</b> {product.ingredients || "N/A"}
-            </p>
-            <p>
-              <b>Expiry:</b> {product.expiry || "N/A"}
+            <p className="text-gray-600 leading-7">
+              {product.description || "No description available"}
             </p>
           </div>
 
-          {/* ADD TO CART BUTTON */}
+          <div className="mt-6 space-y-2 text-gray-600">
+            <p>
+              <strong>Ingredients:</strong> {product.ingredients || "N/A"}
+            </p>
+
+            <p>
+              <strong>Expiry:</strong> {product.expiry || "N/A"}
+            </p>
+          </div>
+
           <button
+            disabled={product.stock === 0}
             onClick={handleAddToCart}
-            className="mt-8 w-full bg-amber-500 hover:bg-amber-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 text-lg shadow-lg transition"
+            className={`mt-8 w-full py-4 rounded-xl text-white font-semibold flex items-center justify-center gap-2 transition
+
+            ${
+              product.stock > 0
+                ? "bg-amber-500 hover:bg-amber-600"
+                : "bg-gray-400 cursor-not-allowed"
+            }
+            `}
           >
             <FaCartPlus />
-            Add To Cart
+
+            {product.stock > 0 ? "Add To Cart" : "Out Of Stock"}
           </button>
         </div>
       </div>

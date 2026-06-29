@@ -1,3 +1,5 @@
+import { createContext, useEffect, useState } from "react";
+
 import {
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
@@ -5,9 +7,11 @@ import {
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
+  updateProfile,
 } from "firebase/auth";
-import { createContext, useEffect, useState } from "react";
+
 import auth from "./firebase.config";
+import axiosPublic from "../api/axiosPublic";
 
 export const AuthContext = createContext(null);
 
@@ -15,51 +19,134 @@ const googleProvider = new GoogleAuthProvider();
 
 const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
+  const [role, setRole] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const createUser = (email, password) =>
-    createUserWithEmailAndPassword(auth, email, password);
+  // ===========================
+  // Register
+  // ===========================
 
-  const loginUser = (email, password) =>
-    signInWithEmailAndPassword(auth, email, password);
+  const createUser = (email, password) => {
+    return createUserWithEmailAndPassword(auth, email, password);
+  };
 
-  const signInGoogle = () => signInWithPopup(auth, googleProvider);
+  // ===========================
+  // Login
+  // ===========================
 
-  const signOutUser = () => signOut(auth);
+  const loginUser = (email, password) => {
+    return signInWithEmailAndPassword(auth, email, password);
+  };
 
-  // ================= AUTH STATE =================
+  // ===========================
+  // Google Login
+  // ===========================
+
+  const signInGoogle = () => {
+    return signInWithPopup(auth, googleProvider);
+  };
+
+  // ===========================
+  // Update Profile
+  // ===========================
+
+  const updateUserProfile = (name, photo) => {
+    return updateProfile(auth.currentUser, {
+      displayName: name,
+      photoURL: photo,
+    });
+  };
+
+  // ===========================
+  // Logout
+  // ===========================
+
+  const signOutUser = async () => {
+    try {
+      await axiosPublic.post("/logout");
+
+      setUser(null);
+      setRole(null);
+
+      return signOut(auth);
+    } catch (error) {
+      console.error(error);
+
+      return signOut(auth);
+    }
+  };
+
+  // ===========================
+  // Auth State
+  // ===========================
+
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      if (currentUser) {
-        setUser({
-          uid: currentUser.uid,
-          email: currentUser.email,
-          displayName: currentUser.displayName,
-          photoURL: currentUser.photoURL,
-        });
-      } else {
-        setUser(null);
-      }
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      try {
+        setLoading(true);
 
-      setLoading(false);
+        if (!currentUser) {
+          setUser(null);
+          setRole(null);
+          setLoading(false);
+          return;
+        }
+
+        const userInfo = {
+          uid: currentUser.uid,
+          name: currentUser.displayName || "",
+          email: currentUser.email.toLowerCase().trim(),
+          photo: currentUser.photoURL || "",
+          provider: currentUser.providerData?.[0]?.providerId || "password",
+        };
+
+        setUser(userInfo);
+
+        // Save user
+        await axiosPublic.post("/users", userInfo);
+
+        // Create JWT Cookie
+        const jwtRes = await axiosPublic.post("/jwt", {
+          email: userInfo.email,
+        });
+
+        setRole(jwtRes.data.role);
+      } catch (error) {
+        console.error("AUTH STATE ERROR:", error);
+
+        setUser(null);
+        setRole(null);
+      } finally {
+        setLoading(false);
+      }
     });
 
-    return () => unsubscribe();
+    return unsubscribe;
   }, []);
 
+  // ===========================
+  // Context
+  // ===========================
+
+  const authInfo = {
+    user,
+    role,
+    loading,
+
+    createUser,
+    loginUser,
+    signInGoogle,
+
+    updateUserProfile,
+
+    signOutUser,
+
+    setUser,
+    setRole,
+  };
+
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        loading,
-        createUser,
-        loginUser,
-        signInGoogle,
-        signOutUser,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
+    <AuthContext.Provider value={authInfo}>{children}</AuthContext.Provider>
   );
 };
 

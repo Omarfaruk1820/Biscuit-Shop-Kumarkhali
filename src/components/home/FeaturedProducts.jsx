@@ -29,14 +29,14 @@ const FeaturedProducts = () => {
   const fetchProducts = async ({ queryKey }) => {
     const [, page] = queryKey;
 
-    const res = await axios.get(`${API}/products`, {
+    const { data } = await axios.get(`${API}/products`, {
       params: {
         page,
         limit: 8,
       },
     });
 
-    return res.data;
+    return data;
   };
 
   // ==========================
@@ -46,16 +46,16 @@ const FeaturedProducts = () => {
     queryKey: ["products", currentPage],
     queryFn: fetchProducts,
 
-    placeholderData: (previousData) => previousData,
-
     staleTime: 1000 * 60,
+    gcTime: 1000 * 60 * 5,
 
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
+    keepPreviousData: true,
   });
 
-  const products = data?.data || [];
+  const products = data?.data ?? [];
 
-  const totalPages = data?.pagination?.totalPages || 1;
+  const totalPages = data?.pagination?.totalPages ?? 1;
 
   // ==========================
   // ADD TO CART
@@ -63,6 +63,7 @@ const FeaturedProducts = () => {
   const handleAddToCart = async (product) => {
     if (!user) {
       addToast("Please login first", "error");
+      navigate("/login");
       return;
     }
 
@@ -81,39 +82,30 @@ const FeaturedProducts = () => {
       if (response.data.success) {
         addToast(`🛒 ${product.name} added successfully`, "success");
 
-        // Refresh cart
-        queryClient.invalidateQueries({
+        await queryClient.invalidateQueries({
           queryKey: ["cart", user?.email],
         });
-
-        queryClient.refetchQueries({
-          queryKey: ["cart", user?.email],
-        });
-
-        // Refresh products
-        refetch();
       }
     } catch (error) {
       addToast(
-        error.response?.data?.message || "Failed to add product",
+        error?.response?.data?.message || "Failed to add product",
         "error",
       );
     }
   };
-
   // ==========================
   // LOADING STATE
   // ==========================
   if (isLoading) {
     return (
-      <section className="max-w-7xl mx-auto px-4 py-10">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
+      <section className="max-w-7xl mx-auto px-4 py-12">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {Array.from({ length: 8 }).map((_, index) => (
             <div
               key={index}
-              className="bg-white border rounded-2xl shadow-sm overflow-hidden"
+              className="bg-white rounded-2xl overflow-hidden shadow"
             >
-              <div className="h-48 bg-gray-200 animate-pulse"></div>
+              <div className="h-56 bg-gray-200 animate-pulse"></div>
 
               <div className="p-4 space-y-3">
                 <div className="h-4 bg-gray-200 rounded animate-pulse"></div>
@@ -136,7 +128,7 @@ const FeaturedProducts = () => {
   // ==========================
   if (isError) {
     return (
-      <section className="py-20 text-center">
+      <section className="text-center py-20">
         <h2 className="text-red-500 text-xl font-bold">
           Failed to load products
         </h2>
@@ -152,7 +144,7 @@ const FeaturedProducts = () => {
   }
 
   return (
-    <section className="max-w-7xl mx-auto px-4 py-10">
+    <section className="max-w-7xl mx-auto px-4 md:px-6 py-12">
       {/* ==========================
           HEADER
       =========================== */}
@@ -179,7 +171,7 @@ const FeaturedProducts = () => {
       {/* ==========================
           PRODUCT GRID
       =========================== */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {products.map((p) => {
           const price = Number(p.price || 0);
 
@@ -187,33 +179,34 @@ const FeaturedProducts = () => {
 
           const finalPrice = price - (price * discount) / 100;
 
-          // fix image URL from DB
-          const imageUrl = p.image?.replace(/\[|\]|\(|\)/g, "").trim();
+          const imageUrl = String(p.image || "")
+            .replace(/\[|\]|\(|\)/g, "")
+            .trim();
 
           return (
             <div
               key={p._id}
-              className="bg-white rounded-2xl shadow-sm hover:shadow-xl transition duration-300 overflow-hidden border"
+              className="bg-white rounded-2xl border overflow-hidden shadow-sm hover:shadow-xl transition"
             >
-              {/* ==========================
-                  PRODUCT IMAGE
-              =========================== */}
               <Link to={`/product/${p._id}`}>
-                <div className="relative h-48 md:h-56 bg-gray-50 flex justify-center items-center">
+                <div className="relative h-56 bg-gray-50 flex items-center justify-center">
                   <img
                     src={imageUrl}
                     alt={p.name}
+                    loading="lazy"
+                    onError={(e) => {
+                      e.target.src =
+                        "https://via.placeholder.com/300x300?text=No+Image";
+                    }}
                     className="h-full object-contain p-3 hover:scale-105 transition"
                   />
 
-                  {/* Discount Badge */}
                   {discount > 0 && (
                     <span className="absolute top-2 right-2 bg-green-600 text-white px-2 py-1 rounded text-xs font-semibold">
                       -{discount}%
                     </span>
                   )}
 
-                  {/* Hot Badge */}
                   {discount >= 15 && (
                     <span className="absolute top-2 left-2 bg-red-500 text-white px-2 py-1 rounded text-xs flex items-center gap-1">
                       <FaFire />
@@ -223,68 +216,53 @@ const FeaturedProducts = () => {
                 </div>
               </Link>
 
-              {/* ==========================
-                  PRODUCT INFO
-              =========================== */}
               <div className="p-4">
-                {/* Product Name */}
-                <h3 className="font-semibold text-sm md:text-base line-clamp-2 text-gray-800">
+                <h3 className="font-semibold text-gray-800 line-clamp-2">
                   {p.name}
                 </h3>
 
-                {/* Rating */}
                 <div className="flex items-center gap-1 mt-2">
                   <FaStar className="text-yellow-500" />
 
-                  <span className="text-sm text-gray-700">
-                    {p.rating || 4.5}
-                  </span>
+                  <span className="text-sm">{p.rating || 4.5}</span>
 
                   <span className="text-xs text-gray-400">
                     ({p.reviews || 0})
                   </span>
                 </div>
 
-                {/* ==========================
-                    PRICE SECTION
-                =========================== */}
                 <div className="mt-3">
                   <h4 className="text-xl font-bold text-amber-600">
                     ৳{finalPrice.toFixed(2)}
                   </h4>
 
                   {discount > 0 && (
-                    <p className="text-sm line-through text-gray-400">
+                    <p className="text-sm text-gray-400 line-through">
                       ৳{price}
                     </p>
                   )}
                 </div>
 
-                {/* Stock */}
                 <div className="mt-2">
                   {p.stock > 0 ? (
                     <p className="text-xs text-green-600">
                       In Stock ({p.stock})
                     </p>
                   ) : (
-                    <p className="text-xs text-red-500">Out of Stock</p>
+                    <p className="text-xs text-red-500">Out Of Stock</p>
                   )}
                 </div>
 
-                {/* ==========================
-                    ADD TO CART BUTTON
-                =========================== */}
                 <button
                   disabled={p.stock === 0}
                   onClick={() => handleAddToCart(p)}
-                  className={`w-full mt-4 py-3 rounded-xl text-white flex items-center justify-center gap-2 transition duration-300
+                  className={`w-full mt-4 py-3 rounded-xl text-white flex items-center justify-center gap-2 transition
 
                   ${
                     p.stock > 0
                       ? "bg-amber-500 hover:bg-amber-600"
                       : "bg-gray-400 cursor-not-allowed"
-                  }
-                  `}
+                  }`}
                 >
                   <FaCartPlus />
 
@@ -295,50 +273,44 @@ const FeaturedProducts = () => {
           );
         })}
       </div>
-      {/* ==========================
-          PAGINATION
-      =========================== */}
-      <div className="flex flex-wrap justify-center items-center gap-2 mt-12">
-        {/* Prev Button */}
+
+      {/* PAGINATION */}
+      <div className="flex justify-center flex-wrap gap-2 mt-12">
         <button
           disabled={currentPage === 1}
           onClick={() => setCurrentPage((prev) => prev - 1)}
-          className="px-4 py-2 rounded-xl border bg-white hover:bg-gray-100 disabled:opacity-40"
+          className="px-4 py-2 border rounded-xl bg-white hover:bg-gray-100 disabled:opacity-40"
         >
           Prev
         </button>
 
-        {/* Page Numbers */}
-        {Array.from({ length: totalPages }).map((_, index) => (
+        {Array.from({
+          length: Math.min(totalPages, 10),
+        }).map((_, index) => (
           <button
             key={index}
             onClick={() => setCurrentPage(index + 1)}
-            className={`w-10 h-10 rounded-xl border font-medium transition
+            className={`w-10 h-10 rounded-xl border
 
             ${
               currentPage === index + 1
                 ? "bg-amber-500 text-white border-amber-500"
                 : "bg-white hover:bg-gray-100"
-            }
-            `}
+            }`}
           >
             {index + 1}
           </button>
         ))}
 
-        {/* Next Button */}
         <button
           disabled={currentPage === totalPages}
           onClick={() => setCurrentPage((prev) => prev + 1)}
-          className="px-4 py-2 rounded-xl border bg-white hover:bg-gray-100 disabled:opacity-40"
+          className="px-4 py-2 border rounded-xl bg-white hover:bg-gray-100 disabled:opacity-40"
         >
           Next
         </button>
       </div>
 
-      {/* ==========================
-          AUTO REFRESH INDICATOR
-      =========================== */}
       {isFetching && (
         <div className="text-center mt-4">
           <p className="text-sm text-gray-400 animate-pulse">

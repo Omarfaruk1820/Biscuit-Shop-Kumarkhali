@@ -1,4 +1,4 @@
-import React, { useContext, useState } from "react";
+import React, { useContext, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import {
   FaEnvelope,
@@ -8,190 +8,396 @@ import {
   FaEyeSlash,
 } from "react-icons/fa";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import axios from "axios";
+import { sendPasswordResetEmail } from "firebase/auth";
 
 import { AuthContext } from "./AuthProvider";
 import { useToast } from "../context/ToastProvider";
 import GoogleSignIn from "./GoogleSign";
-
-const API = import.meta.env.VITE_API_URL;
-
-// ================= SAVE USER =================
-const saveUserToDB = async (user) => {
-  return axios.post(`${API}/users`, {
-    name: user.displayName || "No Name",
-    email: user.email,
-    photo: user.photoURL || "",
-    provider: "password",
-  });
-};
+import auth from "./firebase.config";
 
 const Login = () => {
+  // ==========================
+  // Context
+  // ==========================
   const { loginUser } = useContext(AuthContext);
   const { addToast } = useToast();
 
+  // ==========================
+  // Router
+  // ==========================
   const navigate = useNavigate();
   const location = useLocation();
 
-  // 👉 redirect where user came from
+  // Redirect after login
   const from = location.state?.from?.pathname || "/";
 
+  // ==========================
+  // Local State
+  // ==========================
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
 
+  // ==========================
+  // React Hook Form
+  // ==========================
   const {
     register,
     handleSubmit,
     reset,
+    watch,
+    setValue,
     formState: { errors },
-  } = useForm();
+  } = useForm({
+    defaultValues: {
+      email: "",
+      password: "",
+    },
+    mode: "onTouched",
+  });
 
+  // ==========================
+  // Remember Email
+  // ==========================
+  useEffect(() => {
+    const rememberedEmail = localStorage.getItem("remember-email");
+
+    if (rememberedEmail) {
+      setValue("email", rememberedEmail);
+      setRememberMe(true);
+    }
+  }, [setValue]);
+
+  // ==========================
+  // Login Handler
+  // ==========================
   const onSubmit = async (data) => {
     setLoading(true);
 
     try {
-      const result = await loginUser(data.email, data.password);
-      const user = result.user;
+      const email = data.email.trim().toLowerCase();
+      const password = data.password;
 
-      // JWT
-      await axios.post(
-        `${API}/jwt`,
-        { email: user.email },
-        { withCredentials: true }
-      );
+      await loginUser(email, password);
 
-      // Save user (optional but useful)
-      await saveUserToDB(user);
+      // Remember Email
+      if (rememberMe) {
+        localStorage.setItem("remember-email", email);
+      } else {
+        localStorage.removeItem("remember-email");
+      }
 
-      // ✅ SUCCESS TOAST
-      addToast("🎉 Login successful! Welcome back!", "success");
+      addToast("🎉 Login successful! Welcome back.", "success");
 
-      reset();
+      reset({
+        email: rememberMe ? email : "",
+        password: "",
+      });
 
-      // ✅ redirect to previous page
-      setTimeout(() => {
-        navigate(from, { replace: true });
-      }, 1000);
-
+      navigate(from, {
+        replace: true,
+      });
     } catch (err) {
-      console.error(err);
+      console.error("Login Error:", err);
 
-      let message = "Login failed ❌";
+      let message = "Login failed.";
 
-      if (err.code === "auth/user-not-found") {
-        message = "No account found with this email!";
-      } else if (err.code === "auth/wrong-password") {
-        message = "Incorrect password!";
-      } else if (err.code === "auth/invalid-email") {
-        message = "Invalid email!";
+      switch (err.code) {
+        case "auth/user-not-found":
+          message = "No account found with this email.";
+          break;
+
+        case "auth/wrong-password":
+          message = "Incorrect password.";
+          break;
+
+        case "auth/invalid-email":
+          message = "Please enter a valid email address.";
+          break;
+
+        case "auth/invalid-credential":
+          message = "Incorrect email or password.";
+          break;
+
+        case "auth/user-disabled":
+          message = "This account has been disabled.";
+          break;
+
+        case "auth/too-many-requests":
+          message = "Too many failed login attempts. Please try again later.";
+          break;
+
+        case "auth/network-request-failed":
+          message = "Network error. Please check your internet connection.";
+          break;
+
+        default:
+          message = err.message || "Unable to login.";
       }
 
       addToast(message, "error");
-
     } finally {
       setLoading(false);
     }
   };
 
+  // ==========================
+  // Forgot Password
+  // ==========================
+  const handleForgotPassword = async () => {
+    const email = watch("email")?.trim().toLowerCase();
+
+    if (!email) {
+      addToast("Please enter your email address first.", "warning");
+      return;
+    }
+
+    try {
+      await sendPasswordResetEmail(auth, email);
+
+      addToast(
+        "Password reset email has been sent. Please check your inbox.",
+        "success",
+      );
+    } catch (err) {
+      console.error("Reset Password Error:", err);
+
+      let message = "Unable to send password reset email.";
+
+      switch (err.code) {
+        case "auth/user-not-found":
+          message = "No account found with this email.";
+          break;
+
+        case "auth/invalid-email":
+          message = "Please enter a valid email address.";
+          break;
+
+        case "auth/network-request-failed":
+          message = "Network error. Please check your internet connection.";
+          break;
+
+        default:
+          message = err.message || message;
+      }
+
+      addToast(message, "error");
+    }
+  };
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-100 to-amber-100 px-4">
+    <div className="min-h-screen bg-gradient-to-br from-amber-50 via-white to-orange-50 flex items-center justify-center px-4 py-10">
+      <div className="w-full max-w-md">
+        {/* Login Card */}
+        <div className="bg-white rounded-3xl shadow-2xl border border-gray-100 p-8 md:p-10">
+          {/* ==========================
+              Header
+          ========================== */}
+          <div className="text-center">
+            <h1 className="text-3xl font-bold text-gray-800">
+              Welcome Back 👋
+            </h1>
 
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-8">
-
-        {/* Header */}
-        <h2 className="text-2xl font-bold text-center text-gray-800">
-          Welcome Back 👋
-        </h2>
-        <p className="text-center text-gray-500 text-sm mt-1">
-          Login to continue your journey
-        </p>
-
-        {/* Form */}
-        <form onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-5">
-
-          {/* Email */}
-          <div>
-            <label className="text-sm text-gray-600">Email</label>
-
-            <div className="flex items-center border rounded-lg px-3 py-2 mt-1 focus-within:ring-2 focus-within:ring-amber-400">
-              <FaEnvelope className="text-gray-400" />
-              <input
-                type="email"
-                placeholder="Enter your email"
-                className="ml-2 w-full outline-none"
-                {...register("email", { required: "Email is required" })}
-              />
-            </div>
-
-            {errors.email && (
-              <p className="text-red-500 text-sm mt-1">
-                {errors.email.message}
-              </p>
-            )}
+            <p className="mt-2 text-sm text-gray-500">
+              Login to continue your shopping journey
+            </p>
           </div>
 
-          {/* Password */}
-          <div>
-            <label className="text-sm text-gray-600">Password</label>
+          {/* ==========================
+              Login Form
+          ========================== */}
+          <form onSubmit={handleSubmit(onSubmit)} className="mt-8 space-y-5">
+            {/* ==========================
+                Email
+            ========================== */}
+            <div>
+              <label
+                htmlFor="email"
+                className="mb-2 block text-sm font-medium text-gray-700"
+              >
+                Email Address
+              </label>
 
-            <div className="flex items-center border rounded-lg px-3 py-2 mt-1 focus-within:ring-2 focus-within:ring-amber-400">
-              <FaLock className="text-gray-400" />
+              <div className="flex items-center rounded-xl border border-gray-200 bg-white px-4 py-3 transition-all duration-300 hover:border-amber-300 focus-within:border-amber-500 focus-within:ring-2 focus-within:ring-amber-200">
+                <FaEnvelope className="text-gray-400" />
 
-              <input
-                type={showPassword ? "text" : "password"}
-                placeholder="Enter your password"
-                className="ml-2 w-full outline-none"
-                {...register("password", {
-                  required: "Password is required",
-                })}
-              />
+                <input
+                  id="email"
+                  type="email"
+                  spellCheck={false}
+                  autoComplete="email"
+                  disabled={loading}
+                  placeholder="Enter your email"
+                  className="ml-3 w-full bg-transparent text-gray-700 outline-none placeholder:text-gray-400 disabled:cursor-not-allowed"
+                  {...register("email", {
+                    required: "Email is required",
+                    pattern: {
+                      value: /^\S+@\S+\.\S+$/,
+                      message: "Please enter a valid email address",
+                    },
+                  })}
+                />
+              </div>
+
+              {errors.email && (
+                <p className="mt-2 text-sm text-red-500">
+                  {errors.email.message}
+                </p>
+              )}
+            </div>
+
+            {/* ==========================
+                Password
+            ========================== */}
+            <div>
+              <label
+                htmlFor="password"
+                className="mb-2 block text-sm font-medium text-gray-700"
+              >
+                Password
+              </label>
+
+              <div className="flex items-center rounded-xl border border-gray-200 bg-white px-4 py-3 transition-all duration-300 hover:border-amber-300 focus-within:border-amber-500 focus-within:ring-2 focus-within:ring-amber-200">
+                <FaLock className="text-gray-400" />
+
+                <input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="current-password"
+                  disabled={loading}
+                  placeholder="Enter your password"
+                  className="ml-3 w-full bg-transparent text-gray-700 outline-none placeholder:text-gray-400 disabled:cursor-not-allowed"
+                  {...register("password", {
+                    required: "Password is required",
+                    minLength: {
+                      value: 6,
+                      message: "Password must be at least 6 characters long",
+                    },
+                  })}
+                />
+
+                <button
+                  type="button"
+                  tabIndex={0}
+                  disabled={loading}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  className="ml-2 text-gray-500 transition hover:text-amber-600 disabled:cursor-not-allowed"
+                >
+                  {showPassword ? (
+                    <FaEyeSlash size={18} />
+                  ) : (
+                    <FaEye size={18} />
+                  )}
+                </button>
+              </div>
+
+              {errors.password && (
+                <p className="mt-2 text-sm text-red-500">
+                  {errors.password.message}
+                </p>
+              )}
+            </div>
+
+            {/* ==========================
+                Remember Me & Forgot Password
+            ========================== */}
+            <div className="flex items-center justify-between gap-4 text-sm">
+              <label className="flex cursor-pointer select-none items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  disabled={loading}
+                  className="checkbox checkbox-warning checkbox-sm"
+                />
+
+                <span className="text-gray-600">Remember me</span>
+              </label>
 
               <button
                 type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="text-gray-500"
+                disabled={loading}
+                onClick={handleForgotPassword}
+                className="font-medium text-amber-600 transition hover:text-amber-700 hover:underline disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {showPassword ? <FaEyeSlash /> : <FaEye />}
+                Forgot Password?
               </button>
             </div>
 
-            {errors.password && (
-              <p className="text-red-500 text-sm mt-1">
-                {errors.password.message}
-              </p>
-            )}
+            {/* ==========================
+                Login Button
+            ========================== */}
+            <button
+              type="submit"
+              disabled={loading}
+              className="btn h-12 w-full rounded-xl border-0 bg-gradient-to-r from-amber-500 to-orange-500 text-base font-semibold text-white shadow-lg transition-all duration-300 hover:scale-[1.02] hover:from-amber-600 hover:to-orange-600 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {loading ? (
+                <>
+                  <span className="loading loading-spinner loading-sm"></span>
+                  Logging in...
+                </>
+              ) : (
+                <>
+                  <FaSignInAlt />
+                  Login
+                </>
+              )}
+            </button>
+          </form>
+
+          {/* ==========================
+              Divider
+          ========================== */}
+          <div className="my-8 flex items-center">
+            <div className="flex-1 border-t border-gray-200"></div>
+
+            <span className="px-4 text-sm font-medium text-gray-400">OR</span>
+
+            <div className="flex-1 border-t border-gray-200"></div>
+          </div>
+          {/* ==========================
+              Google Sign In
+          ========================== */}
+          <div className="mt-6">
+            <GoogleSignIn />
           </div>
 
-          {/* Button */}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-amber-500 hover:bg-amber-600 text-white py-2 rounded-lg flex justify-center items-center gap-2 transition"
-          >
-            {loading && (
-              <span className="loading loading-spinner loading-sm"></span>
-            )}
-            <FaSignInAlt />
-            {loading ? "Logging in..." : "Login"}
-          </button>
-        </form>
-
-       
-
-        {/* Google Login */}
-        <GoogleSignIn />
+          {/* ==========================
+              Register Link
+          ========================== */}
+          <div className="mt-8 text-center">
+            <p className="text-sm text-gray-600">
+              Don't have an account?{" "}
+              <Link
+                to="/register"
+                state={{ from: location.state?.from }}
+                className="font-semibold text-amber-600 transition hover:text-amber-700 hover:underline"
+              >
+                Create Account
+              </Link>
+            </p>
+          </div>
+        </div>
 
         {/* Footer */}
-        <p className="text-center text-sm text-gray-600 mt-6">
-          Don’t have an account?{" "}
+        <p className="mt-6 text-center text-xs text-gray-500">
+          By signing in, you agree to our{" "}
           <Link
-            to="/register"
-            className="text-amber-600 font-medium hover:underline"
+            to="/terms"
+            className="font-medium text-amber-600 hover:underline"
           >
-            Register
+            Terms of Service
+          </Link>{" "}
+          and{" "}
+          <Link
+            to="/privacy"
+            className="font-medium text-amber-600 hover:underline"
+          >
+            Privacy Policy
           </Link>
+          .
         </p>
-
       </div>
     </div>
   );

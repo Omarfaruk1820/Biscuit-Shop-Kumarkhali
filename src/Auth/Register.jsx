@@ -1,84 +1,83 @@
-import React, { useContext, useState } from "react";
+import { useContext, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
-import { useNavigate, Link } from "react-router-dom";
-import { updateProfile } from "firebase/auth";
-import axios from "axios";
 
 import { AuthContext } from "./AuthProvider";
 import { useToast } from "../context/ToastProvider";
 import GoogleSignIn from "./GoogleSign";
 
-const API = import.meta.env.VITE_API_URL;
-
-// ================= SAVE USER =================
-const saveUserToDB = async (user) => {
-  return axios.post(`${API}/users`, {
-    name: user.displayName,
-    email: user.email,
-    photo: user.photoURL || "",
-    provider: "password",
-  });
-};
-
 const Register = () => {
-  const { createUser } = useContext(AuthContext);
+  const { createUser, updateUserProfile } = useContext(AuthContext);
+
   const { addToast } = useToast();
+
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [loading, setLoading] = useState(false);
+
+  const from = location.state?.from || "/";
 
   const {
     register,
     handleSubmit,
+    watch,
     reset,
     formState: { errors },
-  } = useForm();
+  } = useForm({
+    mode: "onTouched",
+  });
 
+  // Watch password for confirm password validation
+  const password = watch("password");
+
+  // ===============================
+  // Submit
+  // ===============================
   const onSubmit = async (data) => {
     setLoading(true);
 
     try {
-      // 🔥 Create user
-      const result = await createUser(data.email, data.password);
-      const user = result.user;
+      const name = data.name.trim();
+      const email = data.email.trim().toLowerCase();
 
-      // 🔥 Update profile
-      await updateProfile(user, {
-        displayName: data.name,
-      });
+      // Create Firebase User
+      await createUser(email, data.password);
 
-      await user.reload();
+      // Update Firebase Profile
+      await updateUserProfile(name, "");
 
-      // 🔥 Get JWT
-      await axios.post(
-        `${API}/jwt`,
-        { email: user.email },
-        { withCredentials: true },
-      );
-
-      // 🔥 Save to DB
-      await saveUserToDB(user);
-
-      // ✅ SUCCESS TOAST
-      addToast("🎉 Registration successful! Welcome!", "success");
+      addToast("🎉 Registration Successful!", "success");
 
       reset();
 
-      // ✅ একটু delay দিয়ে redirect (UX better)
       setTimeout(() => {
-        navigate("/", { replace: true }); // 👉 HOME PAGE
-      }, 1200);
+        navigate(from, { replace: true });
+      }, 1000);
     } catch (err) {
       console.error(err);
 
-      let message = "Registration failed ❌";
+      let message = "Registration Failed";
 
-      if (err.code === "auth/email-already-in-use") {
-        message = "Email already exists!";
-      } else if (err.code === "auth/weak-password") {
-        message = "Password must be at least 6 characters!";
-      } else if (err.code === "auth/invalid-email") {
-        message = "Invalid email address!";
+      switch (err.code) {
+        case "auth/email-already-in-use":
+          message = "Email already exists.";
+          break;
+
+        case "auth/weak-password":
+          message = "Password is too weak.";
+          break;
+
+        case "auth/invalid-email":
+          message = "Invalid email address.";
+          break;
+
+        case "auth/network-request-failed":
+          message = "Network error. Please try again.";
+          break;
+
+        default:
+          message = err.message;
       }
 
       addToast(message, "error");
@@ -86,93 +85,173 @@ const Register = () => {
       setLoading(false);
     }
   };
-
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-r from-amber-100 to-orange-200 px-4">
-      <div className="w-full max-w-md mt-10 bg-white rounded-2xl shadow-xl p-8">
+    <div className="min-h-screen bg-base-200 flex items-center justify-center px-4 py-10">
+      <div className="w-full max-w-md bg-base-100 rounded-2xl shadow-xl p-8">
         {/* Header */}
-        <h2 className="text-2xl font-bold text-center text-gray-800">
-          Create Account 🚀
-        </h2>
-        <p className="text-center text-gray-500 text-sm mt-1">
-          Join with us today
-        </p>
+
+        <div className="text-center">
+          <h1 className="text-3xl font-bold">Create Account 🚀</h1>
+
+          <p className="text-gray-500 mt-2">
+            Join us today and start shopping.
+          </p>
+        </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-4">
+
+        <form onSubmit={handleSubmit(onSubmit)} className="mt-8 space-y-5">
           {/* Name */}
+
           <div>
             <input
               type="text"
+              autoComplete="name"
               placeholder="Full Name"
-              className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-amber-400 outline-none"
-              {...register("name", { required: "Name is required" })}
+              className="input input-bordered w-full"
+              {...register("name", {
+                required: "Full Name is required",
+                minLength: {
+                  value: 3,
+                  message: "Minimum 3 characters",
+                },
+              })}
             />
+
             {errors.name && (
-              <p className="text-red-500 text-sm mt-1">{errors.name.message}</p>
+              <p className="text-error text-sm mt-1">{errors.name.message}</p>
             )}
           </div>
 
           {/* Email */}
+
           <div>
             <input
               type="email"
+              autoComplete="email"
               placeholder="Email Address"
-              className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-amber-400 outline-none"
+              className="input input-bordered w-full"
               {...register("email", {
                 required: "Email is required",
+                pattern: {
+                  value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+                  message: "Invalid email address",
+                },
               })}
             />
+
             {errors.email && (
-              <p className="text-red-500 text-sm mt-1">
-                {errors.email.message}
-              </p>
+              <p className="text-error text-sm mt-1">{errors.email.message}</p>
             )}
           </div>
 
           {/* Password */}
+
           <div>
             <input
               type="password"
+              autoComplete="new-password"
               placeholder="Password"
-              className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-amber-400 outline-none"
+              className="input input-bordered w-full"
               {...register("password", {
                 required: "Password is required",
+
                 minLength: {
                   value: 6,
                   message: "Minimum 6 characters",
                 },
+
+                pattern: {
+                  value: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/,
+                  message: "Must contain uppercase, lowercase and number",
+                },
               })}
             />
+
             {errors.password && (
-              <p className="text-red-500 text-sm mt-1">
+              <p className="text-error text-sm mt-1">
                 {errors.password.message}
               </p>
             )}
           </div>
 
-          {/* Button */}
+          {/* Confirm Password */}
+
+          <div>
+            <input
+              type="password"
+              autoComplete="new-password"
+              placeholder="Confirm Password"
+              className="input input-bordered w-full"
+              {...register("confirmPassword", {
+                required: "Confirm Password is required",
+
+                validate: (value) =>
+                  value === password || "Passwords do not match",
+              })}
+            />
+
+            {errors.confirmPassword && (
+              <p className="text-error text-sm mt-1">
+                {errors.confirmPassword.message}
+              </p>
+            )}
+          </div>
+
+          {/* Terms */}
+
+          <label className="label cursor-pointer justify-start gap-3">
+            <input
+              type="checkbox"
+              className="checkbox checkbox-warning"
+              {...register("terms", {
+                required: "You must accept Terms & Conditions",
+              })}
+            />
+
+            <span className="text-sm">
+              I agree to the
+              <Link
+                to="/terms"
+                className="text-warning font-semibold ml-1 hover:underline"
+              >
+                Terms & Conditions
+              </Link>
+            </span>
+          </label>
+
+          {errors.terms && (
+            <p className="text-error text-sm">{errors.terms.message}</p>
+          )}
+
+          {/* Submit */}
+
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-amber-500 hover:bg-amber-600 text-white py-2 rounded-lg transition duration-200 font-semibold flex justify-center items-center gap-2"
+            className="btn btn-warning w-full"
           >
             {loading && (
               <span className="loading loading-spinner loading-sm"></span>
             )}
-            {loading ? "Creating Account..." : "Register"}
+
+            {loading ? "Creating Account..." : "Create Account"}
           </button>
         </form>
 
         {/* Google */}
-        <GoogleSignIn />
+
+        <div className="my-6">
+          <GoogleSignIn />
+        </div>
 
         {/* Footer */}
-        <p className="text-center text-sm text-gray-600 mt-5">
-          Already have an account?{" "}
+
+        <p className="text-center text-sm">
+          Already have an account?
           <Link
             to="/login"
-            className="text-amber-600 font-medium hover:underline"
+            className="ml-2 text-warning font-semibold hover:underline"
           >
             Login
           </Link>

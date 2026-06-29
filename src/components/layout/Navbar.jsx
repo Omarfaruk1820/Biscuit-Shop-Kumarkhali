@@ -153,6 +153,10 @@ const Navbar = () => {
         <FaPhone />
         Contact
       </NavLink>
+      <NavLink to="/dashboard" onClick={closeMenu} className={navLinkClass}>
+        <FaChartLine />
+        Dashboard
+      </NavLink>
     </>
   );
 

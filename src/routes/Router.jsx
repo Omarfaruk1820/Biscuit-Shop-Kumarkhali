@@ -11,15 +11,25 @@ import Login from "../Auth/Login";
 import Register from "../Auth/Register";
 
 import Contact from "../pages/Contact";
-import AddBiscuit from "../pages/AddBiscuit";
+
 import Cart from "../components/cart/Cart";
 import Success from "../pages/Success";
-import OrderHistory from "../pages/OrderHistory";
-import AllOrder from "../pages/AllOrder";
-import Users from "../pages/Dashboard/Users";
-import OwnProduct from "../components/products/OwnProduct";
+
 import PrivateRoute from "./PrivateRoute";
 import FeaturedProdetails from "../components/home/FeaturedProdetails";
+import DashboardLayout from "../components/layout/DashboardLayout";
+
+import UserRoute from "./UserRoute";
+import MyOrders from "../pages/Dashboard/UserDashBoard/MyOrders";
+import Wishlist from "../pages/Dashboard/UserDashBoard/Wishlist";
+
+import AdminRoute from "./AdminRoute";
+import ManageUsers from "../pages/Dashboard/AdminDashBoard/ManageUsers";
+import ManageProducts from "../pages/Dashboard/AdminDashBoard/ManageProducts";
+import AddProduct from "../pages/Dashboard/AdminDashBoard/AddProduct";
+import ManageOrders from "../pages/Dashboard/AdminDashBoard/ManageOrders";
+import DashboardHome from "../pages/Dashboard/DashboardHome/DashboardHome";
+import AdminDashboard from "../pages/Dashboard/AdminDashBoard/AdminDashboard";
 
 const router = createBrowserRouter([
   {
@@ -74,10 +84,6 @@ const router = createBrowserRouter([
         path: "/about",
         element: <About />,
       },
-      {
-        path: "/add-biscuit",
-        element: <AddBiscuit />,
-      },
 
       // ✅ ADD THIS (missing before)
       {
@@ -98,36 +104,75 @@ const router = createBrowserRouter([
         path: "/success",
         element: <Success></Success>,
       },
+    ],
+  },
+  {
+    path: "/dashboard",
+    element: (
+      <PrivateRoute>
+        <DashboardLayout />
+      </PrivateRoute>
+    ),
+    children: [
       {
-        path: "/OrderHistory",
+        index: true,
+        element: <DashboardHome />,
+      },
+
+      // User Routes
+      {
+        path: "my-orders",
         element: (
-          <PrivateRoute>
-            <OrderHistory></OrderHistory>
-          </PrivateRoute>
+          <UserRoute>
+            <MyOrders />
+          </UserRoute>
         ),
       },
       {
-        path: "/AllOrder",
+        path: "wishlist",
         element: (
-          <PrivateRoute>
-            <AllOrder></AllOrder>
-          </PrivateRoute>
+          <UserRoute>
+            <Wishlist />
+          </UserRoute>
+        ),
+      },
+
+      // Admin Routes
+      {
+        path: "manage-users",
+        element: (
+          <AdminRoute>
+            <ManageUsers />
+          </AdminRoute>
+        ),
+      },
+
+      {
+        path: "addmin-dashboard",
+        element: <AdminDashboard />,
+      },
+      {
+        path: "manage-products",
+        element: (
+          <AdminRoute>
+            <ManageProducts />
+          </AdminRoute>
         ),
       },
       {
-        path: "/users",
+        path: "add-product",
         element: (
-          <PrivateRoute>
-            <Users></Users>
-          </PrivateRoute>
+          <AdminRoute>
+            <AddProduct />
+          </AdminRoute>
         ),
       },
       {
-        path: "/own-product",
+        path: "manage-orders",
         element: (
-          <PrivateRoute>
-            <OwnProduct></OwnProduct>
-          </PrivateRoute>
+          <AdminRoute>
+            <ManageOrders />
+          </AdminRoute>
         ),
       },
     ],
