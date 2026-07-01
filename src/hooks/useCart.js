@@ -1,17 +1,18 @@
-// hooks/useCart.js
 import { useQuery } from "@tanstack/react-query";
-import axios from "axios";
+import axiosSecure from "./axiosSecure";
 
-export const useCart = (email) => {
+const useCart = (email) => {
   return useQuery({
     queryKey: ["cart", email],
-    queryFn: async () => {
-      if (!email) return [];
 
-      const res = await axios.get(`http://localhost:5173/cart?email=${email}`);
-
-      return res.data?.data || [];
-    },
     enabled: !!email,
+
+    queryFn: async () => {
+      const { data } = await axiosSecure.get(`/cart/${email}`);
+
+      return data.data;
+    },
   });
 };
+
+export default useCart;

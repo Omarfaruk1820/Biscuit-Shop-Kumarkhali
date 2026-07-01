@@ -1,64 +1,81 @@
-import React, { useContext, useEffect, useState } from "react";
+// ======================================================
+// Login.jsx
+// Part 1
+// Imports, Hooks, AuthContext, Redirect Logic,
+// Remember Me, Validation, onSubmit,
+// Forgot Password, Error Handling
+// ======================================================
+
+import { useContext, useEffect, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
+import { sendPasswordResetEmail } from "firebase/auth";
+
 import {
   FaEnvelope,
   FaLock,
-  FaSignInAlt,
   FaEye,
   FaEyeSlash,
+  FaSignInAlt,
 } from "react-icons/fa";
-import { Link, useLocation, useNavigate } from "react-router-dom";
-import { sendPasswordResetEmail } from "firebase/auth";
 
+import auth from "./firebase.config";
 import { AuthContext } from "./AuthProvider";
 import { useToast } from "../context/ToastProvider";
 import GoogleSignIn from "./GoogleSign";
-import auth from "./firebase.config";
+
+// ======================================================
+// Component
+// ======================================================
 
 const Login = () => {
-  // ==========================
+  // ======================================================
   // Context
-  // ==========================
-  const { loginUser } = useContext(AuthContext);
+  // ======================================================
+
+  const { user, loading: authLoading, loginUser } = useContext(AuthContext);
+
   const { addToast } = useToast();
 
-  // ==========================
+  // ======================================================
   // Router
-  // ==========================
+  // ======================================================
+
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Redirect after login
   const from = location.state?.from?.pathname || "/";
 
-  // ==========================
+  // ======================================================
   // Local State
-  // ==========================
+  // ======================================================
+
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
 
-  // ==========================
+  // ======================================================
   // React Hook Form
-  // ==========================
+  // ======================================================
+
   const {
     register,
     handleSubmit,
-    reset,
     watch,
     setValue,
     formState: { errors },
   } = useForm({
+    mode: "onTouched",
     defaultValues: {
       email: "",
       password: "",
     },
-    mode: "onTouched",
   });
 
-  // ==========================
-  // Remember Email
-  // ==========================
+  // ======================================================
+  // Remember Me
+  // ======================================================
+
   useEffect(() => {
     const rememberedEmail = localStorage.getItem("remember-email");
 
@@ -68,9 +85,22 @@ const Login = () => {
     }
   }, [setValue]);
 
-  // ==========================
+  // ======================================================
+  // Redirect After AuthProvider Completes Login
+  // ======================================================
+
+  useEffect(() => {
+    if (!authLoading && user) {
+      navigate(from, {
+        replace: true,
+      });
+    }
+  }, [user, authLoading, navigate, from]);
+
+  // ======================================================
   // Login Handler
-  // ==========================
+  // ======================================================
+
   const onSubmit = async (data) => {
     setLoading(true);
 
@@ -78,6 +108,7 @@ const Login = () => {
       const email = data.email.trim().toLowerCase();
       const password = data.password;
 
+      // Firebase Login
       await loginUser(email, password);
 
       // Remember Email
@@ -87,20 +118,19 @@ const Login = () => {
         localStorage.removeItem("remember-email");
       }
 
-      addToast("🎉 Login successful! Welcome back.", "success");
+      // AuthProvider will:
+      // POST /users
+      // POST /auth/jwt
+      // GET /auth/me
+      // setUser()
+      // setRole()
+      // Redirect happens inside useEffect()
 
-      reset({
-        email: rememberMe ? email : "",
-        password: "",
-      });
-
-      navigate(from, {
-        replace: true,
-      });
+      addToast("🎉 Login successful!", "success");
     } catch (err) {
-      console.error("Login Error:", err);
+      console.error("LOGIN ERROR:", err);
 
-      let message = "Login failed.";
+      let message = "Unable to login.";
 
       switch (err.code) {
         case "auth/user-not-found":
@@ -111,10 +141,6 @@ const Login = () => {
           message = "Incorrect password.";
           break;
 
-        case "auth/invalid-email":
-          message = "Please enter a valid email address.";
-          break;
-
         case "auth/invalid-credential":
           message = "Incorrect email or password.";
           break;
@@ -123,16 +149,20 @@ const Login = () => {
           message = "This account has been disabled.";
           break;
 
-        case "auth/too-many-requests":
-          message = "Too many failed login attempts. Please try again later.";
+        case "auth/invalid-email":
+          message = "Please enter a valid email address.";
           break;
 
         case "auth/network-request-failed":
           message = "Network error. Please check your internet connection.";
           break;
 
+        case "auth/too-many-requests":
+          message = "Too many login attempts. Please try again later.";
+          break;
+
         default:
-          message = err.message || "Unable to login.";
+          message = err.message || message;
       }
 
       addToast(message, "error");
@@ -141,9 +171,10 @@ const Login = () => {
     }
   };
 
-  // ==========================
+  // ======================================================
   // Forgot Password
-  // ==========================
+  // ======================================================
+
   const handleForgotPassword = async () => {
     const email = watch("email")?.trim().toLowerCase();
 
@@ -153,14 +184,16 @@ const Login = () => {
     }
 
     try {
-      await sendPasswordResetEmail(auth, email);
+      await sendPasswordResetEmail(auth, email, {
+        url: `${window.location.origin}/login`,
+      });
 
       addToast(
         "Password reset email has been sent. Please check your inbox.",
         "success",
       );
     } catch (err) {
-      console.error("Reset Password Error:", err);
+      console.error("RESET PASSWORD ERROR:", err);
 
       let message = "Unable to send password reset email.";
 
@@ -177,6 +210,10 @@ const Login = () => {
           message = "Network error. Please check your internet connection.";
           break;
 
+        case "auth/too-many-requests":
+          message = "Too many requests. Please try again later.";
+          break;
+
         default:
           message = err.message || message;
       }
@@ -184,220 +221,235 @@ const Login = () => {
       addToast(message, "error");
     }
   };
+
+  // ======================================================
+  // Part 2 starts below...
+  // ======================================================
   return (
-    <div className="min-h-screen bg-gradient-to-br from-amber-50 via-white to-orange-50 flex items-center justify-center px-4 py-10">
+    <div className="min-h-screen bg-base-200 flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-md">
-        {/* Login Card */}
-        <div className="bg-white rounded-3xl shadow-2xl border border-gray-100 p-8 md:p-10">
-          {/* ==========================
-              Header
-          ========================== */}
-          <div className="text-center">
-            <h1 className="text-3xl font-bold text-gray-800">
-              Welcome Back 👋
-            </h1>
+        <div className="card bg-base-100 shadow-2xl border border-base-300">
+          <div className="card-body p-8">
+            {/* ====================================================== */}
+            {/* Header */}
+            {/* ====================================================== */}
 
-            <p className="mt-2 text-sm text-gray-500">
-              Login to continue your shopping journey
-            </p>
-          </div>
+            <div className="text-center">
+              <h1 className="text-3xl font-bold text-base-content">
+                Welcome Back 👋
+              </h1>
 
-          {/* ==========================
-              Login Form
-          ========================== */}
-          <form onSubmit={handleSubmit(onSubmit)} className="mt-8 space-y-5">
-            {/* ==========================
-                Email
-            ========================== */}
-            <div>
-              <label
-                htmlFor="email"
-                className="mb-2 block text-sm font-medium text-gray-700"
-              >
-                Email Address
-              </label>
-
-              <div className="flex items-center rounded-xl border border-gray-200 bg-white px-4 py-3 transition-all duration-300 hover:border-amber-300 focus-within:border-amber-500 focus-within:ring-2 focus-within:ring-amber-200">
-                <FaEnvelope className="text-gray-400" />
-
-                <input
-                  id="email"
-                  type="email"
-                  spellCheck={false}
-                  autoComplete="email"
-                  disabled={loading}
-                  placeholder="Enter your email"
-                  className="ml-3 w-full bg-transparent text-gray-700 outline-none placeholder:text-gray-400 disabled:cursor-not-allowed"
-                  {...register("email", {
-                    required: "Email is required",
-                    pattern: {
-                      value: /^\S+@\S+\.\S+$/,
-                      message: "Please enter a valid email address",
-                    },
-                  })}
-                />
-              </div>
-
-              {errors.email && (
-                <p className="mt-2 text-sm text-red-500">
-                  {errors.email.message}
-                </p>
-              )}
+              <p className="mt-2 text-base-content/70">
+                Login to your Biscuit Shop account
+              </p>
             </div>
 
-            {/* ==========================
-                Password
-            ========================== */}
-            <div>
-              <label
-                htmlFor="password"
-                className="mb-2 block text-sm font-medium text-gray-700"
-              >
-                Password
-              </label>
+            {/* ====================================================== */}
+            {/* Login Form */}
+            {/* ====================================================== */}
 
-              <div className="flex items-center rounded-xl border border-gray-200 bg-white px-4 py-3 transition-all duration-300 hover:border-amber-300 focus-within:border-amber-500 focus-within:ring-2 focus-within:ring-amber-200">
-                <FaLock className="text-gray-400" />
+            <form onSubmit={handleSubmit(onSubmit)} className="mt-8 space-y-5">
+              {/* ====================================================== */}
+              {/* Email */}
+              {/* ====================================================== */}
 
-                <input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  autoComplete="current-password"
-                  disabled={loading}
-                  placeholder="Enter your password"
-                  className="ml-3 w-full bg-transparent text-gray-700 outline-none placeholder:text-gray-400 disabled:cursor-not-allowed"
-                  {...register("password", {
-                    required: "Password is required",
-                    minLength: {
-                      value: 6,
-                      message: "Password must be at least 6 characters long",
-                    },
-                  })}
-                />
+              <div>
+                <label htmlFor="email" className="label">
+                  <span className="label-text font-medium">Email Address</span>
+                </label>
+
+                <div
+                  className={`input input-bordered flex items-center gap-3 w-full ${
+                    errors.email ? "input-error" : ""
+                  }`}
+                >
+                  <FaEnvelope className="text-base-content/50" />
+
+                  <input
+                    id="email"
+                    type="email"
+                    autoComplete="email"
+                    spellCheck={false}
+                    disabled={loading || authLoading}
+                    placeholder="Enter your email"
+                    className="grow bg-transparent outline-none"
+                    {...register("email", {
+                      required: "Email is required.",
+
+                      pattern: {
+                        value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+                        message: "Please enter a valid email address.",
+                      },
+                    })}
+                  />
+                </div>
+
+                {errors.email && (
+                  <p className="mt-2 text-sm text-error">
+                    {errors.email.message}
+                  </p>
+                )}
+              </div>
+
+              {/* ====================================================== */}
+              {/* Password */}
+              {/* ====================================================== */}
+
+              <div>
+                <label htmlFor="password" className="label">
+                  <span className="label-text font-medium">Password</span>
+                </label>
+
+                <div
+                  className={`input input-bordered flex items-center gap-3 w-full ${
+                    errors.password ? "input-error" : ""
+                  }`}
+                >
+                  <FaLock className="text-base-content/50" />
+
+                  <input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    autoComplete="current-password"
+                    disabled={loading || authLoading}
+                    placeholder="Enter your password"
+                    className="grow bg-transparent outline-none"
+                    {...register("password", {
+                      required: "Password is required.",
+
+                      minLength: {
+                        value: 6,
+                        message: "Password must be at least 6 characters.",
+                      },
+
+                      maxLength: {
+                        value: 50,
+                        message: "Password cannot exceed 50 characters.",
+                      },
+                    })}
+                  />
+
+                  <button
+                    type="button"
+                    aria-label={
+                      showPassword ? "Hide password" : "Show password"
+                    }
+                    disabled={loading || authLoading}
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    className="text-base-content/60 hover:text-warning transition"
+                  >
+                    {showPassword ? (
+                      <FaEyeSlash size={18} />
+                    ) : (
+                      <FaEye size={18} />
+                    )}
+                  </button>
+                </div>
+
+                {errors.password && (
+                  <p className="mt-2 text-sm text-error">
+                    {errors.password.message}
+                  </p>
+                )}
+              </div>
+
+              {/* ====================================================== */}
+              {/* Remember Me + Forgot Password */}
+              {/* ====================================================== */}
+
+              <div className="flex items-center justify-between text-sm">
+                <label className="flex cursor-pointer items-center gap-2">
+                  <input
+                    type="checkbox"
+                    className="checkbox checkbox-warning checkbox-sm"
+                    checked={rememberMe}
+                    disabled={loading || authLoading}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                  />
+
+                  <span>Remember me</span>
+                </label>
 
                 <button
                   type="button"
-                  tabIndex={0}
-                  disabled={loading}
-                  aria-label={showPassword ? "Hide password" : "Show password"}
-                  onClick={() => setShowPassword((prev) => !prev)}
-                  className="ml-2 text-gray-500 transition hover:text-amber-600 disabled:cursor-not-allowed"
+                  disabled={loading || authLoading}
+                  onClick={handleForgotPassword}
+                  className="font-medium text-warning hover:underline disabled:opacity-60"
                 >
-                  {showPassword ? (
-                    <FaEyeSlash size={18} />
-                  ) : (
-                    <FaEye size={18} />
-                  )}
+                  Forgot Password?
                 </button>
               </div>
 
-              {errors.password && (
-                <p className="mt-2 text-sm text-red-500">
-                  {errors.password.message}
-                </p>
-              )}
-            </div>
-
-            {/* ==========================
-                Remember Me & Forgot Password
-            ========================== */}
-            <div className="flex items-center justify-between gap-4 text-sm">
-              <label className="flex cursor-pointer select-none items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                  disabled={loading}
-                  className="checkbox checkbox-warning checkbox-sm"
-                />
-
-                <span className="text-gray-600">Remember me</span>
-              </label>
+              {/* ====================================================== */}
+              {/* Login Button */}
+              {/* ====================================================== */}
 
               <button
-                type="button"
-                disabled={loading}
-                onClick={handleForgotPassword}
-                className="font-medium text-amber-600 transition hover:text-amber-700 hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                type="submit"
+                disabled={loading || authLoading}
+                className="btn btn-warning w-full"
               >
-                Forgot Password?
-              </button>
-            </div>
-
-            {/* ==========================
-                Login Button
-            ========================== */}
-            <button
-              type="submit"
-              disabled={loading}
-              className="btn h-12 w-full rounded-xl border-0 bg-gradient-to-r from-amber-500 to-orange-500 text-base font-semibold text-white shadow-lg transition-all duration-300 hover:scale-[1.02] hover:from-amber-600 hover:to-orange-600 disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              {loading ? (
-                <>
+                {(loading || authLoading) && (
                   <span className="loading loading-spinner loading-sm"></span>
-                  Logging in...
-                </>
-              ) : (
-                <>
-                  <FaSignInAlt />
-                  Login
-                </>
-              )}
-            </button>
-          </form>
+                )}
 
-          {/* ==========================
-              Divider
-          ========================== */}
-          <div className="my-8 flex items-center">
-            <div className="flex-1 border-t border-gray-200"></div>
+                {loading || authLoading ? (
+                  "Signing In..."
+                ) : (
+                  <>
+                    <FaSignInAlt />
+                    Login
+                  </>
+                )}
+              </button>
+            </form>
 
-            <span className="px-4 text-sm font-medium text-gray-400">OR</span>
+            {/* ====================================================== */}
+            {/* Divider */}
+            {/* ====================================================== */}
 
-            <div className="flex-1 border-t border-gray-200"></div>
-          </div>
-          {/* ==========================
-              Google Sign In
-          ========================== */}
-          <div className="mt-6">
+            <div className="divider my-6">OR</div>
+
+            {/* ====================================================== */}
+            {/* Google Sign In */}
+            {/* ====================================================== */}
+
             <GoogleSignIn />
-          </div>
 
-          {/* ==========================
-              Register Link
-          ========================== */}
-          <div className="mt-8 text-center">
-            <p className="text-sm text-gray-600">
-              Don't have an account?{" "}
-              <Link
-                to="/register"
-                state={{ from: location.state?.from }}
-                className="font-semibold text-amber-600 transition hover:text-amber-700 hover:underline"
-              >
-                Create Account
-              </Link>
-            </p>
+            {/* ====================================================== */}
+            {/* Register */}
+            {/* ====================================================== */}
+
+            <div className="mt-6 text-center">
+              <p className="text-sm">
+                Don't have an account?{" "}
+                <Link
+                  to="/register"
+                  state={{ from: location.state?.from }}
+                  className="link link-warning font-semibold"
+                >
+                  Create Account
+                </Link>
+              </p>
+            </div>
           </div>
         </div>
 
+        {/* ====================================================== */}
         {/* Footer */}
-        <p className="mt-6 text-center text-xs text-gray-500">
-          By signing in, you agree to our{" "}
-          <Link
-            to="/terms"
-            className="font-medium text-amber-600 hover:underline"
-          >
+        {/* ====================================================== */}
+
+        <div className="mt-6 text-center text-xs text-base-content/60">
+          By signing in you agree to our{" "}
+          <Link to="/terms" className="link link-warning">
             Terms of Service
           </Link>{" "}
           and{" "}
-          <Link
-            to="/privacy"
-            className="font-medium text-amber-600 hover:underline"
-          >
+          <Link to="/privacy" className="link link-warning">
             Privacy Policy
           </Link>
           .
-        </p>
+        </div>
       </div>
     </div>
   );

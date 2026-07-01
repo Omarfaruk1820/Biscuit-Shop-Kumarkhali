@@ -1,81 +1,97 @@
-import React, { useContext, useState } from "react";
+import { useContext, useState } from "react";
 import { FcGoogle } from "react-icons/fc";
-import { useNavigate, useLocation } from "react-router-dom";
-import axios from "axios";
 
-import { AuthContext } from "../Auth/AuthProvider";
+import { AuthContext } from "./AuthProvider";
 import { useToast } from "../context/ToastProvider";
 
-const API = import.meta.env.VITE_API_URL;
-
-// ================= SAVE USER =================
-const saveUserToDB = async (user) => {
-  return axios.post(`${API}/users`, {
-    name: user.displayName,
-    email: user.email,
-    photo: user.photoURL,
-    provider: "google",
-  });
-};
-
 const GoogleSignIn = () => {
+  // ======================================================
+  // Context
+  // ======================================================
+
   const { signInGoogle } = useContext(AuthContext);
+
   const { addToast } = useToast();
 
-  const navigate = useNavigate();
-  const location = useLocation();
-  const from = location.state?.from?.pathname || "/";
+  // ======================================================
+  // Loading
+  // ======================================================
 
   const [loading, setLoading] = useState(false);
 
-  const handleGoogleSignIn = async () => {
+  // ======================================================
+  // Google Login
+  // ======================================================
+
+  const handleGoogleLogin = async () => {
+    if (loading) return;
+
     try {
       setLoading(true);
 
-      const result = await signInGoogle();
-      const user = result.user;
+      await signInGoogle();
 
-      // JWT
-      await axios.post(
-        `${API}/jwt`,
-        { email: user.email },
-        { withCredentials: true }
-      );
+      // AuthProvider automatically:
+      // ✔ POST /users
+      // ✔ POST /auth/jwt
+      // ✔ GET /auth/me
+      // ✔ MongoDB Sync
+      // ✔ JWT Cookie
+      // ✔ Role Sync
+      // ✔ User State
 
-      // MongoDB
-      await saveUserToDB(user);
-
-      addToast(`Welcome ${user.displayName || "User"} 🎉`, "success");
-
-      navigate(from, { replace: true });
-
+      addToast("Welcome 🎉", "success");
     } catch (error) {
-      console.error(error);
-      addToast("Google sign-in failed ❌", "error");
+      console.error("Google Login:", error);
+
+      let message = "Google Sign-In failed.";
+
+      switch (error.code) {
+        case "auth/popup-closed-by-user":
+          message = "Google sign-in was cancelled.";
+          break;
+
+        case "auth/popup-blocked":
+          message = "Popup blocked by browser.";
+          break;
+
+        case "auth/network-request-failed":
+          message = "Network error.";
+          break;
+
+        case "auth/too-many-requests":
+          message = "Too many attempts. Try again later.";
+          break;
+
+        default:
+          message = error.message || message;
+      }
+
+      addToast(message, "error");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="w-full flex flex-col items-center">
-
-      <div className="flex items-center w-full my-4">
-        <div className="flex-1 h-px bg-gray-300"></div>
-        <span className="px-3 text-sm text-gray-500">OR</span>
-        <div className="flex-1 h-px bg-gray-300"></div>
-      </div>
-
-      <button
-        onClick={handleGoogleSignIn}
-        disabled={loading}
-        className="w-full flex items-center justify-center gap-3 border border-gray-300 py-3 rounded-xl hover:bg-gray-50 transition disabled:opacity-60"
-      >
-        <FcGoogle className="text-2xl" />
-        {loading ? "Signing in..." : "Continue with Google"}
-      </button>
-
-    </div>
+    <button
+      type="button"
+      onClick={handleGoogleLogin}
+      disabled={loading}
+      className="btn btn-outline w-full"
+    >
+      {loading ? (
+        <>
+          <span className="loading loading-spinner loading-sm"></span>
+          Signing in...
+        </>
+      ) : (
+        <>
+          <FcGoogle className="text-xl" />
+          Continue with Google
+        </>
+      )}
+    </button>
   );
 };
 
