@@ -1,8 +1,4 @@
-// ======================================================
-// DashboardLayout.jsx
-// Production Ready Dashboard Layout
-// Responsive + Drawer + Outlet
-// ======================================================
+
 
 import { Outlet } from "react-router-dom";
 import DashboardSidebar from "./DashboardSidebar";

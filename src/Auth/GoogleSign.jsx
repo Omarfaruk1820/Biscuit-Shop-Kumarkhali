@@ -14,7 +14,7 @@ const GoogleSignIn = () => {
   const { addToast } = useToast();
 
   // ======================================================
-  // Loading
+  // Loading State
   // ======================================================
 
   const [loading, setLoading] = useState(false);
@@ -29,38 +29,38 @@ const GoogleSignIn = () => {
     try {
       setLoading(true);
 
+      // Firebase Login
       await signInGoogle();
 
-      // AuthProvider automatically:
-      // ✔ POST /users
-      // ✔ POST /auth/jwt
-      // ✔ GET /auth/me
-      // ✔ MongoDB Sync
-      // ✔ JWT Cookie
-      // ✔ Role Sync
-      // ✔ User State
-
-      addToast("Welcome 🎉", "success");
+      // Don't Navigate
+      // Don't Set User
+      // Don't Set Role
+      // AuthProvider will handle everything.
     } catch (error) {
-      console.error("Google Login:", error);
+      console.error("Google Sign-In Error:", error);
+
+      if (error.code === "auth/popup-closed-by-user") {
+        return;
+      }
 
       let message = "Google Sign-In failed.";
 
       switch (error.code) {
-        case "auth/popup-closed-by-user":
-          message = "Google sign-in was cancelled.";
-          break;
-
         case "auth/popup-blocked":
           message = "Popup blocked by browser.";
           break;
 
         case "auth/network-request-failed":
-          message = "Network error.";
+          message = "Please check your internet connection.";
           break;
 
         case "auth/too-many-requests":
-          message = "Too many attempts. Try again later.";
+          message = "Too many attempts. Please try again later.";
+          break;
+
+        case "auth/account-exists-with-different-credential":
+          message =
+            "This email is already registered with another sign-in method.";
           break;
 
         default:
@@ -78,7 +78,8 @@ const GoogleSignIn = () => {
       type="button"
       onClick={handleGoogleLogin}
       disabled={loading}
-      className="btn btn-outline w-full"
+      className="btn btn-outline w-full gap-3"
+      aria-busy={loading}
     >
       {loading ? (
         <>
@@ -87,7 +88,7 @@ const GoogleSignIn = () => {
         </>
       ) : (
         <>
-          <FcGoogle className="text-xl" />
+          <FcGoogle size={22} />
           Continue with Google
         </>
       )}
