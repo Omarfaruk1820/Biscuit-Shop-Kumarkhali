@@ -1,9 +1,4 @@
-// ======================================================
-// DashboardSidebar.jsx
-// Part 1
-// Imports, Menu Arrays, Styles,
-// Context, Helpers, Loading State
-// ======================================================
+
 
 import { useCallback, useContext } from "react";
 import { NavLink } from "react-router-dom";
@@ -23,9 +18,7 @@ import {
 
 import { AuthContext } from "../../Auth/AuthProvider";
 
-// ======================================================
-// Admin Navigation
-// ======================================================
+
 
 export const adminMenus = [
   {
