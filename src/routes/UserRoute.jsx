@@ -1,19 +1,29 @@
-import { Navigate } from "react-router-dom";
 import { useContext } from "react";
+import { Navigate, useLocation } from "react-router-dom";
 import { AuthContext } from "../Auth/AuthProvider";
 
 const UserRoute = ({ children }) => {
   const { user, role, loading } = useContext(AuthContext);
 
+  const location = useLocation();
+
   if (loading) {
-    return <span className="loading loading-spinner"></span>;
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <span className="loading loading-spinner loading-lg text-primary"></span>
+      </div>
+    );
   }
 
-  if (user && role === "user") {
-    return children;
+  if (!user) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  return <Navigate to="/" replace />;
+  if (role !== "user") {
+    return <Navigate to="/dashboard/admin-dashboard" replace />;
+  }
+
+  return children;
 };
 
 export default UserRoute;

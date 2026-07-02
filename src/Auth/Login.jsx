@@ -1,9 +1,9 @@
 // ======================================================
 // Login.jsx
 // Part 1
-// Imports, Hooks, AuthContext, Redirect Logic,
-// Remember Me, Validation, onSubmit,
-// Forgot Password, Error Handling
+// Imports, Context, Hooks, Validation,
+// Remember Me, Redirect Logic,
+// onSubmit(), Forgot Password
 // ======================================================
 
 import { useContext, useEffect, useState } from "react";
@@ -24,16 +24,17 @@ import { AuthContext } from "./AuthProvider";
 import { useToast } from "../context/ToastProvider";
 import GoogleSignIn from "./GoogleSign";
 
-// ======================================================
-// Component
-// ======================================================
-
 const Login = () => {
   // ======================================================
   // Context
   // ======================================================
 
-  const { user, loading: authLoading, loginUser } = useContext(AuthContext);
+  const {
+    loginUser,
+    user,
+    role,
+    loading: authLoading,
+  } = useContext(AuthContext);
 
   const { addToast } = useToast();
 
@@ -44,7 +45,8 @@ const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const from = location.state?.from?.pathname || "/";
+  // If user came from PrivateRoute
+  const from = location.state?.from?.pathname;
 
   // ======================================================
   // Local State
@@ -54,6 +56,8 @@ const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
 
+  const isLoading = loading || authLoading;
+
   // ======================================================
   // React Hook Form
   // ======================================================
@@ -62,6 +66,7 @@ const Login = () => {
     register,
     handleSubmit,
     watch,
+    reset,
     setValue,
     formState: { errors },
   } = useForm({
@@ -73,7 +78,7 @@ const Login = () => {
   });
 
   // ======================================================
-  // Remember Me
+  // Remember Email
   // ======================================================
 
   useEffect(() => {
@@ -86,19 +91,35 @@ const Login = () => {
   }, [setValue]);
 
   // ======================================================
-  // Redirect After AuthProvider Completes Login
+  // Role Based Redirect
+  // AuthProvider updates user & role automatically
   // ======================================================
 
   useEffect(() => {
-    if (!authLoading && user) {
-      navigate(from, {
+    if (authLoading) return;
+
+    if (!user || !role) return;
+
+    // Came from Private Route
+    if (from) {
+      navigate(from, { replace: true });
+      return;
+    }
+
+    // Role Based Dashboard
+    if (role === "admin") {
+      navigate("/dashboard/admin-dashboard", {
+        replace: true,
+      });
+    } else {
+      navigate("/dashboard/user-dashboard", {
         replace: true,
       });
     }
-  }, [user, authLoading, navigate, from]);
+  }, [user, role, authLoading, navigate, from]);
 
   // ======================================================
-  // Login Handler
+  // Login
   // ======================================================
 
   const onSubmit = async (data) => {
@@ -118,15 +139,16 @@ const Login = () => {
         localStorage.removeItem("remember-email");
       }
 
-      // AuthProvider will:
-      // POST /users
-      // POST /auth/jwt
-      // GET /auth/me
-      // setUser()
-      // setRole()
-      // Redirect happens inside useEffect()
-
       addToast("🎉 Login successful!", "success");
+
+      reset({
+        email: rememberMe ? email : "",
+        password: "",
+      });
+
+      // Don't navigate here.
+      // AuthProvider will update user & role.
+      // Redirect happens inside useEffect().
     } catch (err) {
       console.error("LOGIN ERROR:", err);
 
@@ -223,24 +245,28 @@ const Login = () => {
   };
 
   // ======================================================
-  // Part 2 starts below...
+  // Part 2 Starts Here...
   // ======================================================
   return (
     <div className="min-h-screen bg-base-200 flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-md">
+        {/* ====================================================== */}
+        {/* Login Card */}
+        {/* ====================================================== */}
         <div className="card bg-base-100 shadow-2xl border border-base-300">
-          <div className="card-body p-8">
+          <div className="card-body p-6 sm:p-8">
             {/* ====================================================== */}
             {/* Header */}
             {/* ====================================================== */}
-
             <div className="text-center">
-              <h1 className="text-3xl font-bold text-base-content">
-                Welcome Back 👋
-              </h1>
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-warning/10">
+                <FaSignInAlt className="text-3xl text-warning" />
+              </div>
+
+              <h1 className="text-3xl font-bold">Welcome Back 👋</h1>
 
               <p className="mt-2 text-base-content/70">
-                Login to your Biscuit Shop account
+                Login to your MobileHub account
               </p>
             </div>
 
@@ -249,9 +275,7 @@ const Login = () => {
             {/* ====================================================== */}
 
             <form onSubmit={handleSubmit(onSubmit)} className="mt-8 space-y-5">
-              {/* ====================================================== */}
-              {/* Email */}
-              {/* ====================================================== */}
+              {/* ================= Email ================= */}
 
               <div>
                 <label htmlFor="email" className="label">
@@ -259,7 +283,7 @@ const Login = () => {
                 </label>
 
                 <div
-                  className={`input input-bordered flex items-center gap-3 w-full ${
+                  className={`input input-bordered flex w-full items-center gap-3 ${
                     errors.email ? "input-error" : ""
                   }`}
                 >
@@ -270,7 +294,7 @@ const Login = () => {
                     type="email"
                     autoComplete="email"
                     spellCheck={false}
-                    disabled={loading || authLoading}
+                    disabled={isLoading}
                     placeholder="Enter your email"
                     className="grow bg-transparent outline-none"
                     {...register("email", {
@@ -291,9 +315,7 @@ const Login = () => {
                 )}
               </div>
 
-              {/* ====================================================== */}
-              {/* Password */}
-              {/* ====================================================== */}
+              {/* ================= Password ================= */}
 
               <div>
                 <label htmlFor="password" className="label">
@@ -301,7 +323,7 @@ const Login = () => {
                 </label>
 
                 <div
-                  className={`input input-bordered flex items-center gap-3 w-full ${
+                  className={`input input-bordered flex w-full items-center gap-3 ${
                     errors.password ? "input-error" : ""
                   }`}
                 >
@@ -311,7 +333,7 @@ const Login = () => {
                     id="password"
                     type={showPassword ? "text" : "password"}
                     autoComplete="current-password"
-                    disabled={loading || authLoading}
+                    disabled={isLoading}
                     placeholder="Enter your password"
                     className="grow bg-transparent outline-none"
                     {...register("password", {
@@ -331,12 +353,12 @@ const Login = () => {
 
                   <button
                     type="button"
+                    disabled={isLoading}
                     aria-label={
                       showPassword ? "Hide password" : "Show password"
                     }
-                    disabled={loading || authLoading}
                     onClick={() => setShowPassword((prev) => !prev)}
-                    className="text-base-content/60 hover:text-warning transition"
+                    className="text-base-content/60 transition hover:text-warning"
                   >
                     {showPassword ? (
                       <FaEyeSlash size={18} />
@@ -361,10 +383,10 @@ const Login = () => {
                 <label className="flex cursor-pointer items-center gap-2">
                   <input
                     type="checkbox"
-                    className="checkbox checkbox-warning checkbox-sm"
                     checked={rememberMe}
-                    disabled={loading || authLoading}
+                    disabled={isLoading}
                     onChange={(e) => setRememberMe(e.target.checked)}
+                    className="checkbox checkbox-warning checkbox-sm"
                   />
 
                   <span>Remember me</span>
@@ -372,9 +394,9 @@ const Login = () => {
 
                 <button
                   type="button"
-                  disabled={loading || authLoading}
+                  disabled={isLoading}
                   onClick={handleForgotPassword}
-                  className="font-medium text-warning hover:underline disabled:opacity-60"
+                  className="font-medium text-warning transition hover:underline disabled:opacity-60"
                 >
                   Forgot Password?
                 </button>
@@ -386,14 +408,14 @@ const Login = () => {
 
               <button
                 type="submit"
-                disabled={loading || authLoading}
+                disabled={isLoading}
                 className="btn btn-warning w-full"
               >
-                {(loading || authLoading) && (
+                {isLoading && (
                   <span className="loading loading-spinner loading-sm"></span>
                 )}
 
-                {loading || authLoading ? (
+                {isLoading ? (
                   "Signing In..."
                 ) : (
                   <>
@@ -420,13 +442,15 @@ const Login = () => {
             {/* Register */}
             {/* ====================================================== */}
 
-            <div className="mt-6 text-center">
-              <p className="text-sm">
+            <div className="mt-8 text-center">
+              <p className="text-sm text-base-content/70">
                 Don't have an account?{" "}
                 <Link
                   to="/register"
-                  state={{ from: location.state?.from }}
-                  className="link link-warning font-semibold"
+                  state={{
+                    from: location.state?.from,
+                  }}
+                  className="font-semibold text-warning hover:underline"
                 >
                   Create Account
                 </Link>
@@ -440,7 +464,7 @@ const Login = () => {
         {/* ====================================================== */}
 
         <div className="mt-6 text-center text-xs text-base-content/60">
-          By signing in you agree to our{" "}
+          By signing in, you agree to our{" "}
           <Link to="/terms" className="link link-warning">
             Terms of Service
           </Link>{" "}

@@ -1,21 +1,36 @@
+// ======================================================
+// DashboardLayout.jsx
+// Production Ready Dashboard Layout
+// Responsive + Drawer + Outlet
+// ======================================================
+
 import { Outlet } from "react-router-dom";
-import DashboardSideBar from "./DashboardSideBar";
+import DashboardSidebar from "./DashboardSidebar";
 
 const DashboardLayout = () => {
   return (
-    <div className="drawer lg:drawer-open min-h-screen bg-base-200/40">
+    <div className="drawer lg:drawer-open min-h-screen bg-base-200">
+      {/* ====================================================== */}
       {/* Drawer Toggle */}
+      {/* ====================================================== */}
+
       <input id="dashboard-drawer" type="checkbox" className="drawer-toggle" />
 
+      {/* ====================================================== */}
       {/* Main Content */}
-      <div className="drawer-content flex flex-col min-h-screen">
+      {/* ====================================================== */}
+
+      <div className="drawer-content flex min-h-screen flex-col">
+        {/* ====================================================== */}
         {/* Mobile Navbar */}
-        <header className="navbar sticky top-0 z-30 border-b border-base-300 bg-base-100 shadow-sm lg:hidden">
+        {/* ====================================================== */}
+
+        <header className="navbar sticky top-0 z-40 border-b border-base-300 bg-base-100 shadow-sm lg:hidden">
           <div className="flex-none">
             <label
               htmlFor="dashboard-drawer"
               className="btn btn-square btn-ghost"
-              aria-label="Open Sidebar"
+              aria-label="Open Dashboard Sidebar"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -35,11 +50,16 @@ const DashboardLayout = () => {
           </div>
 
           <div className="flex-1">
-            <h1 className="text-xl font-bold text-primary">Dashboard</h1>
+            <h1 className="text-lg font-bold text-primary md:text-xl">
+              Dashboard
+            </h1>
           </div>
         </header>
 
+        {/* ====================================================== */}
         {/* Page Content */}
+        {/* ====================================================== */}
+
         <main className="flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-screen-2xl p-4 md:p-6 lg:p-8">
             <Outlet />
@@ -47,15 +67,20 @@ const DashboardLayout = () => {
         </main>
       </div>
 
+      {/* ====================================================== */}
       {/* Sidebar */}
-      <div className="drawer-side z-40">
+      {/* ====================================================== */}
+
+      <div className="drawer-side z-50">
         <label
           htmlFor="dashboard-drawer"
+          aria-label="Close Dashboard Sidebar"
           className="drawer-overlay"
-          aria-label="Close Sidebar"
-        ></label>
+        />
 
-        <DashboardSideBar />
+        <aside className="min-h-full w-72 border-r border-base-300 bg-base-100 shadow-xl">
+          <DashboardSidebar />
+        </aside>
       </div>
     </div>
   );

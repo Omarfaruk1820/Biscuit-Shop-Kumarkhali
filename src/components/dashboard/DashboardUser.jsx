@@ -1,6 +1,6 @@
 
 
-const Support = () => {
+const DashboardUser = () => {
     return (
         <div>
             
@@ -8,4 +8,4 @@ const Support = () => {
     );
 };
 
-export default Support;
+export default DashboardUser;

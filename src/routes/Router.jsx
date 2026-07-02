@@ -19,17 +19,20 @@ import PrivateRoute from "./PrivateRoute";
 import FeaturedProdetails from "../components/home/FeaturedProdetails";
 import DashboardLayout from "../components/layout/DashboardLayout";
 
-import UserRoute from "./UserRoute";
-import MyOrders from "../pages/Dashboard/UserDashBoard/MyOrders";
-import Wishlist from "../pages/Dashboard/UserDashBoard/Wishlist";
-
 import AdminRoute from "./AdminRoute";
-import ManageUsers from "../pages/Dashboard/AdminDashBoard/ManageUsers";
-import ManageProducts from "../pages/Dashboard/AdminDashBoard/ManageProducts";
-import AddProduct from "../pages/Dashboard/AdminDashBoard/AddProduct";
-import ManageOrders from "../pages/Dashboard/AdminDashBoard/ManageOrders";
-import DashboardHome from "../pages/Dashboard/DashboardHome/DashboardHome";
-import AdminDashboard from "../pages/Dashboard/AdminDashBoard/AdminDashboard";
+
+import DashboardRedirect from "../components/layout/DashboardRedirect";
+import MyOrders from "./../components/dashboard/MyOrders";
+import Wishlist from "./../components/dashboard/Wishlist";
+import ManageOrders from "./../components/dashboard/ManageOrders";
+import AddProduct from "../components/dashboard/AddProduct";
+import AdminDashboard from "./../components/dashboard/AdminDashboard";
+import AllUsers from "../components/dashboard/AllUsers";
+import UserRoute from "./UserRoute";
+import DashboardUser from "../components/dashboard/DashboardUser";
+import Profile from "../components/dashboard/Profile";
+import ManageProducts from "./../components/dashboard/ManageProducts";
+import Settings from "../components/dashboard/Settings";
 
 const router = createBrowserRouter([
   {
@@ -113,13 +116,30 @@ const router = createBrowserRouter([
         <DashboardLayout />
       </PrivateRoute>
     ),
+
     children: [
+      // ======================================================
+      // Default Dashboard Redirect
+      // ======================================================
+
       {
         index: true,
-        element: <DashboardHome />,
+        element: <DashboardRedirect />,
       },
 
+      // ======================================================
       // User Routes
+      // ======================================================
+
+      {
+        path: "user-dashboard",
+        element: (
+          <UserRoute>
+            <DashboardUser />
+          </UserRoute>
+        ),
+      },
+
       {
         path: "my-orders",
         element: (
@@ -128,6 +148,7 @@ const router = createBrowserRouter([
           </UserRoute>
         ),
       },
+
       {
         path: "wishlist",
         element: (
@@ -137,28 +158,28 @@ const router = createBrowserRouter([
         ),
       },
 
-      // Admin Routes
       {
-        path: "manage-users",
+        path: "profile",
+        element: (
+          <UserRoute>
+            <Profile />
+          </UserRoute>
+        ),
+      },
+
+      // ======================================================
+      // Admin Routes
+      // ======================================================
+
+      {
+        path: "admin-dashboard",
         element: (
           <AdminRoute>
-            <ManageUsers />
+            <AdminDashboard />
           </AdminRoute>
         ),
       },
 
-      {
-        path: "addmin-dashboard",
-        element: <AdminDashboard />,
-      },
-      {
-        path: "manage-products",
-        element: (
-          <AdminRoute>
-            <ManageProducts />
-          </AdminRoute>
-        ),
-      },
       {
         path: "add-product",
         element: (
@@ -167,6 +188,16 @@ const router = createBrowserRouter([
           </AdminRoute>
         ),
       },
+
+      {
+        path: "manage-products",
+        element: (
+          <AdminRoute>
+            <ManageProducts />
+          </AdminRoute>
+        ),
+      },
+
       {
         path: "manage-orders",
         element: (
@@ -174,6 +205,24 @@ const router = createBrowserRouter([
             <ManageOrders />
           </AdminRoute>
         ),
+      },
+
+      {
+        path: "all-users",
+        element: (
+          <AdminRoute>
+            <AllUsers></AllUsers>
+          </AdminRoute>
+        ),
+      },
+
+      // ======================================================
+      // Shared Routes
+      // ======================================================
+
+      {
+        path: "settings",
+        element: <Settings />,
       },
     ],
   },

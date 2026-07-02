@@ -2,53 +2,61 @@ import { useContext, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 
+import {
+  FaUser,
+  FaEnvelope,
+  FaLock,
+  FaEye,
+  FaEyeSlash,
+  FaUserPlus,
+} from "react-icons/fa";
+
 import { AuthContext } from "./AuthProvider";
 import { useToast } from "../context/ToastProvider";
 import GoogleSignIn from "./GoogleSign";
 
-// ======================================================
-// Component
-// ======================================================
-
 const Register = () => {
-  // ======================================================
+  // =====================================================
   // Context
-  // ======================================================
+  // =====================================================
 
   const {
-    user,
-    loading: authLoading,
     createUser,
     updateUserProfile,
+    user,
+    role,
+    loading: authLoading,
   } = useContext(AuthContext);
 
   const { addToast } = useToast();
 
+  // =====================================================
+  // Router
+  // =====================================================
+
   const navigate = useNavigate();
   const location = useLocation();
 
-  // ======================================================
+  // =====================================================
   // Local State
-  // ======================================================
+  // =====================================================
 
   const [loading, setLoading] = useState(false);
 
-  // ======================================================
-  // Redirect Path
-  // ======================================================
+  const [showPassword, setShowPassword] = useState(false);
 
-  const from = location.state?.from?.pathname || "/";
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  // ======================================================
+  // =====================================================
   // React Hook Form
-  // ======================================================
+  // =====================================================
 
   const {
     register,
     handleSubmit,
     watch,
     reset,
-    formState: { errors, isSubmitting },
+    formState: { errors },
   } = useForm({
     mode: "onTouched",
     reValidateMode: "onChange",
@@ -63,87 +71,66 @@ const Register = () => {
 
   const password = watch("password");
 
-  // ======================================================
-  // Redirect After AuthProvider Completes Authentication
-  // ======================================================
+  // =====================================================
+  // Redirect After Registration
+  // AuthProvider controls user & role
+  // =====================================================
 
   useEffect(() => {
-    if (!authLoading && user) {
-      navigate(from, {
+    if (authLoading) return;
+
+    if (!user || !role) return;
+
+    if (role === "admin") {
+      navigate("/dashboard/admin-dashboard", {
+        replace: true,
+      });
+    } else {
+      navigate("/dashboard/user-dashboard", {
         replace: true,
       });
     }
-  }, [authLoading, user, navigate, from]);
+  }, [user, role, authLoading, navigate]);
 
-  // ======================================================
-  // Submit
-  // ======================================================
+  // =====================================================
+  // Register Handler
+  // =====================================================
 
-  const onSubmit = async (formData) => {
+  const onSubmit = async (data) => {
     if (loading) return;
 
     setLoading(true);
 
     try {
-      const name = formData.name.trim();
+      const name = data.name.trim();
 
-      const email = formData.email.trim().toLowerCase();
+      const email = data.email.trim().toLowerCase();
 
-      // ==========================================
-      // Create Firebase Account
-      // ==========================================
+      const password = data.password;
 
-      const credential = await createUser(email, formData.password);
+      // Firebase Register
+      const credential = await createUser(email, password);
 
-      if (!credential?.user) {
-        throw new Error("Unable to create user account.");
-      }
-
-      // ==========================================
       // Update Firebase Profile
-      // ==========================================
-
       await updateUserProfile(name);
 
-      // ==========================================
-      // Refresh Current User
-      // ==========================================
-
+      // Refresh Firebase User
       await credential.user.reload();
-
-      // ==========================================
-      // Reset Form
-      // ==========================================
 
       reset();
 
-      // ==========================================
-      // Success Message
-      // ==========================================
+      addToast("🎉 Registration successful! Redirecting...", "success");
 
-      addToast("🎉 Registration completed successfully.", "success");
-
-      // ==================================================
-      // IMPORTANT
-      //
-      // AuthProvider will automatically:
-      //
-      // POST /users
-      // POST /auth/jwt
-      // GET /auth/me
-      // Sync MongoDB
-      // Sync Role
-      // Create JWT Cookie
-      // Redirect User
-      // ==================================================
+      // Do NOT navigate here.
+      // AuthProvider will update user & role.
     } catch (error) {
       console.error("REGISTER ERROR:", error);
 
-      let message = "Registration failed. Please try again.";
+      let message = "Registration failed.";
 
       switch (error.code) {
         case "auth/email-already-in-use":
-          message = "This email address is already registered.";
+          message = "This email is already registered.";
           break;
 
         case "auth/invalid-email":
@@ -151,7 +138,7 @@ const Register = () => {
           break;
 
         case "auth/weak-password":
-          message = "Password must contain at least 6 characters.";
+          message = "Password must be at least 6 characters.";
           break;
 
         case "auth/network-request-failed":
@@ -159,7 +146,7 @@ const Register = () => {
           break;
 
         case "auth/too-many-requests":
-          message = "Too many attempts. Please try again later.";
+          message = "Too many requests. Please try again later.";
           break;
 
         default:
@@ -171,233 +158,360 @@ const Register = () => {
       setLoading(false);
     }
   };
-  // ======================================================
-  // Register.jsx
-  // Part 2
-  // Responsive JSX
-  // ======================================================
-
   return (
     <div className="min-h-screen bg-base-200 flex items-center justify-center px-4 py-10">
-      <div className="card w-full max-w-lg bg-base-100 shadow-2xl border border-base-300">
-        <div className="card-body p-6 md:p-8">
-          {/* ====================================================== */}
-          {/* Header */}
-          {/* ====================================================== */}
+      <div className="w-full max-w-md">
+        {/* ===================================================== */}
+        {/* Card */}
+        {/* ===================================================== */}
 
-          <div className="text-center space-y-2">
-            <h1 className="text-3xl md:text-4xl font-bold">
-              Create Account 🚀
-            </h1>
+        <div className="card bg-base-100 shadow-2xl border border-base-300">
+          <div className="card-body p-8">
+            {/* ===================================================== */}
+            {/* Header */}
+            {/* ===================================================== */}
 
-            <p className="text-base-content/70">
-              Create your Biscuit Shop account and start shopping today.
-            </p>
-          </div>
+            <div className="text-center">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-warning/10">
+                <FaUserPlus className="text-3xl text-warning" />
+              </div>
 
-          {/* ====================================================== */}
-          {/* Form */}
-          {/* ====================================================== */}
+              <h1 className="text-3xl font-bold">Create Account 🚀</h1>
 
-          <form
-            onSubmit={handleSubmit(onSubmit)}
-            noValidate
-            className="mt-8 space-y-5"
-          >
-            {/* ====================================================== */}
-            {/* Name */}
-            {/* ====================================================== */}
-
-            <div>
-              <label htmlFor="name" className="label">
-                <span className="label-text font-semibold">Full Name</span>
-              </label>
-
-              <input
-                id="name"
-                type="text"
-                autoComplete="name"
-                autoFocus
-                disabled={loading || authLoading}
-                aria-invalid={errors.name ? "true" : "false"}
-                placeholder="Enter your full name"
-                className={`input input-bordered w-full ${
-                  errors.name ? "input-error" : ""
-                }`}
-                {...register("name")}
-              />
-
-              {errors.name && (
-                <p className="text-error text-sm mt-2">{errors.name.message}</p>
-              )}
+              <p className="mt-2 text-base-content/70">
+                Create your account and start shopping today.
+              </p>
             </div>
 
-            {/* ====================================================== */}
-            {/* Email */}
-            {/* ====================================================== */}
+            {/* ===================================================== */}
+            {/* Register Form */}
+            {/* ===================================================== */}
 
-            <div>
-              <label htmlFor="email" className="label">
-                <span className="label-text font-semibold">Email Address</span>
-              </label>
+            <form
+              onSubmit={handleSubmit(onSubmit)}
+              noValidate
+              className="mt-8 space-y-5"
+            >
+              {/* ===================================================== */}
+              {/* Full Name */}
+              {/* ===================================================== */}
 
-              <input
-                id="email"
-                type="email"
-                autoComplete="email"
+              <div>
+                <label htmlFor="name" className="label">
+                  <span className="label-text font-semibold">Full Name</span>
+                </label>
+
+                <label
+                  className={`input input-bordered flex items-center gap-3 ${
+                    errors.name ? "input-error" : ""
+                  }`}
+                >
+                  <FaUser className="text-base-content/50" />
+
+                  <input
+                    id="name"
+                    type="text"
+                    autoComplete="name"
+                    autoFocus
+                    disabled={loading || authLoading}
+                    placeholder="Enter your full name"
+                    className="grow bg-transparent outline-none"
+                    {...register("name", {
+                      required: "Full name is required.",
+
+                      minLength: {
+                        value: 3,
+                        message: "Name must be at least 3 characters.",
+                      },
+
+                      maxLength: {
+                        value: 50,
+                        message: "Name cannot exceed 50 characters.",
+                      },
+                    })}
+                  />
+                </label>
+
+                {errors.name && (
+                  <p className="mt-2 text-sm text-error">
+                    {errors.name.message}
+                  </p>
+                )}
+              </div>
+
+              {/* ===================================================== */}
+              {/* Email */}
+              {/* ===================================================== */}
+
+              <div>
+                <label htmlFor="email" className="label">
+                  <span className="label-text font-semibold">
+                    Email Address
+                  </span>
+                </label>
+
+                <label
+                  className={`input input-bordered flex items-center gap-3 ${
+                    errors.email ? "input-error" : ""
+                  }`}
+                >
+                  <FaEnvelope className="text-base-content/50" />
+
+                  <input
+                    id="email"
+                    type="email"
+                    autoComplete="email"
+                    spellCheck={false}
+                    disabled={loading || authLoading}
+                    placeholder="Enter your email"
+                    className="grow bg-transparent outline-none"
+                    {...register("email", {
+                      required: "Email is required.",
+
+                      pattern: {
+                        value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+                        message: "Please enter a valid email address.",
+                      },
+                    })}
+                  />
+                </label>
+
+                {errors.email && (
+                  <p className="mt-2 text-sm text-error">
+                    {errors.email.message}
+                  </p>
+                )}
+              </div>
+
+              {/* ===================================================== */}
+              {/* Password */}
+              {/* ===================================================== */}
+
+              <div>
+                <label htmlFor="password" className="label">
+                  <span className="label-text font-semibold">Password</span>
+                </label>
+
+                <label
+                  className={`input input-bordered flex items-center gap-3 ${
+                    errors.password ? "input-error" : ""
+                  }`}
+                >
+                  <FaLock className="text-base-content/50" />
+
+                  <input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    autoComplete="new-password"
+                    disabled={loading || authLoading}
+                    placeholder="Create a strong password"
+                    className="grow bg-transparent outline-none"
+                    {...register("password", {
+                      required: "Password is required.",
+
+                      minLength: {
+                        value: 6,
+                        message: "Password must be at least 6 characters.",
+                      },
+
+                      maxLength: {
+                        value: 50,
+                        message: "Password cannot exceed 50 characters.",
+                      },
+
+                      pattern: {
+                        value: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/,
+                        message: "Include uppercase, lowercase and one number.",
+                      },
+                    })}
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    disabled={loading || authLoading}
+                    className="text-base-content/60 hover:text-warning transition"
+                    aria-label={
+                      showPassword ? "Hide Password" : "Show Password"
+                    }
+                  >
+                    {showPassword ? (
+                      <FaEyeSlash size={18} />
+                    ) : (
+                      <FaEye size={18} />
+                    )}
+                  </button>
+                </label>
+
+                {errors.password && (
+                  <p className="mt-2 text-sm text-error">
+                    {errors.password.message}
+                  </p>
+                )}
+              </div>
+
+              {/* ===================================================== */}
+              {/* Confirm Password */}
+              {/* ===================================================== */}
+
+              <div>
+                <label htmlFor="confirmPassword" className="label">
+                  <span className="label-text font-semibold">
+                    Confirm Password
+                  </span>
+                </label>
+
+                <label
+                  className={`input input-bordered flex items-center gap-3 ${
+                    errors.confirmPassword ? "input-error" : ""
+                  }`}
+                >
+                  <FaLock className="text-base-content/50" />
+
+                  <input
+                    id="confirmPassword"
+                    type={showConfirmPassword ? "text" : "password"}
+                    autoComplete="new-password"
+                    disabled={loading || authLoading}
+                    placeholder="Confirm your password"
+                    className="grow bg-transparent outline-none"
+                    {...register("confirmPassword", {
+                      required: "Please confirm your password.",
+
+                      validate: (value) =>
+                        value === password || "Passwords do not match.",
+                    })}
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword((prev) => !prev)}
+                    disabled={loading || authLoading}
+                    className="text-base-content/60 hover:text-warning transition"
+                    aria-label={
+                      showConfirmPassword ? "Hide Password" : "Show Password"
+                    }
+                  >
+                    {showConfirmPassword ? (
+                      <FaEyeSlash size={18} />
+                    ) : (
+                      <FaEye size={18} />
+                    )}
+                  </button>
+                </label>
+
+                {errors.confirmPassword && (
+                  <p className="mt-2 text-sm text-error">
+                    {errors.confirmPassword.message}
+                  </p>
+                )}
+              </div>
+
+              {/* ===================================================== */}
+              {/* Terms */}
+              {/* ===================================================== */}
+
+              <div>
+                <label className="flex cursor-pointer items-start gap-3">
+                  <input
+                    type="checkbox"
+                    disabled={loading || authLoading}
+                    className="checkbox checkbox-warning mt-1"
+                    {...register("terms", {
+                      required: "You must accept the Terms & Conditions.",
+                    })}
+                  />
+
+                  <span className="text-sm leading-6">
+                    I agree to the{" "}
+                    <Link
+                      to="/terms"
+                      className="link link-warning font-semibold"
+                    >
+                      Terms & Conditions
+                    </Link>{" "}
+                    and{" "}
+                    <Link
+                      to="/privacy"
+                      className="link link-warning font-semibold"
+                    >
+                      Privacy Policy
+                    </Link>
+                    .
+                  </span>
+                </label>
+
+                {errors.terms && (
+                  <p className="mt-2 text-sm text-error">
+                    {errors.terms.message}
+                  </p>
+                )}
+              </div>
+
+              {/* ===================================================== */}
+              {/* Register Button */}
+              {/* ===================================================== */}
+
+              <button
+                type="submit"
                 disabled={loading || authLoading}
-                aria-invalid={errors.email ? "true" : "false"}
-                placeholder="Enter your email address"
-                className={`input input-bordered w-full ${
-                  errors.email ? "input-error" : ""
-                }`}
-                {...register("email")}
-              />
-
-              {errors.email && (
-                <p className="text-error text-sm mt-2">
-                  {errors.email.message}
-                </p>
-              )}
-            </div>
-
-            {/* ====================================================== */}
-            {/* Password */}
-            {/* ====================================================== */}
-
-            <div>
-              <label htmlFor="password" className="label">
-                <span className="label-text font-semibold">Password</span>
-              </label>
-
-              <input
-                id="password"
-                type="password"
-                autoComplete="new-password"
-                disabled={loading || authLoading}
-                aria-invalid={errors.password ? "true" : "false"}
-                placeholder="Create a strong password"
-                className={`input input-bordered w-full ${
-                  errors.password ? "input-error" : ""
-                }`}
-                {...register("password")}
-              />
-
-              {errors.password && (
-                <p className="text-error text-sm mt-2">
-                  {errors.password.message}
-                </p>
-              )}
-            </div>
-
-            {/* ====================================================== */}
-            {/* Confirm Password */}
-            {/* ====================================================== */}
-
-            <div>
-              <label htmlFor="confirmPassword" className="label">
-                <span className="label-text font-semibold">
-                  Confirm Password
-                </span>
-              </label>
-
-              <input
-                id="confirmPassword"
-                type="password"
-                autoComplete="new-password"
-                disabled={loading || authLoading}
-                aria-invalid={errors.confirmPassword ? "true" : "false"}
-                placeholder="Confirm your password"
-                className={`input input-bordered w-full ${
-                  errors.confirmPassword ? "input-error" : ""
-                }`}
-                {...register("confirmPassword")}
-              />
-
-              {errors.confirmPassword && (
-                <p className="text-error text-sm mt-2">
-                  {errors.confirmPassword.message}
-                </p>
-              )}
-            </div>
-
-            {/* ====================================================== */}
-            {/* Terms */}
-            {/* ====================================================== */}
-
-            <div>
-              <label
-                htmlFor="terms"
-                className="label cursor-pointer justify-start gap-3"
+                className="btn btn-warning w-full"
               >
-                <input
-                  id="terms"
-                  type="checkbox"
-                  disabled={loading || authLoading}
-                  className="checkbox checkbox-warning"
-                  {...register("terms")}
-                />
+                {(loading || authLoading) && (
+                  <span className="loading loading-spinner loading-sm"></span>
+                )}
 
-                <span className="text-sm leading-6">
-                  I agree to the{" "}
-                  <Link to="/terms" className="link link-warning font-semibold">
-                    Terms & Conditions
-                  </Link>
-                </span>
-              </label>
+                {loading || authLoading
+                  ? "Creating Account..."
+                  : "Create Account"}
+              </button>
+            </form>
 
-              {errors.terms && (
-                <p className="text-error text-sm mt-2">
-                  {errors.terms.message}
-                </p>
-              )}
+            {/* ===================================================== */}
+            {/* Divider */}
+            {/* ===================================================== */}
+
+            <div className="divider my-7">OR</div>
+
+            {/* ===================================================== */}
+            {/* Google Sign In */}
+            {/* ===================================================== */}
+
+            <GoogleSignIn />
+
+            {/* ===================================================== */}
+            {/* Login Link */}
+            {/* ===================================================== */}
+
+            <div className="mt-7 text-center">
+              <p className="text-sm">
+                Already have an account?{" "}
+                <Link
+                  to="/login"
+                  state={{ from: location.state?.from }}
+                  className="link link-warning font-semibold"
+                >
+                  Login
+                </Link>
+              </p>
             </div>
+          </div>
+        </div>
 
-            {/* ====================================================== */}
-            {/* Register Button */}
-            {/* ====================================================== */}
+        {/* ===================================================== */}
+        {/* Footer */}
+        {/* ===================================================== */}
 
-            <button
-              type="submit"
-              disabled={loading || authLoading}
-              className="btn btn-warning w-full"
-            >
-              {(loading || authLoading) && (
-                <span className="loading loading-spinner loading-sm"></span>
-              )}
-
-              {loading || authLoading
-                ? "Creating Account..."
-                : "Create Account"}
-            </button>
-          </form>
-
-          {/* ====================================================== */}
-          {/* Divider */}
-          {/* ====================================================== */}
-
-          <div className="divider my-7">OR</div>
-
-          {/* ====================================================== */}
-          {/* Google Login */}
-          {/* ====================================================== */}
-
-          <GoogleSignIn />
-
-          {/* ====================================================== */}
-          {/* Footer */}
-          {/* ====================================================== */}
-
-          <p className="text-center text-sm mt-7">
-            Already have an account?{" "}
-            <Link
-              to="/login"
-              state={{ from: location.state?.from }}
-              className="link link-warning font-semibold"
-            >
-              Login
-            </Link>
-          </p>
+        <div className="mt-6 text-center text-xs text-base-content/60">
+          By creating an account, you agree to our{" "}
+          <Link to="/terms" className="link link-warning">
+            Terms of Service
+          </Link>{" "}
+          and{" "}
+          <Link to="/privacy" className="link link-warning">
+            Privacy Policy
+          </Link>
+          .
         </div>
       </div>
     </div>
