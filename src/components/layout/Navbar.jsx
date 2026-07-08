@@ -377,9 +377,7 @@ const Navbar = () => {
           </div>
         </div>
 
-        {/* =======================
-            MOBILE DRAWER
-        ======================== */}
+  
 
         <div
           className={`lg:hidden overflow-hidden transition-all duration-300 ease-in-out ${
