@@ -1,10 +1,3 @@
-// ======================================================
-// AuthProvider.jsx
-// Part 1
-// Imports, Context, Google Provider, State,
-// Firebase Methods, Logout
-// ======================================================
-
 import {
   createContext,
   useCallback,
@@ -25,10 +18,6 @@ import {
 
 import auth from "./firebase.config";
 import axiosPublic from "../hooks/axiosPublic";
-
-// ======================================================
-// Auth Context
-// ======================================================
 
 export const AuthContext = createContext(null);
 
