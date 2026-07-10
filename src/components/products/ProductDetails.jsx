@@ -1,23 +1,29 @@
 import React, { useContext, useMemo, useRef, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import axios from "axios";
 import {
-  FaStar,
-  FaShoppingCart,
+  FaArrowLeft,
   FaBoxOpen,
+  FaShoppingCart,
+  FaStar,
   FaTag,
   FaWeight,
 } from "react-icons/fa";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+
 import { AuthContext } from "../../Auth/AuthProvider";
 import { useToast } from "../../context/ToastProvider";
 import { useFlyToCart } from "../../hooks/useFlyToCart";
+
 const API = import.meta.env.VITE_API_URL;
 
 const ProductDetails = () => {
   const { id } = useParams();
+  const navigate = useNavigate();
+
   const { user } = useContext(AuthContext);
   const { addToast } = useToast();
+
   const queryClient = useQueryClient();
 
   const imageRef = useRef(null);
@@ -26,18 +32,30 @@ const ProductDetails = () => {
 
   const [isLoadingAnim, setIsLoadingAnim] = useState(false);
 
+  // =============================
+  // VALIDATE OBJECT ID
+  // =============================
   const isValidId = /^[0-9a-fA-F]{24}$/.test(id);
-  // ================= FETCH PRODUCT =================
+
+  // =============================
+  // FETCH SINGLE PRODUCT
+  // =============================
   const fetchProduct = async () => {
     const res = await axios.get(`${API}/products/${id}`);
     return res.data?.data || null;
   };
 
+  // =============================
+  // FETCH ALL PRODUCTS
+  // =============================
   const fetchProducts = async () => {
     const res = await axios.get(`${API}/products`);
     return res.data?.data || [];
   };
 
+  // =============================
+  // PRODUCT QUERY
+  // =============================
   const {
     data: product,
     isLoading,
@@ -45,25 +63,51 @@ const ProductDetails = () => {
   } = useQuery({
     queryKey: ["product", id],
     queryFn: fetchProduct,
-    enabled: !!id,
+    enabled: isValidId,
+    staleTime: 1000 * 60 * 5,
   });
 
+  // =============================
+  // RELATED PRODUCTS
+  // =============================
   const { data: allProducts = [] } = useQuery({
     queryKey: ["products"],
     queryFn: fetchProducts,
+    staleTime: 1000 * 60 * 5,
   });
 
-  // ================= RELATED =================
   const related = useMemo(() => {
     if (!product) return [];
+
     return allProducts
-      .filter((p) => p.category === product.category && p._id !== product._id)
+      .filter(
+        (item) =>
+          item.category === product.category && item._id !== product._id,
+      )
       .slice(0, 4);
   }, [allProducts, product]);
 
-  // ================= ADD TO CART =================
+  // =============================
+  // PRICE
+  // =============================
+  const price = Number(product?.price || 0);
+  const discount = Number(product?.discount || 0);
+
+  const finalPrice = Number((price - (price * discount) / 100).toFixed(2));
+
+  // =============================
+  // ADD TO CART
+  // =============================
   const handleAddToCart = async () => {
-    if (!user) return addToast("Please login first ❌", "error");
+    if (!user) {
+      addToast("Please login first.", "error");
+      return;
+    }
+
+    if (!product?._id) {
+      addToast("Product not found.", "error");
+      return;
+    }
 
     try {
       setIsLoadingAnim(true);
@@ -74,130 +118,267 @@ const ProductDetails = () => {
           productId: product._id,
           quantity: 1,
         },
-        { withCredentials: true },
+        {
+          withCredentials: true,
+        },
       );
 
       if (res.data.success) {
-        addToast(`🛒 ${product.name} added successfully`, "success");
+        // =============================
+        // SUCCESS TOAST
+        // =============================
+        addToast(`${product.name} added to cart successfully 🛒`, "success");
 
-        // 🔥 navbar sync
-        queryClient.invalidateQueries(["cart", user?.email]);
+        // =============================
+        // REFRESH CART
+        // =============================
+        await queryClient.invalidateQueries({
+          queryKey: ["cart", user.email],
+        });
 
-        // ✈️ animation
+        // =============================
+        // FLY TO CART
+        // =============================
         const cartIcon = document.querySelector(".cart-icon");
+
         if (imageRef.current && cartIcon) {
           flyToCart(imageRef.current, cartIcon);
         }
+      } else {
+        addToast("Failed to add product.", "error");
       }
     } catch (error) {
-      addToast("Failed ❌", "error");
+      console.error(error);
+
+      addToast(
+        error?.response?.data?.message || "Something went wrong.",
+        "error",
+      );
     } finally {
-      setTimeout(() => setIsLoadingAnim(false), 600);
+      setTimeout(() => {
+        setIsLoadingAnim(false);
+      }, 600);
     }
   };
-  if (isLoading) return <p className="text-center p-10">Loading product...</p>;
 
-  if (!isValidId || isError || !product)
+  // =============================
+  // LOADING
+  // =============================
+  if (isLoading) {
     return (
-      <p className="text-center p-10 text-red-500">Product not found ❌</p>
+      <div className="min-h-screen flex justify-center items-center">
+        <span className="loading loading-spinner loading-lg text-warning"></span>
+      </div>
     );
+  }
 
-  const price = Number(product.price) || 0;
-  const discount = Number(product.discount) || 0;
-  const finalPrice = price - (price * discount) / 100;
-  console.log({
-    name,
+  // =============================
+  // ERROR
+  // =============================
+  if (!isValidId || isError || !product) {
+    return (
+      <div className="min-h-[70vh] flex flex-col justify-center items-center gap-5">
+        <h2 className="text-3xl font-bold text-red-500">Product Not Found</h2>
 
-    price,
-    discount,
-    finalPrice,
-  });
+        <p className="text-gray-500">
+          The product you are looking for doesn't exist.
+        </p>
 
+        <button
+          onClick={() => navigate(-1)}
+          className="btn btn-warning text-white"
+        >
+          <FaArrowLeft />
+          Go Back
+        </button>
+      </div>
+    );
+  }
   return (
-    <div className="px-3 md:px-10 py-6">
-      {/* FLOATING CART ICON */}
-      <div className="cart-icon fixed top-5 right-5 bg-amber-500 p-3 rounded-full text-white shadow-lg z-50">
-        <FaShoppingCart />
-      </div>
+    <div className="max-w-7xl mx-auto px-4 md:px-6 lg:px-8 py-8">
+      {/* ===================== BACK BUTTON ===================== */}
+      <button
+        onClick={() => navigate(-1)}
+        className="inline-flex items-center gap-2 mb-6 px-5 py-2 rounded-xl border border-amber-500 text-amber-600 hover:bg-amber-500 hover:text-white transition-all duration-300"
+      >
+        <FaArrowLeft />
+        Back
+      </button>
 
-      {/* MAIN PRODUCT */}
-      <div className="grid md:grid-cols-2 gap-8 bg-white p-4 md:p-8 rounded-xl shadow">
-        {/* IMAGE */}
-        <div>
-          <img
-            ref={imageRef}
-            src={product.image}
-            className="w-full h-[250px] md:h-[400px] object-contain rounded-xl"
-          />
-        </div>
+      {/* ===================== PRODUCT SECTION ===================== */}
+      <div className="bg-white rounded-3xl shadow-lg overflow-hidden">
+        <div className="grid lg:grid-cols-2 gap-10 p-6 md:p-10">
+          {/* ===================== IMAGE ===================== */}
+          <div className="flex justify-center items-center">
+            <div className="relative w-full">
+              {discount > 0 && (
+                <div className="absolute top-4 left-4 z-10 bg-red-500 text-white px-3 py-1 rounded-full text-sm font-semibold shadow">
+                  {discount}% OFF
+                </div>
+              )}
 
-        {/* DETAILS */}
-        <div className="space-y-4">
-          <h1 className="text-2xl md:text-3xl font-bold">{product.name}</h1>
-
-          {/* RATING */}
-          <div className="flex items-center gap-2 text-yellow-500">
-            <FaStar />
-            <span>{product.rating}</span>
-            <span className="text-gray-400">({product.reviews})</span>
+              <img
+                ref={imageRef}
+                src={product.image}
+                alt={product.name}
+                className="w-full h-[320px] md:h-[450px] object-contain rounded-2xl bg-gray-50 p-5"
+              />
+            </div>
           </div>
 
-          {/* PRICE */}
-          <div>
-            <p className="text-2xl font-bold text-amber-600">
-              ৳{finalPrice.toFixed(2)}
-            </p>
+          {/* ===================== DETAILS ===================== */}
+          <div className="space-y-6">
+            <div>
+              <h1 className="text-3xl md:text-4xl font-bold text-gray-800">
+                {product.name}
+              </h1>
 
-            {discount > 0 && (
-              <p className="text-sm text-gray-500 line-through">৳{price}</p>
-            )}
-          </div>
+              <p className="text-gray-500 mt-2">{product.category}</p>
+            </div>
 
-          {/* INFO */}
-          <div className="grid grid-cols-2 text-sm gap-2 text-gray-600">
-            <p>
-              <FaTag /> {product.brand}
-            </p>
-            <p>
-              <FaBoxOpen /> Stock: {product.stock}
-            </p>
-            <p>
-              <FaWeight /> {product.weight}
-            </p>
-            <p>Category: {product.category}</p>
-          </div>
+            {/* Rating */}
 
-          {/* DESCRIPTION */}
-          <p className="text-gray-600 text-sm">{product.description}</p>
+            <div className="flex items-center gap-2">
+              <FaStar className="text-yellow-500 text-xl" />
 
-          {/* BUTTON */}
-          <button
-            onClick={handleAddToCart}
-            className="w-full md:w-auto bg-amber-500 hover:bg-amber-600 text-white px-6 py-3 rounded-xl flex items-center gap-2"
-          >
-            <FaShoppingCart />
-            Add to Cart
-          </button>
-        </div>
-      </div>
+              <span className="font-semibold">{product.rating || 5}</span>
 
-      {/* RELATED */}
-      <div className="mt-10">
-        <h2 className="text-xl font-bold mb-4">Related Products</h2>
+              <span className="text-gray-500">
+                ({product.reviews || 0} Reviews)
+              </span>
+            </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {related.map((item) => (
-            <Link
-              key={item._id}
-              to={`/product/${item._id}`}
-              className="bg-white p-3 rounded-xl shadow hover:shadow-lg"
+            {/* Price */}
+
+            <div>
+              <div className="flex items-center gap-3">
+                <h2 className="text-4xl font-bold text-amber-600">
+                  ৳{finalPrice.toFixed(2)}
+                </h2>
+
+                {discount > 0 && (
+                  <span className="line-through text-xl text-gray-400">
+                    ৳{price}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Product Info */}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="flex items-center gap-3 bg-gray-50 rounded-xl p-4">
+                <FaTag className="text-amber-500" />
+                <div>
+                  <p className="text-sm text-gray-500">Brand</p>
+                  <p className="font-semibold">{product.brand || "N/A"}</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 bg-gray-50 rounded-xl p-4">
+                <FaBoxOpen className="text-green-500" />
+                <div>
+                  <p className="text-sm text-gray-500">Stock</p>
+                  <p className="font-semibold">{product.stock}</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 bg-gray-50 rounded-xl p-4">
+                <FaWeight className="text-blue-500" />
+                <div>
+                  <p className="text-sm text-gray-500">Weight</p>
+                  <p className="font-semibold">{product.weight || "N/A"}</p>
+                </div>
+              </div>
+
+              <div className="bg-gray-50 rounded-xl p-4">
+                <p className="text-sm text-gray-500">Category</p>
+
+                <p className="font-semibold">{product.category}</p>
+              </div>
+            </div>
+
+            {/* Description */}
+
+            <div>
+              <h3 className="font-bold text-lg mb-2">Description</h3>
+
+              <p className="text-gray-600 leading-8">{product.description}</p>
+            </div>
+
+            {/* Add To Cart */}
+
+            <button
+              onClick={handleAddToCart}
+              disabled={isLoadingAnim}
+              className="btn btn-warning text-white btn-lg rounded-xl w-full md:w-auto px-10"
             >
-              <img src={item.image} className="h-24 w-full object-contain" />
-              <p className="text-sm mt-2">{item.name}</p>
-            </Link>
-          ))}
+              {isLoadingAnim ? (
+                <>
+                  <span className="loading loading-spinner loading-sm"></span>
+                  Adding...
+                </>
+              ) : (
+                <>
+                  <FaShoppingCart />
+                  Add To Cart
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* ===================== RELATED PRODUCTS ===================== */}
+
+      {related.length > 0 && (
+        <div className="mt-14">
+          <h2 className="text-3xl font-bold mb-8">Related Products</h2>
+
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            {related.map((item) => {
+              const itemPrice = Number(item.price || 0);
+              const itemDiscount = Number(item.discount || 0);
+
+              const itemFinal = itemPrice - (itemPrice * itemDiscount) / 100;
+
+              return (
+                <Link
+                  key={item._id}
+                  to={`/product/${item._id}`}
+                  className="group bg-white rounded-2xl shadow hover:shadow-xl transition duration-300 overflow-hidden"
+                >
+                  <div className="overflow-hidden bg-gray-50">
+                    <img
+                      src={item.image}
+                      alt={item.name}
+                      className="w-full h-52 object-contain p-5 group-hover:scale-105 transition duration-300"
+                    />
+                  </div>
+
+                  <div className="p-4 space-y-2">
+                    <h3 className="font-semibold line-clamp-2 min-h-[48px]">
+                      {item.name}
+                    </h3>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-amber-600 font-bold text-lg">
+                        ৳{itemFinal.toFixed(2)}
+                      </span>
+
+                      {itemDiscount > 0 && (
+                        <span className="text-sm line-through text-gray-400">
+                          ৳{itemPrice}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

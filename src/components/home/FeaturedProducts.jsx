@@ -1,8 +1,15 @@
 import React, { useContext, useState } from "react";
 import axios from "axios";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { FaCartPlus, FaStar, FaFire, FaArrowLeft } from "react-icons/fa";
 import { Link, useNavigate } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+
+import {
+  FaCartPlus,
+  FaStar,
+  FaFire,
+  FaArrowLeft,
+  FaSpinner,
+} from "react-icons/fa";
 
 import { AuthContext } from "../../Auth/AuthProvider";
 import { useToast } from "../../context/ToastProvider";
@@ -10,56 +17,74 @@ import { useToast } from "../../context/ToastProvider";
 const API = import.meta.env.VITE_API_URL;
 
 const FeaturedProducts = () => {
-  // ==========================
-  // HOOKS
-  // ==========================
+  /* ===============================
+      HOOKS
+  =============================== */
+
   const navigate = useNavigate();
+
+  const queryClient = useQueryClient();
 
   const { user } = useContext(AuthContext);
 
   const { addToast } = useToast();
 
-  const queryClient = useQueryClient();
+  /* ===============================
+      STATE
+  =============================== */
 
   const [currentPage, setCurrentPage] = useState(1);
 
-  // ==========================
-  // FETCH PRODUCTS
-  // ==========================
+  // Loading state for individual product
+  const [addingId, setAddingId] = useState(null);
+
+  const LIMIT = 8;
+
+  /* ===============================
+      FETCH PRODUCTS
+  =============================== */
+
   const fetchProducts = async ({ queryKey }) => {
     const [, page] = queryKey;
 
     const { data } = await axios.get(`${API}/products`, {
       params: {
         page,
-        limit: 8,
+        limit: LIMIT,
       },
     });
 
     return data;
   };
 
-  // ==========================
-  // REACT QUERY
-  // ==========================
-  const { data, isLoading, isError, isFetching, refetch } = useQuery({
+  /* ===============================
+      REACT QUERY
+  =============================== */
+
+  const { data, isLoading, isFetching, isError, refetch } = useQuery({
     queryKey: ["products", currentPage],
+
     queryFn: fetchProducts,
 
     staleTime: 1000 * 60,
+
     gcTime: 1000 * 60 * 5,
 
-    refetchOnWindowFocus: false,
+    retry: 1,
+
     keepPreviousData: true,
+
+    refetchOnWindowFocus: false,
   });
 
-  const products = data?.data ?? [];
+  const products = data?.data || [];
 
-  const totalPages = data?.pagination?.totalPages ?? 1;
+  const totalPages = data?.pagination?.totalPages || 1;
 
-  // ==========================
-  // ADD TO CART
-  // ==========================
+  /* ===============================
+      ADD TO CART
+  =============================== */
+
   const handleAddToCart = async (product) => {
     if (!user) {
       addToast("Please login first", "error");
@@ -68,7 +93,9 @@ const FeaturedProducts = () => {
     }
 
     try {
-      const response = await axios.post(
+      setAddingId(product._id);
+
+      const { data } = await axios.post(
         `${API}/carts`,
         {
           productId: product._id,
@@ -79,42 +106,59 @@ const FeaturedProducts = () => {
         },
       );
 
-      if (response.data.success) {
-        addToast(`🛒 ${product.name} added successfully`, "success");
+      if (data.success) {
+        addToast(
+          `🛒 ${product.name} added to your cart successfully.`,
+          "success",
+        );
 
         await queryClient.invalidateQueries({
-          queryKey: ["cart", user?.email],
+          queryKey: ["cart", user.email],
         });
       }
     } catch (error) {
       addToast(
-        error?.response?.data?.message || "Failed to add product",
+        error.response?.data?.message || "Failed to add product",
         "error",
       );
+    } finally {
+      setAddingId(null);
     }
   };
-  // ==========================
-  // LOADING STATE
-  // ==========================
+
+  /* ===============================
+      LOADING
+  =============================== */
+
   if (isLoading) {
     return (
-      <section className="max-w-7xl mx-auto px-4 py-12">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {Array.from({ length: 8 }).map((_, index) => (
+      <section className="max-w-7xl mx-auto px-4 py-16">
+        <div className="flex items-center justify-between mb-10">
+          <div>
+            <div className="h-10 w-72 rounded bg-gray-200 animate-pulse"></div>
+
+            <div className="h-5 w-56 rounded bg-gray-200 animate-pulse mt-4"></div>
+          </div>
+
+          <div className="h-12 w-28 rounded-xl bg-gray-200 animate-pulse"></div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+          {Array.from({ length: LIMIT }).map((_, index) => (
             <div
               key={index}
-              className="bg-white rounded-2xl overflow-hidden shadow"
+              className="rounded-3xl border bg-white overflow-hidden shadow-sm"
             >
-              <div className="h-56 bg-gray-200 animate-pulse"></div>
+              <div className="h-60 bg-gray-200 animate-pulse"></div>
 
-              <div className="p-4 space-y-3">
-                <div className="h-4 bg-gray-200 rounded animate-pulse"></div>
+              <div className="p-5 space-y-4">
+                <div className="h-5 rounded bg-gray-200 animate-pulse"></div>
 
-                <div className="h-4 bg-gray-200 rounded animate-pulse w-2/3"></div>
+                <div className="h-4 w-28 rounded bg-gray-200 animate-pulse"></div>
 
-                <div className="h-5 bg-gray-200 rounded animate-pulse w-1/2"></div>
+                <div className="h-8 w-36 rounded bg-gray-200 animate-pulse"></div>
 
-                <div className="h-10 bg-gray-200 rounded-xl animate-pulse"></div>
+                <div className="h-12 rounded-xl bg-gray-200 animate-pulse"></div>
               </div>
             </div>
           ))}
@@ -123,19 +167,24 @@ const FeaturedProducts = () => {
     );
   }
 
-  // ==========================
-  // ERROR STATE
-  // ==========================
+  /* ===============================
+      ERROR
+  =============================== */
+
   if (isError) {
     return (
-      <section className="text-center py-20">
-        <h2 className="text-red-500 text-xl font-bold">
+      <section className="min-h-[60vh] flex flex-col items-center justify-center">
+        <h2 className="text-3xl font-bold text-red-500">
           Failed to load products
         </h2>
 
+        <p className="text-gray-500 mt-2">
+          Something went wrong while loading the products.
+        </p>
+
         <button
           onClick={() => refetch()}
-          className="mt-5 px-6 py-3 bg-amber-500 text-white rounded-xl"
+          className="mt-6 bg-amber-500 hover:bg-amber-600 text-white px-8 py-3 rounded-xl transition"
         >
           Try Again
         </button>
@@ -143,72 +192,84 @@ const FeaturedProducts = () => {
     );
   }
 
+  /* ===============================
+      MAIN UI STARTS IN PART 2
+  =============================== */
+
   return (
-    <section className="max-w-7xl mx-auto px-4 md:px-6 py-12">
-      {/* ==========================
-          HEADER
-      =========================== */}
-      <div className="flex flex-col md:flex-row justify-between items-center gap-5 mb-10">
+    <section className="max-w-7xl mx-auto px-4 py-16">
+      {/* ===========================
+      HEADER
+  =========================== */}
+
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-5 mb-12">
         <div>
-          <h2 className="text-3xl md:text-4xl font-bold text-gray-800">
-            🍪 Featured Biscuit Products
+          <h2 className="text-4xl font-extrabold text-gray-800 flex items-center gap-3">
+            🍪 Featured Products
           </h2>
 
-          <p className="text-gray-500 mt-2">
-            Fresh cookies, cakes and sweet treats for your family
+          <p className="text-gray-500 mt-3">
+            Fresh snacks, biscuits, cookies and delicious grocery products.
           </p>
         </div>
 
         <button
           onClick={() => navigate(-1)}
-          className="flex items-center gap-2 px-5 py-3 bg-gray-100 hover:bg-gray-200 rounded-xl transition"
+          className="inline-flex items-center gap-2 rounded-xl border px-5 py-3 hover:bg-gray-100 transition"
         >
           <FaArrowLeft />
           Back
         </button>
       </div>
 
-      {/* ==========================
-          PRODUCT GRID
-      =========================== */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        {products.map((p) => {
-          const price = Number(p.price || 0);
+      {/* ===========================
+      PRODUCTS
+  =========================== */}
 
-          const discount = Number(p.discount || 0);
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+        {products.map((product) => {
+          const price = Number(product.price || 0);
+
+          const discount = Number(product.discount || 0);
 
           const finalPrice = price - (price * discount) / 100;
 
-          const imageUrl = String(p.image || "")
-            .replace(/\[|\]|\(|\)/g, "")
+          const imageUrl = String(product.image || "")
+            .replace(/[\[\]\(\)]/g, "")
             .trim();
 
           return (
             <div
-              key={p._id}
-              className="bg-white rounded-2xl border overflow-hidden shadow-sm hover:shadow-xl transition"
+              key={product._id}
+              className="group bg-white rounded-3xl border overflow-hidden shadow-sm hover:shadow-2xl hover:-translate-y-2 duration-300"
             >
-              <Link to={`/product/${p._id}`}>
-                <div className="relative h-56 bg-gray-50 flex items-center justify-center">
+              {/* IMAGE */}
+
+              <Link to={`/product/${product._id}`}>
+                <div className="relative h-64 overflow-hidden bg-gray-50">
                   <img
                     src={imageUrl}
-                    alt={p.name}
+                    alt={product.name}
                     loading="lazy"
                     onError={(e) => {
                       e.target.src =
-                        "https://via.placeholder.com/300x300?text=No+Image";
+                        "https://via.placeholder.com/400x400?text=No+Image";
                     }}
-                    className="h-full object-contain p-3 hover:scale-105 transition"
+                    className="w-full h-full object-contain p-6 transition-transform duration-500 group-hover:scale-110"
                   />
 
+                  {/* Discount */}
+
                   {discount > 0 && (
-                    <span className="absolute top-2 right-2 bg-green-600 text-white px-2 py-1 rounded text-xs font-semibold">
-                      -{discount}%
+                    <span className="absolute top-4 right-4 bg-red-500 text-white text-xs font-bold px-3 py-1 rounded-full shadow">
+                      🔥 {discount}% OFF
                     </span>
                   )}
 
+                  {/* Hot */}
+
                   {discount >= 15 && (
-                    <span className="absolute top-2 left-2 bg-red-500 text-white px-2 py-1 rounded text-xs flex items-center gap-1">
+                    <span className="absolute top-4 left-4 bg-amber-500 text-white text-xs font-semibold px-3 py-1 rounded-full flex items-center gap-1">
                       <FaFire />
                       Hot
                     </span>
@@ -216,106 +277,195 @@ const FeaturedProducts = () => {
                 </div>
               </Link>
 
-              <div className="p-4">
-                <h3 className="font-semibold text-gray-800 line-clamp-2">
-                  {p.name}
-                </h3>
+              {/* BODY */}
 
-                <div className="flex items-center gap-1 mt-2">
-                  <FaStar className="text-yellow-500" />
+              <div className="p-5">
+                {/* Brand */}
 
-                  <span className="text-sm">{p.rating || 4.5}</span>
+                <span className="inline-block bg-amber-100 text-amber-700 text-xs font-semibold px-3 py-1 rounded-full">
+                  {product.brand || "No Brand"}
+                </span>
 
-                  <span className="text-xs text-gray-400">
-                    ({p.reviews || 0})
+                {/* Product Name */}
+
+                <Link to={`/product/${product._id}`}>
+                  <h3 className="mt-4 text-lg font-bold text-gray-800 line-clamp-2 hover:text-amber-500 transition">
+                    {product.name}
+                  </h3>
+                </Link>
+
+                {/* Category */}
+
+                <div className="mt-3">
+                  <span className="inline-flex bg-gray-100 text-gray-600 text-xs px-3 py-1 rounded-full capitalize">
+                    {product.category}
                   </span>
                 </div>
 
-                <div className="mt-3">
-                  <h4 className="text-xl font-bold text-amber-600">
+                {/* Rating */}
+
+                <div className="flex items-center justify-between mt-5">
+                  <div className="flex items-center gap-1">
+                    <FaStar className="text-yellow-500" />
+
+                    <span className="font-semibold">
+                      {Number(product.rating || 0).toFixed(1)}
+                    </span>
+                  </div>
+
+                  <span className="text-sm text-gray-400">
+                    ({product.reviews || 0})
+                  </span>
+                </div>
+
+                {/* Price */}
+
+                <div className="mt-5">
+                  <h4 className="text-2xl font-extrabold text-amber-600">
                     ৳{finalPrice.toFixed(2)}
                   </h4>
 
                   {discount > 0 && (
-                    <p className="text-sm text-gray-400 line-through">
-                      ৳{price}
+                    <p className="text-gray-400 line-through">
+                      ৳{price.toFixed(2)}
                     </p>
                   )}
                 </div>
 
-                <div className="mt-2">
-                  {p.stock > 0 ? (
-                    <p className="text-xs text-green-600">
-                      In Stock ({p.stock})
-                    </p>
+                {/* Stock */}
+
+                <div className="mt-4">
+                  {product.stock > 0 ? (
+                    <span className="inline-flex bg-green-100 text-green-700 text-xs font-semibold px-3 py-1 rounded-full">
+                      In Stock ({product.stock})
+                    </span>
                   ) : (
-                    <p className="text-xs text-red-500">Out Of Stock</p>
+                    <span className="inline-flex bg-red-100 text-red-600 text-xs font-semibold px-3 py-1 rounded-full">
+                      Out Of Stock
+                    </span>
                   )}
                 </div>
 
-                <button
-                  disabled={p.stock === 0}
-                  onClick={() => handleAddToCart(p)}
-                  className={`w-full mt-4 py-3 rounded-xl text-white flex items-center justify-center gap-2 transition
+                {/* Buttons */}
 
-                  ${
-                    p.stock > 0
-                      ? "bg-amber-500 hover:bg-amber-600"
-                      : "bg-gray-400 cursor-not-allowed"
-                  }`}
-                >
-                  <FaCartPlus />
+                <div className="grid grid-cols-2 gap-3 mt-6">
+                  <Link
+                    to={`/product/${product._id}`}
+                    className="h-11 rounded-xl border flex items-center justify-center font-semibold hover:bg-gray-100 transition"
+                  >
+                    Details
+                  </Link>
 
-                  {p.stock > 0 ? "Add To Cart" : "Out Of Stock"}
-                </button>
+                  <button
+                    onClick={() => handleAddToCart(product)}
+                    disabled={product.stock === 0 || addingId === product._id}
+                    className={`h-11 rounded-xl text-white font-semibold flex items-center justify-center gap-2 transition active:scale-95
+
+                ${
+                  product.stock > 0
+                    ? "bg-amber-500 hover:bg-amber-600"
+                    : "bg-gray-400 cursor-not-allowed"
+                }
+                `}
+                  >
+                    {addingId === product._id ? (
+                      <>
+                        <FaSpinner className="animate-spin" />
+                        Adding...
+                      </>
+                    ) : (
+                      <>
+                        <FaCartPlus />
+                        Cart
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           );
         })}
       </div>
+      {/* ===========================
+      EMPTY STATE
+  =========================== */}
 
-      {/* PAGINATION */}
-      <div className="flex justify-center flex-wrap gap-2 mt-12">
-        <button
-          disabled={currentPage === 1}
-          onClick={() => setCurrentPage((prev) => prev - 1)}
-          className="px-4 py-2 border rounded-xl bg-white hover:bg-gray-100 disabled:opacity-40"
-        >
-          Prev
-        </button>
+      {products.length === 0 && (
+        <div className="text-center py-20">
+          <h3 className="text-2xl font-bold text-gray-700">
+            No Products Found
+          </h3>
 
-        {Array.from({
-          length: Math.min(totalPages, 10),
-        }).map((_, index) => (
+          <p className="text-gray-500 mt-3">
+            There are no featured products available right now.
+          </p>
+        </div>
+      )}
+
+      {/* ===========================
+      PAGINATION
+  =========================== */}
+
+      {totalPages > 1 && (
+        <div className="flex flex-wrap justify-center items-center gap-3 mt-14">
+          {/* Previous */}
+
           <button
-            key={index}
-            onClick={() => setCurrentPage(index + 1)}
-            className={`w-10 h-10 rounded-xl border
+            disabled={currentPage === 1}
+            onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+            className="px-5 py-3 rounded-xl border bg-white hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition"
+          >
+            Previous
+          </button>
+
+          {/* Page Numbers */}
+
+          {Array.from({ length: totalPages }).map((_, index) => {
+            const page = index + 1;
+
+            return (
+              <button
+                key={page}
+                onClick={() => setCurrentPage(page)}
+                className={`w-11 h-11 rounded-xl font-semibold transition
 
             ${
-              currentPage === index + 1
-                ? "bg-amber-500 text-white border-amber-500"
-                : "bg-white hover:bg-gray-100"
-            }`}
+              currentPage === page
+                ? "bg-amber-500 text-white shadow-lg"
+                : "bg-white border hover:bg-gray-100"
+            }
+            `}
+              >
+                {page}
+              </button>
+            );
+          })}
+
+          {/* Next */}
+
+          <button
+            disabled={currentPage === totalPages}
+            onClick={() =>
+              setCurrentPage((prev) => Math.min(prev + 1, totalPages))
+            }
+            className="px-5 py-3 rounded-xl border bg-white hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition"
           >
-            {index + 1}
+            Next
           </button>
-        ))}
+        </div>
+      )}
 
-        <button
-          disabled={currentPage === totalPages}
-          onClick={() => setCurrentPage((prev) => prev + 1)}
-          className="px-4 py-2 border rounded-xl bg-white hover:bg-gray-100 disabled:opacity-40"
-        >
-          Next
-        </button>
-      </div>
+      {/* ===========================
+      FETCHING INDICATOR
+  =========================== */}
 
-      {isFetching && (
-        <div className="text-center mt-4">
-          <p className="text-sm text-gray-400 animate-pulse">
-            Updating products...
-          </p>
+      {isFetching && !isLoading && (
+        <div className="flex justify-center mt-8">
+          <div className="flex items-center gap-3 rounded-full bg-white shadow-md border px-5 py-3">
+            <FaSpinner className="animate-spin text-amber-500" />
+
+            <span className="text-gray-600">Updating products...</span>
+          </div>
         </div>
       )}
     </section>

@@ -82,19 +82,15 @@ const Register = () => {
     if (!user || !role) return;
 
     if (role === "admin") {
-      navigate("/dashboard/admin-dashboard", {
+      navigate("/", {
         replace: true,
       });
     } else {
-      navigate("/dashboard/user-dashboard", {
+      navigate("/", {
         replace: true,
       });
     }
   }, [user, role, authLoading, navigate]);
-
-  // =====================================================
-  // Register Handler
-  // =====================================================
 
   const onSubmit = async (data) => {
     if (loading) return;

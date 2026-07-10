@@ -90,11 +90,6 @@ const Login = () => {
     }
   }, [setValue]);
 
-  // ======================================================
-  // Role Based Redirect
-  // AuthProvider updates user & role automatically
-  // ======================================================
-
   useEffect(() => {
     if (authLoading) return;
 
@@ -108,19 +103,15 @@ const Login = () => {
 
     // Role Based Dashboard
     if (role === "admin") {
-      navigate("/dashboard/admin-dashboard", {
+      navigate("/", {
         replace: true,
       });
     } else {
-      navigate("/dashboard/user-dashboard", {
+      navigate("/", {
         replace: true,
       });
     }
   }, [user, role, authLoading, navigate, from]);
-
-  // ======================================================
-  // Login
-  // ======================================================
 
   const onSubmit = async (data) => {
     setLoading(true);
