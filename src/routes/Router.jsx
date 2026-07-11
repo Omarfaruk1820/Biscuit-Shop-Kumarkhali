@@ -33,6 +33,7 @@ import DashboardUser from "../components/dashboard/DashboardUser";
 import Profile from "../components/dashboard/Profile";
 import ManageProducts from "./../components/dashboard/ManageProducts";
 import Settings from "../components/dashboard/Settings";
+import Invoice from "../components/dashboard/Invoice";
 
 const router = createBrowserRouter([
   {
@@ -147,6 +148,10 @@ const router = createBrowserRouter([
             <MyOrders />
           </UserRoute>
         ),
+      },
+      {
+        path: "invoice/:id",
+        element: <Invoice />,
       },
 
       {
