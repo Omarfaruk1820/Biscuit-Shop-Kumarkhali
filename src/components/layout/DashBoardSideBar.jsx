@@ -1,5 +1,3 @@
-
-
 import { useCallback, useContext } from "react";
 import { NavLink } from "react-router-dom";
 
@@ -14,11 +12,10 @@ import {
   FaHeart,
   FaCog,
   FaSignOutAlt,
+  FaShoppingCart,
 } from "react-icons/fa";
 
 import { AuthContext } from "../../Auth/AuthProvider";
-
-
 
 export const adminMenus = [
   {
@@ -62,6 +59,11 @@ export const userMenus = [
     title: "My Orders",
     path: "/dashboard/my-orders",
     icon: FaShoppingBag,
+  },
+  {
+    title: "My-Cart",
+    path: "/dashboard/cart",
+    icon: FaShoppingCart,
   },
   {
     title: "Wishlist",
