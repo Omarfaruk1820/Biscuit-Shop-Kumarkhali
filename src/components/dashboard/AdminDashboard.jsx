@@ -1,7 +1,9 @@
+import DashboardHeader from "./DashboardHeader";
+
 const AdminDashboard = () => {
   return (
     <div>
-      <h1>Admin Dashboard</h1>
+      <DashboardHeader></DashboardHeader>
     </div>
   );
 };

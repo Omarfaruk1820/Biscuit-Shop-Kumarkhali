@@ -109,23 +109,14 @@ const AuthProvider = ({ children }) => {
     }
   }, []);
 
-  // ======================================================
-  // Part 2 starts from here...
-  // onAuthStateChanged()
-  // ======================================================
-  // ======================================================
-  // Auth State
-  // Firebase → MongoDB → JWT → Auth User Sync
-  // ======================================================
+
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setLoading(true);
 
       try {
-        // ==========================================
-        // User Logged Out
-        // ==========================================
+      
 
         if (!currentUser) {
           setUser(null);
@@ -251,33 +242,23 @@ const AuthProvider = ({ children }) => {
 
     return () => unsubscribe();
   }, []);
-  // ======================================================
-  // Context Value
-  // ======================================================
+
 
   const authInfo = useMemo(
     () => ({
-      // ==========================
-      // State
-      // ==========================
+     
       user,
       role,
       loading,
 
-      // ==========================
-      // Firebase Methods
-      // ==========================
+  
       createUser,
       loginUser,
       signInGoogle,
       updateUserProfile,
       signOutUser,
 
-      // ==========================
-      // State Setters
-      // (Useful for Admin Dashboard /
-      // Profile Update if needed)
-      // ==========================
+      
       setUser,
       setRole,
     }),
@@ -294,9 +275,7 @@ const AuthProvider = ({ children }) => {
     ],
   );
 
-  // ======================================================
-  // Provider
-  // ======================================================
+ 
 
   return (
     <AuthContext.Provider value={authInfo}>{children}</AuthContext.Provider>

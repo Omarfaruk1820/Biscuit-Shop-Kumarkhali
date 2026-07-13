@@ -1,18 +1,10 @@
 import axios from "axios";
 
-// ======================================================
-// Environment Validation
-// ======================================================
-
 const API_URL = import.meta.env.VITE_API_URL;
 
 if (!API_URL) {
   throw new Error("❌ Missing VITE_API_URL in .env");
 }
-
-// ======================================================
-// Axios Public Instance
-// ======================================================
 
 const axiosPublic = axios.create({
   baseURL: API_URL,
@@ -27,20 +19,12 @@ const axiosPublic = axios.create({
   },
 });
 
-// ======================================================
-// Request Interceptor
-// ======================================================
-
 axiosPublic.interceptors.request.use(
   (config) => {
     return config;
   },
   (error) => Promise.reject(error),
 );
-
-// ======================================================
-// Response Interceptor
-// ======================================================
 
 axiosPublic.interceptors.response.use(
   (response) => response,

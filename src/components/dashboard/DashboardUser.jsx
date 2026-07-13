@@ -1094,11 +1094,6 @@ const DashboardUser = () => {
           )}
         </div>
       </section>
-
-      {/* ================================================= */}
-      {/* Part 5 Starts Below */}
-      {/* Order Analytics + Timeline + Dashboard Closing */}
-      {/* ================================================= */}
     </div>
   );
 
@@ -1312,31 +1307,6 @@ const DashboardUser = () => {
     </div>
   </section>;
 
-  {
-    /* ================================================= */
-  }
-  {
-    /* Part 5A-2 Starts Below */
-  }
-  {
-    /* Activity Timeline */
-  }
-  {
-    /* ================================================= */
-  }
-  {
-    /* ================================================= */
-  }
-  {
-    /* Activity Timeline */
-  }
-  {
-    /* Part 5A-2 */
-  }
-  {
-    /* ================================================= */
-  }
-
   <section className="space-y-6">
     <div className="flex flex-col gap-2">
       <h2 className="text-2xl font-bold">Recent Order Activity</h2>
@@ -1514,18 +1484,5 @@ const DashboardUser = () => {
       </div>
     </div>
   </section>;
-
-  {
-    /* ================================================= */
-  }
-  {
-    /* Part 5B Starts Below */
-  }
-  {
-    /* Account Overview + Final Dashboard Closing */
-  }
-  {
-    /* ================================================= */
-  }
 };
 export default DashboardUser;
