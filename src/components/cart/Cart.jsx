@@ -223,9 +223,7 @@ const Cart = () => {
     );
   }
 
-  /* =====================================================
-          ERROR UI
-===================================================== */
+
 
   if (isError) {
     return (
@@ -240,10 +238,6 @@ const Cart = () => {
       </div>
     );
   }
-
-  /* =====================================================
-          EMPTY CART
-===================================================== */
 
   if (!cart.length) {
     return (
@@ -263,16 +257,8 @@ const Cart = () => {
     );
   }
 
-  /* =====================================================
-          PART 2 STARTS HERE
-===================================================== */
-
   return (
     <>
-      {/* Desktop Cart UI */}
-      {/* ==========================================
-        MOBILE & TABLET CART
-========================================== */}
       <div className="lg:hidden space-y-5">
         {cart.map((item) => (
           <div
@@ -526,13 +512,6 @@ const Cart = () => {
             </div>
           </div>
 
-          {/* ============================
-           RIGHT SIDEBAR
-      ============================= */}
-          {/* ==========================================
-            ORDER SUMMARY
-========================================== */}
-
           <div className="lg:col-span-4">
             <div className="sticky top-24 space-y-6">
               {/* Coupon */}
@@ -627,12 +606,6 @@ const Cart = () => {
                     <span className="text-primary">৳{grandTotal}</span>
                   </div>
 
-                  {/* Checkout */}
-
-                  {/* <button className="btn btn-primary btn-lg w-full mt-6">
-                    <FaCreditCard />
-                    Proceed to Checkout
-                  </button> */}
                   <button
                     onClick={() => {
                       if (!user) {
