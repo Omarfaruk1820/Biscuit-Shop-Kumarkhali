@@ -2,7 +2,9 @@ import { useForm } from "react-hook-form";
 // import { useQuery } from "@tanstack/react-query";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import axiosSecure from "../../hooks/axiosSecure";
-
+import CustomerForm from "../checkout/CustomerForm";
+import PaymentMethod from "../checkout/PaymentMethod";
+import OrderSummary from "../checkout/OrderSummary";
 const fetchValidatedCart = async () => {
   console.log(import.meta.env.VITE_API_URL);
 
