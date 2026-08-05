@@ -14,10 +14,6 @@ const fetchValidatedCart = async () => {
 };
 
 const Checkout = () => {
-  // =============================================
-  // React Hook Form
-  // =============================================
-
   const {
     register,
     handleSubmit,
@@ -36,10 +32,6 @@ const Checkout = () => {
     mode: "onTouched",
   });
 
-  // =============================================
-  // React Query
-  // =============================================
-
   const {
     data: cart,
     isLoading,
@@ -50,10 +42,6 @@ const Checkout = () => {
     queryKey: ["validated-cart"],
     queryFn: fetchValidatedCart,
   });
-
-  // =============================================
-  // Validation Rules
-  // =============================================
 
   const validation = {
     name: {
@@ -215,9 +203,6 @@ const Checkout = () => {
       </div>
     );
   }
-  // =============================================
-  // Final Return
-  // =============================================
 
   return (
     <div className="min-h-screen bg-base-200 py-10">

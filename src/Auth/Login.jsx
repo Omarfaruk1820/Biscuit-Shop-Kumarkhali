@@ -1,11 +1,3 @@
-// ======================================================
-// Login.jsx
-// Part 1
-// Imports, Context, Hooks, Validation,
-// Remember Me, Redirect Logic,
-// onSubmit(), Forgot Password
-// ======================================================
-
 import { useContext, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
@@ -25,10 +17,6 @@ import { useToast } from "../context/ToastProvider";
 import GoogleSignIn from "./GoogleSign";
 
 const Login = () => {
-  // ======================================================
-  // Context
-  // ======================================================
-
   const {
     loginUser,
     user,
@@ -38,29 +26,16 @@ const Login = () => {
 
   const { addToast } = useToast();
 
-  // ======================================================
-  // Router
-  // ======================================================
-
   const navigate = useNavigate();
   const location = useLocation();
 
-  // If user came from PrivateRoute
   const from = location.state?.from?.pathname;
-
-  // ======================================================
-  // Local State
-  // ======================================================
 
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
 
   const isLoading = loading || authLoading;
-
-  // ======================================================
-  // React Hook Form
-  // ======================================================
 
   const {
     register,
@@ -76,10 +51,6 @@ const Login = () => {
       password: "",
     },
   });
-
-  // ======================================================
-  // Remember Email
-  // ======================================================
 
   useEffect(() => {
     const rememberedEmail = localStorage.getItem("remember-email");
@@ -183,10 +154,6 @@ const Login = () => {
       setLoading(false);
     }
   };
-
-  // ======================================================
-  // Forgot Password
-  // ======================================================
 
   const handleForgotPassword = async () => {
     const email = watch("email")?.trim().toLowerCase();

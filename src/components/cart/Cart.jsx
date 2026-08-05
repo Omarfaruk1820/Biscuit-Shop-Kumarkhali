@@ -138,10 +138,6 @@ const Cart = () => {
       };
     },
 
-    /* ------------------------------------------
-        Rollback
-    ------------------------------------------ */
-
     onError: (error, variables, context) => {
       if (context?.previousCart) {
         queryClient.setQueryData(["cart", email], context.previousCart);
