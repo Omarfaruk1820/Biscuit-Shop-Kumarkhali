@@ -4,6 +4,7 @@ import {
   FaMapMarkerAlt,
   FaCity,
   FaMapSigns,
+  FaStickyNote,
 } from "react-icons/fa";
 
 const CustomerForm = ({ register, errors, validation }) => {
@@ -161,15 +162,7 @@ const CustomerForm = ({ register, errors, validation }) => {
             </div>
           </div>
 
-          {/* ===================================================== */}
-          {/* CustomerForm Part 2 starts from here */}
-          {/* Order Notes */}
-          {/* Payment Method */}
-          {/* Terms & Conditions */}
-          {/* ===================================================== */}
-          {/* ========================================= */}
-          {/* Order Notes */}
-          {/* ========================================= */}
+     
 
           <div>
             <label className="label">

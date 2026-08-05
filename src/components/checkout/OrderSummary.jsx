@@ -4,10 +4,6 @@ const OrderSummary = ({ cart }) => {
   return (
     <div className="lg:col-span-1">
       <div className="bg-base-100 rounded-2xl shadow-lg border border-base-200 sticky top-24">
-        {/* ========================================= */}
-        {/* Header */}
-        {/* ========================================= */}
-
         <div className="px-6 py-5 border-b border-base-200">
           <h2 className="text-2xl font-bold">Order Summary</h2>
 
@@ -16,20 +12,12 @@ const OrderSummary = ({ cart }) => {
           </p>
         </div>
 
-        {/* ========================================= */}
-        {/* Product List */}
-        {/* ========================================= */}
-
         <div className="max-h-[500px] overflow-y-auto">
           {cart?.items?.map((item) => (
             <div
               key={item.productId.toString()}
               className="p-5 border-b border-base-200"
             >
-              {/* ============================== */}
-              {/* Product Card */}
-              {/* ============================== */}
-
               <div className="flex gap-4">
                 {/* Product Image */}
 
@@ -96,16 +84,6 @@ const OrderSummary = ({ cart }) => {
             </div>
           ))}
         </div>
-
-        {/* ========================================= */}
-        {/* Part 2 Starts Here */}
-        {/* Totals */}
-        {/* Grand Total */}
-        {/* Place Order Button */}
-        {/* ========================================= */}
-        {/* ========================================= */}
-        {/* Summary Card */}
-        {/* ========================================= */}
 
         <div className="p-6">
           <div className="space-y-4">

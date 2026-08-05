@@ -1,7 +1,6 @@
 import { useContext, useMemo } from "react";
-import { Link } from "react-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import axios from "axios";
+import { useNavigate } from "react-router";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 import {
   FaArrowLeft,
@@ -15,58 +14,67 @@ import {
 } from "react-icons/fa";
 
 import { AuthContext } from "../../Auth/AuthProvider";
-
-const API = import.meta.env.VITE_API_URL;
-import { useNavigate } from "react-router";
+import axiosSecure from "../../hooks/axiosSecure";
 
 const Cart = () => {
   const { user, loading } = useContext(AuthContext);
 
-  const queryClient = useQueryClient();
   const navigate = useNavigate();
+
+  const queryClient = useQueryClient();
+
   const email = user?.email;
 
   /* =====================================================
-          GET CART DATA
-===================================================== */
+      FETCH CART
+  ===================================================== */
+
+  const fetchCart = async () => {
+    const { data } = await axiosSecure.get("/carts");
+
+    return data;
+  };
+
+  /* =====================================================
+      GET CART
+  ===================================================== */
 
   const { data, isPending, isError, error, refetch } = useQuery({
     queryKey: ["cart", email],
 
+    queryFn: fetchCart,
+
     enabled: !!email && !loading,
 
-    queryFn: async () => {
-      const res = await axios.get(`${API}/carts`, {
-        withCredentials: true,
-      });
+    staleTime: 1000 * 60,
 
-      return res.data;
-    },
+    retry: 1,
   });
 
   /* =====================================================
-          CART DATA
-===================================================== */
+      CART DATA
+  ===================================================== */
 
-  const cart = data?.data || [];
+  const cart = data?.data ?? [];
 
-  const summary = data?.summary || {
+  const summary = data?.summary ?? {
     totalItems: 0,
     totalQuantity: 0,
-    totalPrice: 0,
+    subtotal: 0,
+    discount: 0,
+    shipping: 0,
+    tax: 0,
+    grandTotal: 0,
   };
-
   /* =====================================================
-          DELETE CART ITEM
-===================================================== */
+      DELETE CART ITEM
+  ===================================================== */
 
   const deleteMutation = useMutation({
-    mutationFn: async (id) => {
-      await axios.delete(`${API}/carts/${id}`, {
-        withCredentials: true,
-      });
+    mutationFn: async (cartId) => {
+      const { data } = axiosSecure.delete(`/carts/${cartId}`);
 
-      return id;
+      return data;
     },
 
     onSuccess: () => {
@@ -74,38 +82,43 @@ const Cart = () => {
         queryKey: ["cart", email],
       });
     },
+
+    onError: (error) => {
+      console.error("DELETE CART ERROR:", error);
+
+      alert(error?.response?.data?.message || "Failed to remove cart item.");
+    },
   });
 
   /* =====================================================
-          UPDATE QUANTITY
-===================================================== */
+      UPDATE CART QUANTITY
+  ===================================================== */
 
   const quantityMutation = useMutation({
-    mutationFn: async ({ id, quantity }) => {
-      await axios.patch(
-        `${API}/carts/${id}`,
-        { quantity },
-        {
-          withCredentials: true,
-        },
-      );
+    mutationFn: async ({ cartId, quantity }) => {
+      const { data } = await axiosSecure.patch(`/carts/${cartId}`, {
+        quantity,
+      });
 
-      return { id, quantity };
+      return data;
     },
 
-    // Optimistic Update
-    onMutate: async ({ id, quantity }) => {
+    /* ------------------------------------------
+        Optimistic Update
+    ------------------------------------------ */
+
+    onMutate: async ({ cartId, quantity }) => {
       await queryClient.cancelQueries({
         queryKey: ["cart", email],
       });
 
-      const previousData = queryClient.getQueryData(["cart", email]);
+      const previousCart = queryClient.getQueryData(["cart", email]);
 
       queryClient.setQueryData(["cart", email], (old) => {
         if (!old) return old;
 
         const updatedCart = old.data.map((item) => {
-          if (item._id !== id) return item;
+          if (item._id !== cartId) return item;
 
           return {
             ...item,
@@ -114,39 +127,32 @@ const Cart = () => {
           };
         });
 
-        const newSummary = updatedCart.reduce(
-          (acc, item) => {
-            acc.totalItems += 1;
-            acc.totalQuantity += Number(item.quantity);
-
-            acc.totalPrice += Number(item.subtotal);
-
-            return acc;
-          },
-          {
-            totalItems: 0,
-            totalQuantity: 0,
-            totalPrice: 0,
-          },
-        );
-
-        newSummary.totalPrice = Number(newSummary.totalPrice.toFixed(2));
-
         return {
           ...old,
           data: updatedCart,
-          summary: newSummary,
         };
       });
 
       return {
-        previousData,
+        previousCart,
       };
     },
 
-    onError: (err, variables, context) => {
-      queryClient.setQueryData(["cart", email], context.previousData);
+    /* ------------------------------------------
+        Rollback
+    ------------------------------------------ */
+
+    onError: (error, variables, context) => {
+      if (context?.previousCart) {
+        queryClient.setQueryData(["cart", email], context.previousCart);
+      }
+
+      alert(error?.response?.data?.message || "Failed to update quantity.");
     },
+
+    /* ------------------------------------------
+        Refresh Cart
+    ------------------------------------------ */
 
     onSettled: () => {
       queryClient.invalidateQueries({
@@ -154,234 +160,181 @@ const Cart = () => {
       });
     },
   });
-
   /* =====================================================
-          HANDLERS
-===================================================== */
+      INCREASE QUANTITY
+  ===================================================== */
 
   const handleIncrease = (item) => {
+    if (quantityMutation.isPending) return;
+
     if (item.quantity >= 99) return;
 
     quantityMutation.mutate({
-      id: item._id,
+      cartId: item._id,
       quantity: item.quantity + 1,
     });
   };
 
+  /* =====================================================
+      DECREASE QUANTITY
+  ===================================================== */
+
   const handleDecrease = (item) => {
+    if (quantityMutation.isPending) return;
+
     if (item.quantity <= 1) return;
 
     quantityMutation.mutate({
-      id: item._id,
+      cartId: item._id,
       quantity: item.quantity - 1,
     });
   };
 
-  const handleDelete = (id) => {
-    const confirmDelete = window.confirm("Remove this product from cart?");
+  /* =====================================================
+      DELETE CART ITEM
+  ===================================================== */
 
-    if (!confirmDelete) return;
+  const handleDelete = (cartId) => {
+    const confirmed = window.confirm(
+      "Are you sure you want to remove this product?",
+    );
 
-    deleteMutation.mutate(id);
+    if (!confirmed) return;
+
+    deleteMutation.mutate(cartId);
   };
 
   /* =====================================================
-          SHIPPING CALCULATION
-===================================================== */
+      CHECKOUT
+  ===================================================== */
 
-  const shipping = useMemo(() => {
-    return summary.totalPrice >= 1000 ? 0 : 60;
-  }, [summary.totalPrice]);
+  const handleCheckout = () => {
+    if (!user) {
+      navigate("/login");
+      return;
+    }
 
-  const tax = 0;
-
-  const grandTotal = useMemo(() => {
-    return Number((summary.totalPrice + shipping + tax).toFixed(2));
-  }, [summary.totalPrice, shipping]);
-
-  const freeShippingRemaining = useMemo(() => {
-    if (summary.totalPrice >= 1000) return 0;
-
-    return Number((1000 - summary.totalPrice).toFixed(2));
-  }, [summary.totalPrice]);
+    navigate("/checkout");
+  };
 
   /* =====================================================
-          LOADING UI
-===================================================== */
+      CONTINUE SHOPPING
+  ===================================================== */
 
+  const handleContinueShopping = () => {
+    navigate("/products");
+  };
+
+  const freeShippingRemaining = useMemo(() => {
+    const remaining = 1000 - Number(summary.subtotal);
+
+    return remaining > 0 ? remaining.toFixed(2) : 0;
+  }, [summary.subtotal]);
+
+  /* =====================================================
+      LOADING UI
+  ===================================================== */
+
+  /* =====================================================
+   LOADING UI
+===================================================== */
   if (loading || isPending) {
     return (
       <div className="max-w-7xl mx-auto px-4 py-10">
-        <div className="animate-pulse space-y-6">
-          <div className="h-8 w-56 bg-base-300 rounded"></div>
-
+        <div className="space-y-4">
           {[1, 2, 3].map((item) => (
-            <div key={item} className="h-36 rounded-xl bg-base-200"></div>
+            <div
+              key={item}
+              className="h-36 rounded-xl bg-base-200 animate-pulse"
+            ></div>
           ))}
         </div>
       </div>
     );
   }
 
+  /* =====================================================
+      ERROR UI
+  ===================================================== */
 
-
+  /* =====================================================
+   ERROR UI
+===================================================== */
   if (isError) {
     return (
-      <div className="max-w-xl mx-auto py-24 text-center">
-        <h2 className="text-2xl font-bold text-error">Failed to load cart</h2>
+      <div className="min-h-[60vh] flex flex-col items-center justify-center">
+        <h2 className="text-3xl font-bold text-error">Failed to load cart</h2>
 
-        <p className="mt-3 text-gray-500">{error?.message}</p>
+        <p className="mt-4 text-gray-500">
+          {error?.response?.data?.message ||
+            error?.message ||
+            "Something went wrong."}
+        </p>
 
-        <button onClick={refetch} className="btn btn-primary mt-6">
+        <button onClick={() => refetch()} className="btn btn-primary mt-6">
           Try Again
         </button>
       </div>
     );
   }
 
-  if (!cart.length) {
+  /* =====================================================
+   EMPTY CART
+===================================================== */
+  if (cart.length === 0) {
     return (
-      <div className="max-w-2xl mx-auto py-20 text-center">
-        <FaShoppingCart className="mx-auto text-primary mb-6" size={80} />
-
+      <div className="min-h-[70vh] flex flex-col items-center justify-center text-center">
         <h2 className="text-3xl font-bold">Your Cart is Empty</h2>
 
-        <p className="mt-3 text-gray-500">
-          Looks like you haven't added anything yet.
+        <p className="mt-4 text-gray-500">
+          Looks like you haven't added any products yet.
         </p>
 
-        <Link to="/products" className="btn btn-primary mt-8">
+        <button
+          onClick={handleContinueShopping}
+          className="btn btn-primary mt-8"
+        >
+          <FaArrowLeft />
           Continue Shopping
-        </Link>
+        </button>
       </div>
     );
   }
+  /* =====================================================
+      MAIN UI
+  ===================================================== */
 
   return (
-    <>
-      <div className="lg:hidden space-y-5">
-        {cart.map((item) => (
-          <div
-            key={item._id}
-            className="bg-base-100 rounded-2xl border border-base-300 shadow-sm overflow-hidden"
-          >
-            {/* Image */}
+    <div>
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
+        <div>
+          <h1 className="text-3xl md:text-4xl font-bold">Shopping Cart</h1>
 
-            <img
-              src={item.image}
-              alt={item.name}
-              className="w-full h-52 object-cover"
-            />
-
-            {/* Content */}
-
-            <div className="p-5">
-              <div className="flex justify-between items-start gap-4">
-                <div>
-                  <h2 className="font-bold text-xl">{item.name}</h2>
-
-                  <p className="text-sm text-gray-500 mt-1">Product ID</p>
-
-                  <p className="text-xs break-all">{item.productId}</p>
-                </div>
-
-                {item.discount > 0 && (
-                  <div className="badge badge-success">
-                    {item.discount}% OFF
-                  </div>
-                )}
-              </div>
-
-              {/* Price */}
-
-              <div className="mt-5 flex items-center gap-3">
-                <span className="text-xl font-bold text-primary">
-                  ৳{item.finalPrice}
-                </span>
-
-                {item.discount > 0 && (
-                  <span className="text-sm line-through text-gray-400">
-                    ৳{item.price}
-                  </span>
-                )}
-              </div>
-
-              {/* Quantity */}
-
-              <div className="mt-6 flex justify-between items-center">
-                <div className="join">
-                  <button
-                    className="join-item btn btn-sm"
-                    disabled={item.quantity <= 1 || quantityMutation.isPending}
-                    onClick={() => handleDecrease(item)}
-                  >
-                    <FaMinus />
-                  </button>
-
-                  <button className="join-item btn btn-sm btn-disabled">
-                    {item.quantity}
-                  </button>
-
-                  <button
-                    className="join-item btn btn-sm"
-                    disabled={item.quantity >= 99 || quantityMutation.isPending}
-                    onClick={() => handleIncrease(item)}
-                  >
-                    <FaPlus />
-                  </button>
-                </div>
-
-                <button
-                  className="btn btn-error btn-sm"
-                  disabled={deleteMutation.isPending}
-                  onClick={() => handleDelete(item._id)}
-                >
-                  <FaTrash className="mr-1" />
-                  Remove
-                </button>
-              </div>
-
-              {/* Divider */}
-
-              <div className="divider my-5"></div>
-
-              {/* Subtotal */}
-
-              <div className="flex justify-between items-center">
-                <span className="font-semibold">Subtotal</span>
-
-                <span className="text-xl font-bold text-primary">
-                  ৳{item.subtotal}
-                </span>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-      {/* Mobile Cart UI */}
-      {/* Order Summary */}
-      <div className="max-w-7xl mx-auto px-4 lg:px-8 py-10">
-        {/* Header */}
-
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
-          <div>
-            <h1 className="text-3xl md:text-4xl font-bold">Shopping Cart</h1>
-
-            <p className="text-gray-500 mt-2">
-              {summary.totalItems} Items • {summary.totalQuantity} Quantity
-            </p>
-          </div>
-
-          <Link to="/products" className="btn btn-outline">
-            <FaArrowLeft />
-            Continue Shopping
-          </Link>
+          <p className="text-gray-500 mt-2">
+            {summary.totalItems} Item(s) • {summary.totalQuantity} Quantity
+          </p>
         </div>
 
-        <div className="grid lg:grid-cols-12 gap-8">
-          {/* ============================
-              CART TABLE
-      ============================= */}
+        <button onClick={handleContinueShopping} className="btn btn-outline">
+          <FaArrowLeft />
+          Continue Shopping
+        </button>
+      </div>
+
+      {/* ==========================================
+        Main Grid
+    ========================================== */}
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        {/* ===========================
+          Mobile Cart
+      =========================== */}
+
+        <div className="lg:hidden space-y-5">
+          {/* এখানে Mobile Cart JSX থাকবে */}
+          {/* =====================================================
+            DESKTOP CART TABLE
+        ===================================================== */}
 
           <div className="hidden lg:block lg:col-span-8">
             <div className="overflow-x-auto rounded-2xl border border-base-300 bg-base-100 shadow">
@@ -389,13 +342,9 @@ const Cart = () => {
                 <thead className="bg-base-200">
                   <tr>
                     <th>Product</th>
-
                     <th className="text-center">Price</th>
-
                     <th className="text-center">Quantity</th>
-
-                    <th className="text-center">Total</th>
-
+                    <th className="text-center">Subtotal</th>
                     <th className="text-center">Action</th>
                   </tr>
                 </thead>
@@ -403,26 +352,26 @@ const Cart = () => {
                 <tbody>
                   {cart.map((item) => (
                     <tr key={item._id}>
-                      {/* PRODUCT */}
+                      {/* Product */}
 
                       <td>
                         <div className="flex items-center gap-4">
                           <img
                             src={item.image}
                             alt={item.name}
-                            className="w-24 h-24 rounded-xl object-cover border"
+                            className="w-20 h-20 rounded-lg object-cover border"
                           />
 
                           <div>
-                            <h3 className="font-bold text-lg">{item.name}</h3>
+                            <h3 className="font-semibold text-lg">
+                              {item.name}
+                            </h3>
 
-                            <p className="text-sm text-gray-500 mt-1">
-                              Product ID
-                            </p>
-
-                            <p className="text-xs break-all">
-                              {item.productId}
-                            </p>
+                            {item.brand && (
+                              <p className="text-sm text-gray-500">
+                                {item.brand}
+                              </p>
+                            )}
 
                             {item.discount > 0 && (
                               <div className="badge badge-success mt-2">
@@ -433,25 +382,21 @@ const Cart = () => {
                         </div>
                       </td>
 
-                      {/* PRICE */}
+                      {/* Price */}
 
                       <td className="text-center">
-                        {item.discount > 0 ? (
-                          <div>
-                            <p className="font-bold text-primary">
-                              ৳{item.finalPrice}
-                            </p>
+                        <div className="font-bold text-primary">
+                          ৳{item.finalPrice}
+                        </div>
 
-                            <p className="text-sm line-through text-gray-400">
-                              ৳{item.price}
-                            </p>
+                        {item.discount > 0 && (
+                          <div className="text-sm line-through text-gray-400">
+                            ৳{item.price}
                           </div>
-                        ) : (
-                          <p className="font-bold">৳{item.price}</p>
                         )}
                       </td>
 
-                      {/* QUANTITY */}
+                      {/* Quantity */}
 
                       <td>
                         <div className="flex justify-center">
@@ -484,15 +429,15 @@ const Cart = () => {
                         </div>
                       </td>
 
-                      {/* SUBTOTAL */}
+                      {/* Subtotal */}
 
                       <td className="text-center">
-                        <span className="font-bold text-lg">
+                        <span className="font-bold text-lg text-primary">
                           ৳{item.subtotal}
                         </span>
                       </td>
 
-                      {/* REMOVE */}
+                      {/* Remove */}
 
                       <td>
                         <div className="flex justify-center">
@@ -511,158 +456,288 @@ const Cart = () => {
               </table>
             </div>
           </div>
+        </div>
 
-          <div className="lg:col-span-4">
-            <div className="sticky top-24 space-y-6">
-              {/* Coupon */}
+        {/* ===========================
+          Desktop Cart Table
+      =========================== */}
 
-              <div className="card bg-base-100 border border-base-300 shadow">
-                <div className="card-body">
-                  <h2 className="card-title">Coupon Code</h2>
+        <div className="hidden lg:block lg:col-span-8">
+          {/* এখানে Desktop Table JSX থাকবে */}
+          {/* =====================================================
+            DESKTOP CART TABLE
+        ===================================================== */}
 
-                  <div className="join">
-                    <input
-                      type="text"
-                      placeholder="Enter coupon"
-                      className="input input-bordered join-item flex-1"
-                    />
+          <div className="hidden lg:block lg:col-span-8">
+            <div className="overflow-x-auto rounded-2xl border border-base-300 bg-base-100 shadow">
+              <table className="table">
+                <thead className="bg-base-200">
+                  <tr>
+                    <th>Product</th>
+                    <th className="text-center">Price</th>
+                    <th className="text-center">Quantity</th>
+                    <th className="text-center">Subtotal</th>
+                    <th className="text-center">Action</th>
+                  </tr>
+                </thead>
 
-                    <button className="btn btn-primary join-item">Apply</button>
-                  </div>
-                </div>
-              </div>
+                <tbody>
+                  {cart.map((item) => (
+                    <tr key={item._id}>
+                      {/* Product */}
 
-              {/* Summary */}
+                      <td>
+                        <div className="flex items-center gap-4">
+                          <img
+                            src={item.image}
+                            alt={item.name}
+                            className="w-20 h-20 rounded-lg object-cover border"
+                          />
 
-              <div className="card bg-base-100 border border-base-300 shadow">
-                <div className="card-body">
-                  <h2 className="card-title text-2xl">Order Summary</h2>
+                          <div>
+                            <h3 className="font-semibold text-lg">
+                              {item.name}
+                            </h3>
 
-                  {/* Progress */}
+                            {item.brand && (
+                              <p className="text-sm text-gray-500">
+                                {item.brand}
+                              </p>
+                            )}
 
-                  {summary.totalPrice < 1000 ? (
-                    <div className="mt-4">
-                      <div className="flex justify-between text-sm mb-2">
-                        <span>Free Shipping Progress</span>
+                            {item.discount > 0 && (
+                              <div className="badge badge-success mt-2">
+                                {item.discount}% OFF
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </td>
 
-                        <span>৳{freeShippingRemaining} left</span>
+                      {/* Price */}
+
+                      <td className="text-center">
+                        <div className="font-bold text-primary">
+                          ৳{item.finalPrice}
+                        </div>
+
+                        {item.discount > 0 && (
+                          <div className="text-sm line-through text-gray-400">
+                            ৳{item.price}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Quantity */}
+
+                      <td>
+                        <div className="flex justify-center">
+                          <div className="join">
+                            <button
+                              className="join-item btn btn-sm"
+                              disabled={
+                                item.quantity <= 1 || quantityMutation.isPending
+                              }
+                              onClick={() => handleDecrease(item)}
+                            >
+                              <FaMinus />
+                            </button>
+
+                            <button className="join-item btn btn-sm btn-disabled">
+                              {item.quantity}
+                            </button>
+
+                            <button
+                              className="join-item btn btn-sm"
+                              disabled={
+                                item.quantity >= 99 ||
+                                quantityMutation.isPending
+                              }
+                              onClick={() => handleIncrease(item)}
+                            >
+                              <FaPlus />
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Subtotal */}
+
+                      <td className="text-center">
+                        <span className="font-bold text-lg text-primary">
+                          ৳{item.subtotal}
+                        </span>
+                      </td>
+
+                      {/* Remove */}
+
+                      <td>
+                        <div className="flex justify-center">
+                          <button
+                            className="btn btn-error btn-sm"
+                            disabled={deleteMutation.isPending}
+                            onClick={() => handleDelete(item._id)}
+                          >
+                            <FaTrash />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        {/* ===========================
+          Order Summary
+      =========================== */}
+
+        <div className="lg:col-span-4">
+          <div className="sticky top-24">
+            {/* এখানে পুরো Order Summary JSX থাকবে */}
+            <div className="lg:col-span-4">
+              <div className="sticky top-24">
+                <div className="card bg-base-100 border border-base-300 shadow">
+                  <div className="card-body">
+                    <h2 className="card-title text-2xl">Order Summary</h2>
+
+                    {/* Free Shipping */}
+
+                    {summary.shipping > 0 ? (
+                      <div className="mt-4">
+                        <div className="flex justify-between text-sm mb-2">
+                          <span>Free Shipping Progress</span>
+
+                          <span>৳{freeShippingRemaining} left</span>
+                        </div>
+
+                        <progress
+                          className="progress progress-success w-full"
+                          value={summary.subtotal}
+                          max={1000}
+                        ></progress>
+                      </div>
+                    ) : (
+                      <div className="alert alert-success mt-4">
+                        🎉 Congratulations! You unlocked FREE Shipping.
+                      </div>
+                    )}
+
+                    <div className="divider"></div>
+
+                    {/* Summary */}
+
+                    <div className="space-y-3">
+                      <div className="flex justify-between">
+                        <span>Total Items</span>
+                        <span>{summary.totalItems}</span>
                       </div>
 
-                      <progress
-                        className="progress progress-success w-full"
-                        value={summary.totalPrice}
-                        max="1000"
-                      ></progress>
-                    </div>
-                  ) : (
-                    <div className="alert alert-success mt-4">
-                      🎉 Congratulations! You unlocked FREE Shipping.
-                    </div>
-                  )}
+                      <div className="flex justify-between">
+                        <span>Total Quantity</span>
+                        <span>{summary.totalQuantity}</span>
+                      </div>
 
-                  <div className="divider"></div>
+                      <div className="flex justify-between">
+                        <span>Subtotal</span>
+                        <span>৳{summary.subtotal}</span>
+                      </div>
 
-                  {/* Summary Row */}
+                      <div className="flex justify-between text-success">
+                        <span>Discount</span>
+                        <span>- ৳{summary.discount}</span>
+                      </div>
 
-                  <div className="space-y-4">
-                    <div className="flex justify-between">
-                      <span>Items</span>
+                      <div className="flex justify-between">
+                        <span>Shipping</span>
 
-                      <span>{summary.totalItems}</span>
-                    </div>
+                        <span>
+                          {summary.shipping === 0
+                            ? "FREE"
+                            : `৳${summary.shipping}`}
+                        </span>
+                      </div>
 
-                    <div className="flex justify-between">
-                      <span>Quantity</span>
-
-                      <span>{summary.totalQuantity}</span>
-                    </div>
-
-                    <div className="flex justify-between">
-                      <span>Subtotal</span>
-
-                      <span>৳{summary.totalPrice}</span>
+                      <div className="flex justify-between">
+                        <span>Tax</span>
+                        <span>৳{summary.tax}</span>
+                      </div>
                     </div>
 
-                    <div className="flex justify-between">
-                      <span>Shipping</span>
+                    <div className="divider"></div>
 
-                      <span>{shipping === 0 ? "FREE" : `৳${shipping}`}</span>
+                    {/* Grand Total */}
+
+                    <div className="flex justify-between text-xl font-bold">
+                      <span>Grand Total</span>
+
+                      <span className="text-primary">
+                        ৳{summary.grandTotal}
+                      </span>
                     </div>
 
-                    <div className="flex justify-between">
-                      <span>Tax</span>
+                    {/* Checkout */}
 
-                      <span>৳{tax}</span>
-                    </div>
-                  </div>
+                    <button
+                      onClick={handleCheckout}
+                      className="btn btn-primary btn-lg w-full mt-6"
+                    >
+                      <FaCreditCard />
+                      Proceed to Checkout
+                    </button>
 
-                  <div className="divider"></div>
+                    {/* Continue Shopping */}
 
-                  {/* Grand Total */}
+                    <button
+                      onClick={handleContinueShopping}
+                      className="btn btn-outline w-full mt-3"
+                    >
+                      <FaArrowLeft />
+                      Continue Shopping
+                    </button>
 
-                  <div className="flex justify-between text-xl font-bold">
-                    <span>Grand Total</span>
+                    {/* Features */}
 
-                    <span className="text-primary">৳{grandTotal}</span>
-                  </div>
+                    <div className="divider"></div>
 
-                  <button
-                    onClick={() => {
-                      if (!user) {
-                        navigate("/login");
-                        return;
-                      }
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-3">
+                        <FaTruck className="text-primary text-xl" />
 
-                      navigate("/checkout");
-                    }}
-                    className="btn btn-primary btn-lg w-full mt-6"
-                  >
-                    <FaCreditCard />
-                    Proceed to Checkout
-                  </button>
+                        <div>
+                          <h3 className="font-semibold">Fast Delivery</h3>
 
-                  <button className="btn btn-outline w-full">
-                    <FaArrowLeft />
-                    Continue Shopping
-                  </button>
-                </div>
-              </div>
+                          <p className="text-sm text-gray-500">
+                            Delivery within 1–3 business days.
+                          </p>
+                        </div>
+                      </div>
 
-              {/* Features */}
+                      <div className="flex items-center gap-3">
+                        <FaShieldAlt className="text-success text-xl" />
 
-              <div className="card bg-base-100 border border-base-300 shadow">
-                <div className="card-body space-y-4">
-                  <div className="flex items-center gap-4">
-                    <FaTruck className="text-primary" size={22} />
+                        <div>
+                          <h3 className="font-semibold">Secure Payment</h3>
 
-                    <div>
-                      <h3 className="font-semibold">Fast Delivery</h3>
+                          <p className="text-sm text-gray-500">
+                            100% secure payment protection.
+                          </p>
+                        </div>
+                      </div>
 
-                      <p className="text-sm text-gray-500">1-3 Business Days</p>
-                    </div>
-                  </div>
+                      <div className="flex items-center gap-3">
+                        <FaShoppingCart className="text-warning text-xl" />
 
-                  <div className="flex items-center gap-4">
-                    <FaShieldAlt className="text-success" size={22} />
+                        <div>
+                          <h3 className="font-semibold">Easy Returns</h3>
 
-                    <div>
-                      <h3 className="font-semibold">Secure Payment</h3>
-
-                      <p className="text-sm text-gray-500">
-                        SSL Encrypted Checkout
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-4">
-                    <FaShoppingCart className="text-warning" size={22} />
-
-                    <div>
-                      <h3 className="font-semibold">Easy Returns</h3>
-
-                      <p className="text-sm text-gray-500">
-                        7-Day Return Policy
-                      </p>
+                          <p className="text-sm text-gray-500">
+                            7-day easy return policy.
+                          </p>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -671,8 +746,7 @@ const Cart = () => {
           </div>
         </div>
       </div>
-      );
-    </>
+    </div>
   );
 };
 
