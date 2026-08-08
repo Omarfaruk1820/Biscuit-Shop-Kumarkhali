@@ -17,19 +17,14 @@ import { useToast } from "../context/ToastProvider";
 import GoogleSignIn from "./GoogleSign";
 
 const Login = () => {
-  const {
-    loginUser,
-    user,
-    role,
-    loading: authLoading,
-  } = useContext(AuthContext);
+  const { loginUser, user, loading: authLoading } = useContext(AuthContext);
 
   const { addToast } = useToast();
 
   const navigate = useNavigate();
   const location = useLocation();
 
-  const from = location.state?.from?.pathname;
+  const from = location.state?.from?.pathname || "/";
 
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -52,6 +47,10 @@ const Login = () => {
     },
   });
 
+  /* ======================================================
+     REMEMBER EMAIL
+  ====================================================== */
+
   useEffect(() => {
     const rememberedEmail = localStorage.getItem("remember-email");
 
@@ -61,62 +60,55 @@ const Login = () => {
     }
   }, [setValue]);
 
+  /* ======================================================
+     REDIRECT AFTER AUTHENTICATION
+  ====================================================== */
+
   useEffect(() => {
     if (authLoading) return;
 
-    if (!user || !role) return;
+    if (!user) return;
 
-    // Came from Private Route
-    if (from) {
-      navigate(from, { replace: true });
-      return;
-    }
+    navigate(from, {
+      replace: true,
+    });
+  }, [user, authLoading, navigate, from]);
 
-    // Role Based Dashboard
-    if (role === "admin") {
-      navigate("/", {
-        replace: true,
-      });
-    } else {
-      navigate("/", {
-        replace: true,
-      });
-    }
-  }, [user, role, authLoading, navigate, from]);
+  /* ======================================================
+     LOGIN
+  ====================================================== */
 
-  const onSubmit = async (data) => {
+  const onSubmit = async (formData) => {
+    if (loading) return;
+
     setLoading(true);
 
     try {
-      const email = data.email.trim().toLowerCase();
-      const password = data.password;
+      const email = formData.email.trim().toLowerCase();
+      const password = formData.password;
 
-      // Firebase Login
       await loginUser(email, password);
 
-      // Remember Email
       if (rememberMe) {
         localStorage.setItem("remember-email", email);
       } else {
         localStorage.removeItem("remember-email");
       }
 
-      addToast("🎉 Login successful!", "success");
-
       reset({
         email: rememberMe ? email : "",
         password: "",
       });
 
-      // Don't navigate here.
-      // AuthProvider will update user & role.
-      // Redirect happens inside useEffect().
-    } catch (err) {
-      console.error("LOGIN ERROR:", err);
+      addToast("Login successful!", "success");
+
+      // Navigation is handled by auth state effect.
+    } catch (error) {
+      console.error("LOGIN ERROR:", error);
 
       let message = "Unable to login.";
 
-      switch (err.code) {
+      switch (error?.code) {
         case "auth/user-not-found":
           message = "No account found with this email.";
           break;
@@ -146,7 +138,7 @@ const Login = () => {
           break;
 
         default:
-          message = err.message || message;
+          message = error?.message || "Unable to login.";
       }
 
       addToast(message, "error");
@@ -154,6 +146,10 @@ const Login = () => {
       setLoading(false);
     }
   };
+
+  /* ======================================================
+     FORGOT PASSWORD
+  ====================================================== */
 
   const handleForgotPassword = async () => {
     const email = watch("email")?.trim().toLowerCase();
@@ -172,12 +168,12 @@ const Login = () => {
         "Password reset email has been sent. Please check your inbox.",
         "success",
       );
-    } catch (err) {
-      console.error("RESET PASSWORD ERROR:", err);
+    } catch (error) {
+      console.error("RESET PASSWORD ERROR:", error);
 
       let message = "Unable to send password reset email.";
 
-      switch (err.code) {
+      switch (error?.code) {
         case "auth/user-not-found":
           message = "No account found with this email.";
           break;
@@ -195,32 +191,25 @@ const Login = () => {
           break;
 
         default:
-          message = err.message || message;
+          message = error?.message || "Unable to send password reset email.";
       }
 
       addToast(message, "error");
     }
   };
 
-  // ======================================================
-  // Part 2 Starts Here...
-  // ======================================================
-  return (
-    <div className="min-h-screen bg-base-200 flex items-center justify-center px-4 py-10">
-      <div className="w-full max-w-md">
-        {/* ====================================================== */}
-        {/* Login Card */}
-        {/* ====================================================== */}
-        <div className="card bg-base-100 shadow-2xl border border-base-300">
-          <div className="card-body p-6 sm:p-8">
-            {/* ====================================================== */}
-            {/* Header */}
-            {/* ====================================================== */}
-            <div className="text-center">
-              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-warning/10">
-                <FaSignInAlt className="text-3xl text-warning" />
-              </div>
+  /* ======================================================
+     UI
+  ====================================================== */
 
+  return (
+    <div className="min-h-screen bg-base-200 px-4 py-10">
+      <div className="mx-auto w-full max-w-md">
+        <div className="card bg-base-100 shadow-xl">
+          <div className="card-body">
+            {/* Header */}
+
+            <div className="text-center">
               <h1 className="text-3xl font-bold">Welcome Back 👋</h1>
 
               <p className="mt-2 text-base-content/70">
@@ -228,12 +217,10 @@ const Login = () => {
               </p>
             </div>
 
-            {/* ====================================================== */}
-            {/* Login Form */}
-            {/* ====================================================== */}
+            {/* Form */}
 
             <form onSubmit={handleSubmit(onSubmit)} className="mt-8 space-y-5">
-              {/* ================= Email ================= */}
+              {/* Email */}
 
               <div>
                 <label htmlFor="email" className="label">
@@ -257,7 +244,6 @@ const Login = () => {
                     className="grow bg-transparent outline-none"
                     {...register("email", {
                       required: "Email is required.",
-
                       pattern: {
                         value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
                         message: "Please enter a valid email address.",
@@ -273,7 +259,7 @@ const Login = () => {
                 )}
               </div>
 
-              {/* ================= Password ================= */}
+              {/* Password */}
 
               <div>
                 <label htmlFor="password" className="label">
@@ -296,12 +282,10 @@ const Login = () => {
                     className="grow bg-transparent outline-none"
                     {...register("password", {
                       required: "Password is required.",
-
                       minLength: {
                         value: 6,
                         message: "Password must be at least 6 characters.",
                       },
-
                       maxLength: {
                         value: 50,
                         message: "Password cannot exceed 50 characters.",
@@ -315,8 +299,8 @@ const Login = () => {
                     aria-label={
                       showPassword ? "Hide password" : "Show password"
                     }
-                    onClick={() => setShowPassword((prev) => !prev)}
-                    className="text-base-content/60 transition hover:text-warning"
+                    onClick={() => setShowPassword((previous) => !previous)}
+                    className="text-base-content/60 hover:text-warning"
                   >
                     {showPassword ? (
                       <FaEyeSlash size={18} />
@@ -333,9 +317,7 @@ const Login = () => {
                 )}
               </div>
 
-              {/* ====================================================== */}
-              {/* Remember Me + Forgot Password */}
-              {/* ====================================================== */}
+              {/* Remember + Forgot */}
 
               <div className="flex items-center justify-between text-sm">
                 <label className="flex cursor-pointer items-center gap-2">
@@ -343,7 +325,7 @@ const Login = () => {
                     type="checkbox"
                     checked={rememberMe}
                     disabled={isLoading}
-                    onChange={(e) => setRememberMe(e.target.checked)}
+                    onChange={(event) => setRememberMe(event.target.checked)}
                     className="checkbox checkbox-warning checkbox-sm"
                   />
 
@@ -354,15 +336,13 @@ const Login = () => {
                   type="button"
                   disabled={isLoading}
                   onClick={handleForgotPassword}
-                  className="font-medium text-warning transition hover:underline disabled:opacity-60"
+                  className="font-medium text-warning hover:underline disabled:opacity-60"
                 >
                   Forgot Password?
                 </button>
               </div>
 
-              {/* ====================================================== */}
-              {/* Login Button */}
-              {/* ====================================================== */}
+              {/* Login */}
 
               <button
                 type="submit"
@@ -370,7 +350,7 @@ const Login = () => {
                 className="btn btn-warning w-full"
               >
                 {isLoading && (
-                  <span className="loading loading-spinner loading-sm"></span>
+                  <span className="loading loading-spinner loading-sm" />
                 )}
 
                 {isLoading ? (
@@ -384,21 +364,15 @@ const Login = () => {
               </button>
             </form>
 
-            {/* ====================================================== */}
             {/* Divider */}
-            {/* ====================================================== */}
 
             <div className="divider my-6">OR</div>
 
-            {/* ====================================================== */}
-            {/* Google Sign In */}
-            {/* ====================================================== */}
+            {/* Google */}
 
             <GoogleSignIn />
 
-            {/* ====================================================== */}
             {/* Register */}
-            {/* ====================================================== */}
 
             <div className="mt-8 text-center">
               <p className="text-sm text-base-content/70">
@@ -417,9 +391,7 @@ const Login = () => {
           </div>
         </div>
 
-        {/* ====================================================== */}
-        {/* Footer */}
-        {/* ====================================================== */}
+        {/* Terms */}
 
         <div className="mt-6 text-center text-xs text-base-content/60">
           By signing in, you agree to our{" "}
