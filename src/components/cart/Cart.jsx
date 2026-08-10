@@ -16,13 +16,20 @@ import {
 import { AuthContext } from "../../Auth/AuthProvider";
 import axiosSecure from "../../hooks/axiosSecure";
 
+const FREE_SHIPPING_THRESHOLD = 1000;
+const MAX_QUANTITY = 99;
+
 const Cart = () => {
-  const { user, loading } = useContext(AuthContext);
+  const { user, loading: authLoading } = useContext(AuthContext);
 
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const email = user?.email || "";
+  // ============================================================
+  // USER EMAIL
+  // ============================================================
+
+  const email = user?.email?.trim().toLowerCase() || "";
 
   // ============================================================
   // FETCH CART
@@ -32,21 +39,34 @@ const Cart = () => {
     const response = await axiosSecure.get("/carts");
 
     if (!response.data?.success) {
-      throw new Error(response.data?.message || "Failed to fetch cart.");
+      throw new Error(response.data?.message || "Failed to load cart.");
     }
 
     return response.data;
   };
 
-  const { data, isPending, isError, error, refetch } = useQuery({
+  // ============================================================
+  // CART QUERY
+  // ============================================================
+
+  const { data, isPending, isFetching, isError, error, refetch } = useQuery({
     queryKey: ["cart", email],
+
     queryFn: fetchCart,
-    enabled: Boolean(email) && !loading,
+
+    enabled: Boolean(user && email) && !authLoading,
+
     staleTime: 1000 * 60,
+
     gcTime: 1000 * 60 * 10,
+
     retry: 1,
+
     refetchOnWindowFocus: false,
+
     refetchOnReconnect: true,
+
+    placeholderData: (previousData) => previousData,
   });
 
   // ============================================================
@@ -55,42 +75,64 @@ const Cart = () => {
 
   const cart = Array.isArray(data?.data) ? data.data : [];
 
-  const summary = {
-    totalItems: Number(data?.summary?.totalItems) || 0,
-    totalQuantity: Number(data?.summary?.totalQuantity) || 0,
-    subtotal: Number(data?.summary?.subtotal) || 0,
-    discount: Number(data?.summary?.discount) || 0,
-    shipping: Number(data?.summary?.shipping) || 0,
-    tax: Number(data?.summary?.tax) || 0,
-    grandTotal: Number(data?.summary?.grandTotal) || 0,
-  };
+  // ============================================================
+  // SERVER SUMMARY
+  // ============================================================
+
+  const summary = useMemo(() => {
+    const serverSummary = data?.summary || {};
+
+    return {
+      totalItems: Number(serverSummary.totalItems) || 0,
+
+      totalQuantity: Number(serverSummary.totalQuantity) || 0,
+
+      subtotal: Number(serverSummary.subtotal) || 0,
+
+      discount:
+        Number(serverSummary.discount ?? serverSummary.totalDiscount ?? 0) || 0,
+
+      shipping: Number(serverSummary.shipping) || 0,
+
+      tax: Number(serverSummary.tax) || 0,
+
+      grandTotal: Number(serverSummary.grandTotal) || 0,
+    };
+  }, [data]);
 
   // ============================================================
-  // FREE SHIPPING
+  // SHIPPING
   // ============================================================
 
   const freeShippingRemaining = useMemo(() => {
-    const remaining = 1000 - summary.subtotal;
+    const remaining = FREE_SHIPPING_THRESHOLD - summary.subtotal;
 
     return remaining > 0 ? remaining : 0;
   }, [summary.subtotal]);
+
+  const shippingProgress = Math.min(
+    Math.max(summary.subtotal, 0),
+    FREE_SHIPPING_THRESHOLD,
+  );
 
   // ============================================================
   // REFRESH CART
   // ============================================================
 
   const refreshCart = async () => {
-    await queryClient.invalidateQueries({
-      queryKey: ["cart", email],
-    });
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: ["cart", email],
+      }),
 
-    await queryClient.invalidateQueries({
-      queryKey: ["cart-count"],
-    });
+      queryClient.invalidateQueries({
+        queryKey: ["cart-count"],
+      }),
 
-    await queryClient.invalidateQueries({
-      queryKey: ["cart-summary"],
-    });
+      queryClient.invalidateQueries({
+        queryKey: ["cart-summary"],
+      }),
+    ]);
   };
 
   // ============================================================
@@ -114,12 +156,12 @@ const Cart = () => {
       await refreshCart();
     },
 
-    onError: (error) => {
-      console.error("UPDATE CART ERROR:", error);
+    onError: (mutationError) => {
+      console.error("UPDATE CART ERROR:", mutationError);
 
       window.alert(
-        error?.response?.data?.message ||
-          error?.message ||
+        mutationError?.response?.data?.message ||
+          mutationError?.message ||
           "Failed to update quantity.",
       );
     },
@@ -146,30 +188,40 @@ const Cart = () => {
       await refreshCart();
     },
 
-    onError: (error) => {
-      console.error("DELETE CART ERROR:", error);
+    onError: (mutationError) => {
+      console.error("DELETE CART ERROR:", mutationError);
 
       window.alert(
-        error?.response?.data?.message ||
-          error?.message ||
+        mutationError?.response?.data?.message ||
+          mutationError?.message ||
           "Failed to remove cart item.",
       );
     },
   });
 
   // ============================================================
+  // MUTATION STATE
+  // ============================================================
+
+  const isUpdating = quantityMutation.isPending || deleteMutation.isPending;
+
+  // ============================================================
   // INCREASE QUANTITY
   // ============================================================
 
   const handleIncrease = (item) => {
-    if (!item?._id) return;
+    if (!item?._id || isUpdating) {
+      return;
+    }
 
-    if (quantityMutation.isPending) return;
+    const quantity = Number(item.quantity);
 
-    const quantity = Number(item.quantity) || 1;
+    if (!Number.isInteger(quantity) || quantity < 1) {
+      return;
+    }
 
-    if (quantity >= 99) {
-      window.alert("Maximum quantity is 99.");
+    if (quantity >= MAX_QUANTITY) {
+      window.alert(`Maximum quantity is ${MAX_QUANTITY}.`);
       return;
     }
 
@@ -184,13 +236,13 @@ const Cart = () => {
   // ============================================================
 
   const handleDecrease = (item) => {
-    if (!item?._id) return;
+    if (!item?._id || isUpdating) {
+      return;
+    }
 
-    if (quantityMutation.isPending) return;
+    const quantity = Number(item.quantity);
 
-    const quantity = Number(item.quantity) || 1;
-
-    if (quantity <= 1) {
+    if (!Number.isInteger(quantity) || quantity <= 1) {
       return;
     }
 
@@ -201,19 +253,21 @@ const Cart = () => {
   };
 
   // ============================================================
-  // DELETE
+  // DELETE ITEM
   // ============================================================
 
   const handleDelete = (cartId) => {
-    if (!cartId) return;
-
-    if (deleteMutation.isPending) return;
+    if (!cartId || isUpdating) {
+      return;
+    }
 
     const confirmed = window.confirm(
       "Are you sure you want to remove this product?",
     );
 
-    if (!confirmed) return;
+    if (!confirmed) {
+      return;
+    }
 
     deleteMutation.mutate(cartId);
   };
@@ -250,41 +304,62 @@ const Cart = () => {
   };
 
   // ============================================================
-  // LOADING
+  // INITIAL LOADING
+  //
+  // Skeleton appears only during the first load.
+  // Once data exists, refetching will NOT remove the cart UI.
   // ============================================================
 
-  if (loading || isPending) {
-    return (
-      <section className="min-h-screen bg-base-200 px-4 py-10">
-        <div className="mx-auto max-w-7xl">
-          <div className="mb-8">
-            <div className="h-10 w-64 animate-pulse rounded-lg bg-base-300" />
+  const initialLoading = authLoading || (isPending && !data);
 
-            <div className="mt-3 h-5 w-48 animate-pulse rounded bg-base-300" />
+  if (initialLoading) {
+    return (
+      <section className="min-h-screen bg-base-200 px-4 py-8 md:px-6 lg:px-8">
+        <div className="mx-auto max-w-7xl">
+          {/* HEADER SKELETON */}
+
+          <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
+            <div>
+              <div className="h-10 w-56 animate-pulse rounded-lg bg-base-300" />
+
+              <div className="mt-3 h-5 w-48 animate-pulse rounded bg-base-300" />
+            </div>
+
+            <div className="h-12 w-48 animate-pulse rounded-lg bg-base-300" />
           </div>
 
+          {/* CONTENT SKELETON */}
+
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
-            <div className="space-y-4 lg:col-span-8">
+            {/* ITEM SKELETONS */}
+
+            <div className="space-y-5 lg:col-span-8">
               {[1, 2, 3].map((item) => (
                 <div
                   key={item}
-                  className="flex gap-4 rounded-2xl bg-base-100 p-5 shadow"
+                  className="rounded-2xl border border-base-300 bg-base-100 p-5 shadow-sm"
                 >
-                  <div className="h-24 w-24 animate-pulse rounded-xl bg-base-300" />
+                  <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
+                    <div className="h-28 w-28 shrink-0 animate-pulse rounded-xl bg-base-300" />
 
-                  <div className="flex-1 space-y-3">
-                    <div className="h-5 w-2/3 animate-pulse rounded bg-base-300" />
+                    <div className="flex-1 space-y-3">
+                      <div className="h-6 w-2/3 animate-pulse rounded bg-base-300" />
 
-                    <div className="h-4 w-1/3 animate-pulse rounded bg-base-300" />
+                      <div className="h-4 w-1/3 animate-pulse rounded bg-base-300" />
 
-                    <div className="h-8 w-32 animate-pulse rounded bg-base-300" />
+                      <div className="h-5 w-24 animate-pulse rounded bg-base-300" />
+                    </div>
+
+                    <div className="h-9 w-28 animate-pulse rounded bg-base-300" />
                   </div>
                 </div>
               ))}
             </div>
 
+            {/* SUMMARY SKELETON */}
+
             <div className="lg:col-span-4">
-              <div className="h-96 animate-pulse rounded-2xl bg-base-300" />
+              <div className="h-[520px] animate-pulse rounded-2xl bg-base-300" />
             </div>
           </div>
         </div>
@@ -298,25 +373,32 @@ const Cart = () => {
 
   if (isError) {
     return (
-      <section className="flex min-h-[70vh] items-center justify-center px-4">
-        <div className="w-full max-w-md rounded-2xl bg-base-100 p-8 text-center shadow-lg">
-          <FaShoppingCart className="mx-auto text-5xl text-error" />
+      <section className="min-h-screen bg-base-200 px-4 py-12 md:px-6 lg:px-8">
+        <div className="mx-auto flex min-h-[60vh] max-w-2xl items-center justify-center">
+          <div className="w-full rounded-2xl border border-error/20 bg-base-100 p-8 text-center shadow-sm">
+            <FaShoppingCart className="mx-auto text-5xl text-error" />
 
-          <h2 className="mt-4 text-2xl font-bold">Failed to Load Cart</h2>
+            <h1 className="mt-5 text-3xl font-bold">Failed to Load Cart</h1>
 
-          <p className="mt-3 text-sm text-gray-500">
-            {error?.response?.data?.message ||
-              error?.message ||
-              "Something went wrong while loading your cart."}
-          </p>
+            <p className="mt-3 text-base-content/60">
+              {error?.response?.data?.message ||
+                error?.message ||
+                "Something went wrong while loading your cart."}
+            </p>
 
-          <button
-            type="button"
-            onClick={() => refetch()}
-            className="btn btn-primary mt-6"
-          >
-            Try Again
-          </button>
+            <button
+              type="button"
+              onClick={() => refetch()}
+              disabled={isFetching}
+              className="btn btn-primary mt-6"
+            >
+              {isFetching && (
+                <span className="loading loading-spinner loading-sm" />
+              )}
+
+              {isFetching ? "Loading..." : "Try Again"}
+            </button>
+          </div>
         </div>
       </section>
     );
@@ -326,26 +408,28 @@ const Cart = () => {
   // EMPTY CART
   // ============================================================
 
-  if (cart.length === 0) {
+  if (data && cart.length === 0) {
     return (
-      <section className="flex min-h-[70vh] items-center justify-center px-4">
-        <div className="w-full max-w-lg rounded-3xl bg-base-100 p-10 text-center shadow-lg">
-          <FaShoppingCart className="mx-auto text-6xl text-primary" />
+      <section className="min-h-screen bg-base-200 px-4 py-12 md:px-6 lg:px-8">
+        <div className="mx-auto flex min-h-[60vh] max-w-2xl items-center justify-center">
+          <div className="w-full rounded-2xl border border-base-300 bg-base-100 p-8 text-center shadow-sm">
+            <FaShoppingCart className="mx-auto text-6xl text-base-content/30" />
 
-          <h1 className="mt-6 text-3xl font-bold">Your Cart is Empty</h1>
+            <h1 className="mt-6 text-3xl font-bold">Your Cart is Empty</h1>
 
-          <p className="mt-3 text-gray-500">
-            Looks like you haven't added any products yet.
-          </p>
+            <p className="mt-3 text-base-content/60">
+              Looks like you haven't added any products yet.
+            </p>
 
-          <button
-            type="button"
-            onClick={handleContinueShopping}
-            className="btn btn-primary mt-8"
-          >
-            <FaArrowLeft />
-            Continue Shopping
-          </button>
+            <button
+              type="button"
+              onClick={handleContinueShopping}
+              className="btn btn-primary mt-8"
+            >
+              <FaArrowLeft />
+              Continue Shopping
+            </button>
+          </div>
         </div>
       </section>
     );
@@ -356,15 +440,17 @@ const Cart = () => {
   // ============================================================
 
   return (
-    <section className="min-h-screen bg-base-200 px-4 py-8 md:px-6 lg:py-12">
+    <section className="min-h-screen bg-base-200 px-4 py-8 md:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl">
-        {/* HEADER */}
+        {/* ======================================================
+            HEADER
+        ====================================================== */}
 
         <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
           <div>
             <h1 className="text-3xl font-bold md:text-4xl">Shopping Cart</h1>
 
-            <p className="mt-2 text-gray-500">
+            <p className="mt-2 text-base-content/60">
               {summary.totalItems} Item(s) • {summary.totalQuantity} Quantity
             </p>
           </div>
@@ -379,62 +465,97 @@ const Cart = () => {
           </button>
         </div>
 
-        {/* MAIN GRID */}
+        {/* ======================================================
+            BACKGROUND REFRESH
+        ====================================================== */}
+
+        {isFetching && !isPending && (
+          <div className="mb-5 flex items-center gap-2 text-sm text-base-content/60">
+            <span className="loading loading-spinner loading-xs" />
+            Updating cart...
+          </div>
+        )}
+
+        {/* ======================================================
+            MAIN GRID
+        ====================================================== */}
 
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
-          {/* CART ITEMS */}
+          {/* ====================================================
+              CART ITEMS
+          ==================================================== */}
 
           <div className="space-y-5 lg:col-span-8">
             {cart.map((item) => {
-              const price = Number(item.price) || 0;
-              const finalPrice = Number(item.finalPrice) || 0;
-              const quantity = Number(item.quantity) || 1;
-              const subtotal = Number(item.subtotal) || 0;
-              const discount = Number(item.discount) || 0;
+              const price = Number(item?.price) || 0;
 
-              const isUpdating = quantityMutation.isPending;
+              const finalPrice = Number(item?.finalPrice) || 0;
 
-              const isDeleting = deleteMutation.isPending;
+              const quantity = Number(item?.quantity) || 1;
+
+              const subtotal = Number(item?.subtotal) || 0;
+
+              const discount = Number(item?.discount) || 0;
+
+              const isThisItemUpdating = quantityMutation.isPending;
+
+              const isThisItemDeleting = deleteMutation.isPending;
 
               return (
                 <div
-                  key={item._id}
+                  key={String(item._id)}
                   className="rounded-2xl border border-base-300 bg-base-100 p-4 shadow-sm transition hover:shadow-md md:p-5"
                 >
                   <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
-                    {/* IMAGE */}
+                    {/* ==================================================
+                        PRODUCT IMAGE
+                    ================================================== */}
 
-                    <div className="flex justify-center sm:block">
-                      {item.image ? (
+                    <div className="flex shrink-0 justify-center sm:block">
+                      {item?.image ? (
                         <img
                           src={item.image}
-                          alt={item.name || "Product"}
+                          alt={item?.name || "Product"}
                           loading="lazy"
                           decoding="async"
-                          className="h-28 w-28 rounded-xl border object-cover"
+                          className="h-28 w-28 rounded-xl border border-base-300 object-cover"
                           onError={(event) => {
                             event.currentTarget.onerror = null;
-                            event.currentTarget.src =
-                              "https://via.placeholder.com/300x300?text=No+Image";
+
+                            event.currentTarget.style.display = "none";
                           }}
                         />
                       ) : (
-                        <div className="flex h-28 w-28 items-center justify-center rounded-xl bg-base-200 text-xs text-gray-400">
+                        <div className="flex h-28 w-28 items-center justify-center rounded-xl bg-base-200 text-xs text-base-content/40">
                           No Image
                         </div>
                       )}
                     </div>
 
-                    {/* PRODUCT INFO */}
+                    {/* ==================================================
+                        PRODUCT INFORMATION
+                    ================================================== */}
 
                     <div className="min-w-0 flex-1">
                       <h2 className="line-clamp-2 text-lg font-bold md:text-xl">
-                        {item.name || "Unnamed Product"}
+                        {item?.name || "Unnamed Product"}
                       </h2>
 
-                      {item.brand && (
-                        <p className="mt-1 text-sm text-gray-500">
+                      {item?.brand && (
+                        <p className="mt-1 text-sm text-base-content/60">
                           {item.brand}
+                        </p>
+                      )}
+
+                      {item?.category && (
+                        <p className="mt-1 text-xs capitalize text-base-content/50">
+                          {item.category}
+                        </p>
+                      )}
+
+                      {item?.weight && (
+                        <p className="mt-1 text-xs text-base-content/50">
+                          Weight: {item.weight}
                         </p>
                       )}
 
@@ -450,55 +571,76 @@ const Cart = () => {
                         </span>
 
                         {discount > 0 && (
-                          <span className="text-sm text-gray-400 line-through">
+                          <span className="text-sm text-base-content/40 line-through">
                             ৳{price.toFixed(2)}
                           </span>
                         )}
                       </div>
                     </div>
 
-                    {/* QUANTITY */}
+                    {/* ==================================================
+                        QUANTITY + DELETE
+                    ================================================== */}
 
                     <div className="flex items-center justify-between gap-4 sm:flex-col sm:items-end">
                       <div className="join">
+                        {/* DECREASE */}
+
                         <button
                           type="button"
                           className="btn btn-sm join-item"
-                          disabled={quantity <= 1 || isUpdating || isDeleting}
+                          disabled={quantity <= 1 || isUpdating}
                           onClick={() => handleDecrease(item)}
+                          aria-label={`Decrease ${item?.name || "product"} quantity`}
                         >
                           <FaMinus />
                         </button>
+
+                        {/* CURRENT QUANTITY */}
 
                         <span className="btn btn-sm join-item no-animation cursor-default">
                           {quantity}
                         </span>
 
+                        {/* INCREASE */}
+
                         <button
                           type="button"
                           className="btn btn-sm join-item"
-                          disabled={quantity >= 99 || isUpdating || isDeleting}
+                          disabled={quantity >= MAX_QUANTITY || isUpdating}
                           onClick={() => handleIncrease(item)}
+                          aria-label={`Increase ${item?.name || "product"} quantity`}
                         >
                           <FaPlus />
                         </button>
                       </div>
 
+                      {/* DELETE */}
+
                       <button
                         type="button"
                         className="btn btn-error btn-sm"
-                        disabled={isDeleting || isUpdating}
-                        onClick={() => handleDelete(item._id)}
+                        disabled={isUpdating}
+                        onClick={() => handleDelete(item?._id)}
+                        aria-label={`Remove ${item?.name || "product"}`}
                       >
-                        <FaTrash />
+                        {isThisItemDeleting ? (
+                          <span className="loading loading-spinner loading-xs" />
+                        ) : (
+                          <FaTrash />
+                        )}
                       </button>
                     </div>
                   </div>
 
-                  {/* SUBTOTAL */}
+                  {/* ==================================================
+                      ITEM SUBTOTAL
+                  ================================================== */}
 
                   <div className="mt-5 flex items-center justify-between border-t border-base-300 pt-4">
-                    <span className="text-sm text-gray-500">Item Subtotal</span>
+                    <span className="text-sm text-base-content/60">
+                      Item Subtotal
+                    </span>
 
                     <span className="text-lg font-bold text-primary">
                       ৳{subtotal.toFixed(2)}
@@ -509,155 +651,184 @@ const Cart = () => {
             })}
           </div>
 
-          {/* ORDER SUMMARY */}
+          {/* ====================================================
+              ORDER SUMMARY
+          ==================================================== */}
 
           <div className="lg:col-span-4">
-            <div className="sticky top-24">
-              <div className="card border border-base-300 bg-base-100 shadow-lg">
-                <div className="card-body">
-                  <h2 className="card-title text-2xl">Order Summary</h2>
+            <div className="sticky top-6 rounded-2xl border border-base-300 bg-base-100 p-6 shadow-sm">
+              {/* TITLE */}
 
-                  {/* SHIPPING */}
+              <div className="flex items-center gap-3">
+                <FaShoppingCart className="text-xl text-primary" />
 
-                  {summary.shipping > 0 ? (
-                    <div className="mt-4">
-                      <div className="mb-2 flex justify-between text-sm">
-                        <span>Free Shipping Progress</span>
+                <h2 className="text-2xl font-bold">Order Summary</h2>
+              </div>
 
-                        <span>৳{freeShippingRemaining.toFixed(2)} left</span>
-                      </div>
+              {/* ==================================================
+                  FREE SHIPPING
+              ================================================== */}
 
-                      <progress
-                        className="progress progress-success w-full"
-                        value={Math.min(summary.subtotal, 1000)}
-                        max="1000"
-                      />
-                    </div>
-                  ) : (
-                    <div className="alert alert-success mt-4">
-                      🎉 You unlocked FREE Shipping.
-                    </div>
-                  )}
+              {summary.shipping > 0 ? (
+                <div className="mt-5">
+                  <div className="mb-2 flex justify-between text-sm">
+                    <span>Free Shipping Progress</span>
 
-                  <div className="divider" />
-
-                  {/* SUMMARY */}
-
-                  <div className="space-y-3">
-                    <div className="flex justify-between">
-                      <span>Total Items</span>
-                      <span>{summary.totalItems}</span>
-                    </div>
-
-                    <div className="flex justify-between">
-                      <span>Total Quantity</span>
-                      <span>{summary.totalQuantity}</span>
-                    </div>
-
-                    <div className="flex justify-between">
-                      <span>Subtotal</span>
-                      <span>৳{summary.subtotal.toFixed(2)}</span>
-                    </div>
-
-                    <div className="flex justify-between text-success">
-                      <span>Discount</span>
-                      <span>- ৳{summary.discount.toFixed(2)}</span>
-                    </div>
-
-                    <div className="flex justify-between">
-                      <span>Shipping</span>
-
-                      <span>
-                        {summary.shipping === 0
-                          ? "FREE"
-                          : `৳${summary.shipping.toFixed(2)}`}
-                      </span>
-                    </div>
-
-                    <div className="flex justify-between">
-                      <span>Tax</span>
-
-                      <span>৳{summary.tax.toFixed(2)}</span>
-                    </div>
+                    <span>৳{freeShippingRemaining.toFixed(2)} left</span>
                   </div>
 
-                  <div className="divider" />
+                  <progress
+                    className="progress progress-success w-full"
+                    value={shippingProgress}
+                    max={FREE_SHIPPING_THRESHOLD}
+                  />
+                </div>
+              ) : (
+                <div className="alert alert-success mt-5">
+                  🎉 You unlocked FREE Shipping.
+                </div>
+              )}
 
-                  {/* GRAND TOTAL */}
+              <div className="divider" />
 
-                  <div className="flex justify-between text-xl font-bold">
-                    <span>Grand Total</span>
+              {/* ==================================================
+                  SUMMARY DETAILS
+              ================================================== */}
 
-                    <span className="text-primary">
-                      ৳{summary.grandTotal.toFixed(2)}
-                    </span>
+              <div className="space-y-3">
+                <div className="flex justify-between">
+                  <span>Total Items</span>
+
+                  <span>{summary.totalItems}</span>
+                </div>
+
+                <div className="flex justify-between">
+                  <span>Total Quantity</span>
+
+                  <span>{summary.totalQuantity}</span>
+                </div>
+
+                <div className="flex justify-between">
+                  <span>Subtotal</span>
+
+                  <span>৳{summary.subtotal.toFixed(2)}</span>
+                </div>
+
+                <div className="flex justify-between text-success">
+                  <span>Discount</span>
+
+                  <span>- ৳{summary.discount.toFixed(2)}</span>
+                </div>
+
+                <div className="flex justify-between">
+                  <span>Shipping</span>
+
+                  <span>
+                    {summary.shipping === 0
+                      ? "FREE"
+                      : `৳${summary.shipping.toFixed(2)}`}
+                  </span>
+                </div>
+
+                <div className="flex justify-between">
+                  <span>Tax</span>
+
+                  <span>৳{summary.tax.toFixed(2)}</span>
+                </div>
+              </div>
+
+              <div className="divider" />
+
+              {/* ==================================================
+                  GRAND TOTAL
+              ================================================== */}
+
+              <div className="flex justify-between text-xl font-bold">
+                <span>Grand Total</span>
+
+                <span className="text-primary">
+                  ৳{summary.grandTotal.toFixed(2)}
+                </span>
+              </div>
+
+              {/* ==================================================
+                  CHECKOUT
+              ================================================== */}
+
+              <button
+                type="button"
+                onClick={handleCheckout}
+                disabled={isUpdating}
+                className="btn btn-primary btn-lg mt-6 w-full"
+              >
+                {isUpdating ? (
+                  <span className="loading loading-spinner loading-sm" />
+                ) : (
+                  <FaCreditCard />
+                )}
+
+                {isUpdating ? "Updating..." : "Proceed to Checkout"}
+              </button>
+
+              {/* ==================================================
+                  CONTINUE SHOPPING
+              ================================================== */}
+
+              <button
+                type="button"
+                onClick={handleContinueShopping}
+                className="btn btn-outline mt-3 w-full"
+              >
+                <FaArrowLeft />
+                Continue Shopping
+              </button>
+
+              <div className="divider" />
+
+              {/* ==================================================
+                  FEATURES
+              ================================================== */}
+
+              <div className="space-y-5">
+                {/* DELIVERY */}
+
+                <div className="flex items-start gap-3">
+                  <FaTruck className="mt-1 text-xl text-primary" />
+
+                  <div>
+                    <h3 className="font-semibold">Fast Delivery</h3>
+
+                    <p className="text-sm text-base-content/60">
+                      Delivery within 1–3 business days.
+                    </p>
                   </div>
+                </div>
 
-                  {/* CHECKOUT */}
+                {/* PAYMENT */}
 
-                  <button
-                    type="button"
-                    onClick={handleCheckout}
-                    disabled={
-                      quantityMutation.isPending || deleteMutation.isPending
-                    }
-                    className="btn btn-primary btn-lg mt-6 w-full"
-                  >
-                    <FaCreditCard />
-                    Proceed to Checkout
-                  </button>
+                <div className="flex items-start gap-3">
+                  <FaShieldAlt className="mt-1 text-xl text-success" />
 
-                  {/* CONTINUE */}
+                  <div>
+                    <h3 className="font-semibold">Secure Payment</h3>
 
-                  <button
-                    type="button"
-                    onClick={handleContinueShopping}
-                    className="btn btn-outline mt-3 w-full"
-                  >
-                    <FaArrowLeft />
-                    Continue Shopping
-                  </button>
+                    <p className="text-sm text-base-content/60">
+                      100% secure payment protection.
+                    </p>
+                  </div>
+                </div>
 
-                  <div className="divider" />
+                {/* RETURNS */}
 
-                  {/* FEATURES */}
+                <div className="flex items-start gap-3">
+                  <FaShoppingCart className="mt-1 text-xl text-warning" />
 
-                  <div className="space-y-5">
-                    <div className="flex items-start gap-3">
-                      <FaTruck className="mt-1 text-xl text-primary" />
+                  <div>
+                    <h3 className="font-semibold">Easy Returns</h3>
 
-                      <div>
-                        <h3 className="font-semibold">Fast Delivery</h3>
-
-                        <p className="text-sm text-gray-500">
-                          Delivery within 1–3 business days.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-start gap-3">
-                      <FaShieldAlt className="mt-1 text-xl text-success" />
-
-                      <div>
-                        <h3 className="font-semibold">Secure Payment</h3>
-
-                        <p className="text-sm text-gray-500">
-                          100% secure payment protection.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-start gap-3">
-                      <FaShoppingCart className="mt-1 text-xl text-warning" />
-
-                      <div>
-                        <h3 className="font-semibold">Easy Returns</h3>
-
-                        <p className="text-sm text-gray-500">
-                          7-day easy return policy.
-                        </p>
-                      </div>
-                    </div>
+                    <p className="text-sm text-base-content/60">
+                      7-day easy return policy.
+                    </p>
                   </div>
                 </div>
               </div>
