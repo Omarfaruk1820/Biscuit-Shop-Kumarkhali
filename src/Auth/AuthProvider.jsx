@@ -21,27 +21,35 @@ import axiosPublic from "../hooks/axiosPublic";
 
 export const AuthContext = createContext(null);
 
+// ============================================================
+// GOOGLE PROVIDER
+// ============================================================
+
 const googleProvider = new GoogleAuthProvider();
 
 googleProvider.setCustomParameters({
   prompt: "select_account",
 });
 
+// ============================================================
+// AUTH PROVIDER
+// ============================================================
+
 const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // ============================================================
+  // ==========================================================
   // NORMALIZE EMAIL
-  // ============================================================
+  // ==========================================================
 
   const normalizeEmail = useCallback((email = "") => {
     return String(email).trim().toLowerCase();
   }, []);
 
-  // ============================================================
+  // ==========================================================
   // SAVE USER TO DATABASE
-  // ============================================================
+  // ==========================================================
 
   const saveUserToDatabase = useCallback(
     async (firebaseUser) => {
@@ -49,20 +57,20 @@ const AuthProvider = ({ children }) => {
         throw new Error("User email not found.");
       }
 
+      const email = normalizeEmail(firebaseUser.email);
+
       const payload = {
-        name: firebaseUser.displayName || "",
-        email: normalizeEmail(firebaseUser.email),
-        photo: firebaseUser.photoURL || "",
+        name: String(firebaseUser.displayName || "").trim(),
+        email,
+        photo: String(firebaseUser.photoURL || "").trim(),
         provider: firebaseUser.providerData?.[0]?.providerId || "password",
-        emailVerified: firebaseUser.emailVerified,
+        emailVerified: Boolean(firebaseUser.emailVerified),
       };
 
       const response = await axiosPublic.post("/users", payload);
 
       if (!response.data?.success) {
-        throw new Error(
-          response.data?.message || "Failed to save authenticated user.",
-        );
+        throw new Error(response.data?.message || "Failed to save user.");
       }
 
       return response.data;
@@ -70,14 +78,20 @@ const AuthProvider = ({ children }) => {
     [normalizeEmail],
   );
 
-  // ============================================================
-  // CREATE JWT
-  // ============================================================
+  // ==========================================================
+  // CREATE APPLICATION JWT
+  // ==========================================================
 
   const createJWT = useCallback(
     async (email) => {
+      const normalizedEmail = normalizeEmail(email);
+
+      if (!normalizedEmail) {
+        throw new Error("User email is required.");
+      }
+
       const response = await axiosPublic.post("/auth/jwt", {
-        email: normalizeEmail(email),
+        email: normalizedEmail,
       });
 
       if (!response.data?.success) {
@@ -91,9 +105,9 @@ const AuthProvider = ({ children }) => {
     [normalizeEmail],
   );
 
-  // ============================================================
-  // GET CURRENT USER
-  // ============================================================
+  // ==========================================================
+  // GET CURRENT DATABASE USER
+  // ==========================================================
 
   const getCurrentUser = useCallback(async () => {
     const response = await axiosPublic.get("/auth/me");
@@ -107,43 +121,59 @@ const AuthProvider = ({ children }) => {
     return response.data.user;
   }, []);
 
-  // ============================================================
+  // ==========================================================
   // CREATE USER
-  // ============================================================
+  // ==========================================================
 
   const createUser = useCallback(
     async (email, password) => {
       const normalizedEmail = normalizeEmail(email);
+
+      if (!normalizedEmail) {
+        throw new Error("Email is required.");
+      }
+
+      if (!password) {
+        throw new Error("Password is required.");
+      }
 
       return createUserWithEmailAndPassword(auth, normalizedEmail, password);
     },
     [normalizeEmail],
   );
 
-  // ============================================================
+  // ==========================================================
   // LOGIN USER
-  // ============================================================
+  // ==========================================================
 
   const loginUser = useCallback(
     async (email, password) => {
       const normalizedEmail = normalizeEmail(email);
+
+      if (!normalizedEmail) {
+        throw new Error("Email is required.");
+      }
+
+      if (!password) {
+        throw new Error("Password is required.");
+      }
 
       return signInWithEmailAndPassword(auth, normalizedEmail, password);
     },
     [normalizeEmail],
   );
 
-  // ============================================================
+  // ==========================================================
   // GOOGLE LOGIN
-  // ============================================================
+  // ==========================================================
 
   const signInGoogle = useCallback(async () => {
     return signInWithPopup(auth, googleProvider);
   }, []);
 
-  // ============================================================
-  // UPDATE PROFILE
-  // ============================================================
+  // ==========================================================
+  // UPDATE USER PROFILE
+  // ==========================================================
 
   const updateUserProfile = useCallback(async (name, photo = "") => {
     if (!auth.currentUser) {
@@ -173,38 +203,79 @@ const AuthProvider = ({ children }) => {
     return auth.currentUser;
   }, []);
 
-  // ============================================================
+  // ==========================================================
   // CLEAR USER
-  // ============================================================
+  // ==========================================================
 
   const clearUser = useCallback(() => {
     setUser(null);
   }, []);
 
-  // ============================================================
+  // ==========================================================
   // LOGOUT
-  // ============================================================
+  // ==========================================================
 
   const signOutUser = useCallback(async () => {
     try {
+      // Clear server JWT cookie
       try {
         await axiosPublic.post("/auth/logout");
       } catch (error) {
-        console.error("Logout API Error:", error);
+        console.error("SERVER LOGOUT ERROR:", error);
       }
 
-      clearUser();
-
+      // Clear Firebase session
       await signOut(auth);
+
+      // Clear React user state
+      setUser(null);
     } catch (error) {
-      console.error("Logout Error:", error);
+      console.error("LOGOUT ERROR:", error);
       throw error;
     }
-  }, [clearUser]);
+  }, []);
 
-  // ============================================================
-  // AUTH STATE
-  // ============================================================
+  // ==========================================================
+  // BUILD APPLICATION USER
+  // ==========================================================
+
+  const buildUser = useCallback(
+    (firebaseUser, dbUser) => {
+      const firebaseEmail = normalizeEmail(firebaseUser?.email);
+
+      return {
+        uid: firebaseUser?.uid || "",
+
+        name: dbUser?.name || firebaseUser?.displayName || "",
+
+        email: dbUser?.email || firebaseEmail,
+
+        photo: dbUser?.photo || firebaseUser?.photoURL || "",
+
+        role: dbUser?.role || "customer",
+
+        status: dbUser?.status || "active",
+
+        provider:
+          dbUser?.provider ||
+          firebaseUser?.providerData?.[0]?.providerId ||
+          "password",
+
+        createdAt: dbUser?.createdAt || null,
+
+        updatedAt: dbUser?.updatedAt || null,
+
+        lastLogin: dbUser?.lastLogin || null,
+
+        emailVerified: Boolean(firebaseUser?.emailVerified),
+      };
+    },
+    [normalizeEmail],
+  );
+
+  // ==========================================================
+  // FIREBASE AUTH STATE
+  // ==========================================================
 
   useEffect(() => {
     let mounted = true;
@@ -214,9 +285,9 @@ const AuthProvider = ({ children }) => {
         return;
       }
 
-      // --------------------------------------------------------
+      // ------------------------------------------------------
       // NO FIREBASE USER
-      // --------------------------------------------------------
+      // ------------------------------------------------------
 
       if (!firebaseUser) {
         setUser(null);
@@ -233,20 +304,29 @@ const AuthProvider = ({ children }) => {
           throw new Error("Authenticated email not found.");
         }
 
-        // ------------------------------------------------------
-        // SAVE USER + CREATE JWT IN PARALLEL
-        // ------------------------------------------------------
+        // ----------------------------------------------------
+        // SAVE USER
+        // ----------------------------------------------------
 
-        await Promise.all([saveUserToDatabase(firebaseUser), createJWT(email)]);
+        await saveUserToDatabase(firebaseUser);
 
         if (!mounted) {
           return;
         }
 
-        // ------------------------------------------------------
+        // ----------------------------------------------------
+        // CREATE APPLICATION JWT
+        // ----------------------------------------------------
+
+        await createJWT(email);
+
+        if (!mounted) {
+          return;
+        }
+
+        // ----------------------------------------------------
         // GET DATABASE USER
-        // JWT cookie already exists now.
-        // ------------------------------------------------------
+        // ----------------------------------------------------
 
         const dbUser = await getCurrentUser();
 
@@ -254,36 +334,13 @@ const AuthProvider = ({ children }) => {
           return;
         }
 
-        // ------------------------------------------------------
-        // SET USER
-        // ------------------------------------------------------
+        // ----------------------------------------------------
+        // SET APPLICATION USER
+        // ----------------------------------------------------
 
-        setUser({
-          uid: firebaseUser.uid,
+        const applicationUser = buildUser(firebaseUser, dbUser);
 
-          name: dbUser?.name || "",
-
-          email: dbUser?.email || normalizeEmail(firebaseUser.email),
-
-          photo: dbUser?.photo || "",
-
-          role: dbUser?.role || "customer",
-
-          status: dbUser?.status || "active",
-
-          provider:
-            dbUser?.provider ||
-            firebaseUser.providerData?.[0]?.providerId ||
-            "password",
-
-          createdAt: dbUser?.createdAt,
-
-          updatedAt: dbUser?.updatedAt,
-
-          lastLogin: dbUser?.lastLogin,
-
-          emailVerified: firebaseUser.emailVerified,
-        });
+        setUser(applicationUser);
       } catch (error) {
         console.error("AUTH STATE ERROR:", error);
 
@@ -293,16 +350,24 @@ const AuthProvider = ({ children }) => {
 
         setUser(null);
 
+        // ----------------------------------------------------
+        // CLEAR SERVER COOKIE
+        // ----------------------------------------------------
+
         try {
           await axiosPublic.post("/auth/logout");
         } catch (logoutError) {
           console.error("AUTH COOKIE LOGOUT ERROR:", logoutError);
         }
 
+        // ----------------------------------------------------
+        // CLEAR FIREBASE SESSION
+        // ----------------------------------------------------
+
         try {
           await signOut(auth);
-        } catch (firebaseLogoutError) {
-          console.error("FIREBASE LOGOUT ERROR:", firebaseLogoutError);
+        } catch (firebaseError) {
+          console.error("FIREBASE LOGOUT ERROR:", firebaseError);
         }
       } finally {
         if (mounted) {
@@ -315,47 +380,46 @@ const AuthProvider = ({ children }) => {
       mounted = false;
       unsubscribe();
     };
-  }, [normalizeEmail, saveUserToDatabase, createJWT, getCurrentUser]);
+  }, [
+    normalizeEmail,
+    saveUserToDatabase,
+    createJWT,
+    getCurrentUser,
+    buildUser,
+  ]);
 
-  // ============================================================
+  // ==========================================================
   // REFRESH USER
-  // ============================================================
+  // ==========================================================
 
   const refreshUser = useCallback(async () => {
+    if (!auth.currentUser) {
+      setUser(null);
+      return null;
+    }
+
     try {
-      if (!auth.currentUser) {
-        clearUser();
-        return null;
+      // --------------------------------------------------------
+      // Make sure Firebase user has an email
+      // --------------------------------------------------------
+
+      const email = normalizeEmail(auth.currentUser.email);
+
+      if (!email) {
+        throw new Error("Authenticated email not found.");
       }
+
+      // --------------------------------------------------------
+      // Get latest database user
+      // --------------------------------------------------------
 
       const dbUser = await getCurrentUser();
 
-      const updatedUser = {
-        uid: auth.currentUser.uid,
+      // --------------------------------------------------------
+      // Build latest application user
+      // --------------------------------------------------------
 
-        name: dbUser?.name || "",
-
-        email: dbUser?.email || normalizeEmail(auth.currentUser.email),
-
-        photo: dbUser?.photo || "",
-
-        role: dbUser?.role || "customer",
-
-        status: dbUser?.status || "active",
-
-        provider:
-          dbUser?.provider ||
-          auth.currentUser.providerData?.[0]?.providerId ||
-          "password",
-
-        createdAt: dbUser?.createdAt,
-
-        updatedAt: dbUser?.updatedAt,
-
-        lastLogin: dbUser?.lastLogin,
-
-        emailVerified: auth.currentUser.emailVerified,
-      };
+      const updatedUser = buildUser(auth.currentUser, dbUser);
 
       setUser(updatedUser);
 
@@ -364,11 +428,11 @@ const AuthProvider = ({ children }) => {
       console.error("REFRESH USER ERROR:", error);
       throw error;
     }
-  }, [clearUser, getCurrentUser, normalizeEmail]);
+  }, [normalizeEmail, getCurrentUser, buildUser]);
 
-  // ============================================================
+  // ==========================================================
   // CONTEXT VALUE
-  // ============================================================
+  // ==========================================================
 
   const authInfo = useMemo(
     () => ({
@@ -379,6 +443,7 @@ const AuthProvider = ({ children }) => {
       loginUser,
       signInGoogle,
       signOutUser,
+
       updateUserProfile,
 
       refreshUser,
@@ -394,6 +459,7 @@ const AuthProvider = ({ children }) => {
       loginUser,
       signInGoogle,
       signOutUser,
+
       updateUserProfile,
 
       refreshUser,
@@ -401,9 +467,9 @@ const AuthProvider = ({ children }) => {
     ],
   );
 
-  // ============================================================
+  // ==========================================================
   // PROVIDER
-  // ============================================================
+  // ==========================================================
 
   return (
     <AuthContext.Provider value={authInfo}>{children}</AuthContext.Provider>

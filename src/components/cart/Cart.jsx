@@ -1,4 +1,4 @@
-import { useContext, useMemo } from "react";
+import { useContext, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -20,16 +20,40 @@ const FREE_SHIPPING_THRESHOLD = 1000;
 const MAX_QUANTITY = 99;
 
 const Cart = () => {
+  // ============================================================
+  // AUTH
+  // ============================================================
+
   const { user, loading: authLoading } = useContext(AuthContext);
+
+  // ============================================================
+  // ROUTER / QUERY CLIENT
+  // ============================================================
 
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   // ============================================================
+  // STATE
+  // ============================================================
+
+  const [deletingCartId, setDeletingCartId] = useState(null);
+
+  // ============================================================
   // USER EMAIL
   // ============================================================
 
-  const email = user?.email?.trim().toLowerCase() || "";
+  const email = useMemo(() => {
+    return user?.email?.trim().toLowerCase() || "";
+  }, [user?.email]);
+
+  // ============================================================
+  // CART QUERY KEY
+  // ============================================================
+
+  const cartQueryKey = useMemo(() => {
+    return ["cart", email];
+  }, [email]);
 
   // ============================================================
   // FETCH CART
@@ -50,11 +74,11 @@ const Cart = () => {
   // ============================================================
 
   const { data, isPending, isFetching, isError, error, refetch } = useQuery({
-    queryKey: ["cart", email],
+    queryKey: cartQueryKey,
 
     queryFn: fetchCart,
 
-    enabled: Boolean(user?.email) && !authLoading,
+    enabled: Boolean(email) && !authLoading,
 
     staleTime: 1000 * 60,
 
@@ -65,15 +89,15 @@ const Cart = () => {
     refetchOnWindowFocus: false,
 
     refetchOnReconnect: true,
-
-    placeholderData: (previousData) => previousData,
   });
 
   // ============================================================
   // CART DATA
   // ============================================================
 
-  const cart = Array.isArray(data?.data) ? data.data : [];
+  const cart = useMemo(() => {
+    return Array.isArray(data?.data) ? data.data : [];
+  }, [data?.data]);
 
   // ============================================================
   // CART SUMMARY
@@ -98,7 +122,7 @@ const Cart = () => {
 
       grandTotal: Number(serverSummary.grandTotal) || 0,
     };
-  }, [data]);
+  }, [data?.summary]);
 
   // ============================================================
   // SHIPPING
@@ -110,25 +134,24 @@ const Cart = () => {
     return remaining > 0 ? remaining : 0;
   }, [summary.subtotal]);
 
-  const shippingProgress = Math.min(
-    Math.max(summary.subtotal, 0),
-    FREE_SHIPPING_THRESHOLD,
-  );
+  const shippingProgress = useMemo(() => {
+    return Math.min(Math.max(summary.subtotal, 0), FREE_SHIPPING_THRESHOLD);
+  }, [summary.subtotal]);
 
   // ============================================================
-  // REFRESH CART
+  // INVALIDATE CART
   // ============================================================
 
-  const refreshCart = async () => {
+  const invalidateCart = async () => {
     await queryClient.invalidateQueries({
-      queryKey: ["cart", email],
+      queryKey: cartQueryKey,
     });
 
-    queryClient.invalidateQueries({
+    await queryClient.invalidateQueries({
       queryKey: ["cart-count"],
     });
 
-    queryClient.invalidateQueries({
+    await queryClient.invalidateQueries({
       queryKey: ["cart-summary"],
     });
   };
@@ -151,7 +174,7 @@ const Cart = () => {
     },
 
     onSuccess: async () => {
-      await refreshCart();
+      await invalidateCart();
     },
 
     onError: (mutationError) => {
@@ -166,7 +189,7 @@ const Cart = () => {
   });
 
   // ============================================================
-  // DELETE ITEM
+  // DELETE CART ITEM
   // ============================================================
 
   const deleteMutation = useMutation({
@@ -183,7 +206,7 @@ const Cart = () => {
     },
 
     onSuccess: async () => {
-      await refreshCart();
+      await invalidateCart();
     },
 
     onError: (mutationError) => {
@@ -195,16 +218,24 @@ const Cart = () => {
           "Failed to remove cart item.",
       );
     },
+
+    onSettled: () => {
+      setDeletingCartId(null);
+    },
   });
 
   // ============================================================
   // MUTATION STATE
   // ============================================================
 
-  const isUpdating = quantityMutation.isPending || deleteMutation.isPending;
+  const isQuantityUpdating = quantityMutation.isPending;
+
+  const isDeleting = deleteMutation.isPending;
+
+  const isUpdating = isQuantityUpdating || isDeleting;
 
   // ============================================================
-  // INCREASE
+  // INCREASE QUANTITY
   // ============================================================
 
   const handleIncrease = (item) => {
@@ -220,6 +251,7 @@ const Cart = () => {
 
     if (quantity >= MAX_QUANTITY) {
       window.alert(`Maximum quantity is ${MAX_QUANTITY}.`);
+
       return;
     }
 
@@ -230,7 +262,7 @@ const Cart = () => {
   };
 
   // ============================================================
-  // DECREASE
+  // DECREASE QUANTITY
   // ============================================================
 
   const handleDecrease = (item) => {
@@ -267,6 +299,8 @@ const Cart = () => {
       return;
     }
 
+    setDeletingCartId(cartId);
+
     deleteMutation.mutate(cartId);
   };
 
@@ -287,6 +321,7 @@ const Cart = () => {
 
     if (cart.length === 0) {
       window.alert("Your cart is empty.");
+
       return;
     }
 
@@ -305,7 +340,7 @@ const Cart = () => {
   // INITIAL LOADING
   // ============================================================
 
-  const initialLoading = authLoading || (isPending && !data);
+  const initialLoading = authLoading || (Boolean(email) && isPending);
 
   // ============================================================
   // LOADING UI
@@ -327,9 +362,11 @@ const Cart = () => {
             <div className="h-12 w-48 animate-pulse rounded-lg bg-base-300" />
           </div>
 
-          {/* CONTENT SKELETON */}
+          {/* CONTENT */}
 
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
+            {/* ITEMS */}
+
             <div className="space-y-5 lg:col-span-8">
               {[1, 2, 3].map((item) => (
                 <div
@@ -353,9 +390,47 @@ const Cart = () => {
               ))}
             </div>
 
+            {/* SUMMARY */}
+
             <div className="lg:col-span-4">
               <div className="h-[520px] animate-pulse rounded-2xl bg-base-300" />
             </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  // ============================================================
+  // NO USER
+  // ============================================================
+
+  if (!user || !email) {
+    return (
+      <section className="min-h-screen bg-base-200 px-4 py-12 md:px-6 lg:px-8">
+        <div className="mx-auto flex min-h-[500px] max-w-3xl items-center justify-center">
+          <div className="w-full rounded-2xl border border-base-300 bg-base-100 p-10 text-center shadow-sm">
+            <FaShoppingCart className="mx-auto text-6xl text-primary" />
+
+            <h1 className="mt-6 text-3xl font-bold">Please Login</h1>
+
+            <p className="mt-3 text-base-content/60">
+              Please login to view your shopping cart.
+            </p>
+
+            <button
+              type="button"
+              onClick={() =>
+                navigate("/login", {
+                  state: {
+                    from: "/cart",
+                  },
+                })
+              }
+              className="btn btn-primary mt-8"
+            >
+              Login
+            </button>
           </div>
         </div>
       </section>
@@ -401,9 +476,12 @@ const Cart = () => {
 
   // ============================================================
   // EMPTY CART
+  //
+  // IMPORTANT:
+  // This executes ONLY after successful cart response.
   // ============================================================
 
-  if (data && cart.length === 0) {
+  if (!isPending && data && cart.length === 0) {
     return (
       <section className="min-h-screen bg-base-200 px-4 py-12 md:px-6 lg:px-8">
         <div className="mx-auto flex min-h-[500px] max-w-3xl items-center justify-center">
@@ -431,13 +509,15 @@ const Cart = () => {
   }
 
   // ============================================================
-  // MAIN UI
+  // MAIN CART UI
   // ============================================================
 
   return (
     <section className="min-h-screen bg-base-200 px-4 py-8 md:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl">
-        {/* HEADER */}
+        {/* ======================================================
+            HEADER
+        ====================================================== */}
 
         <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
           <div>
@@ -458,7 +538,9 @@ const Cart = () => {
           </button>
         </div>
 
-        {/* BACKGROUND REFRESH */}
+        {/* ======================================================
+            BACKGROUND REFRESH
+        ====================================================== */}
 
         {isFetching && !isPending && (
           <div className="mb-5 flex items-center gap-2 text-sm text-base-content/60">
@@ -467,10 +549,14 @@ const Cart = () => {
           </div>
         )}
 
-        {/* MAIN GRID */}
+        {/* ======================================================
+            MAIN GRID
+        ====================================================== */}
 
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
-          {/* CART ITEMS */}
+          {/* ====================================================
+              CART ITEMS
+          ==================================================== */}
 
           <div className="space-y-5 lg:col-span-8">
             {cart.map((item) => {
@@ -484,11 +570,17 @@ const Cart = () => {
 
               const discount = Number(item?.discount) || 0;
 
+              const itemId = String(item?._id || "");
+
+              const isDeletingThisItem = deletingCartId === item?._id;
+
               return (
                 <div
-                  key={String(item?._id)}
+                  key={itemId}
                   className="rounded-2xl border border-base-300 bg-base-100 p-4 shadow-sm transition hover:shadow-md md:p-5"
                 >
+                  {/* PRODUCT */}
+
                   <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
                     {/* IMAGE */}
 
@@ -501,7 +593,6 @@ const Cart = () => {
                           decoding="async"
                           className="h-28 w-28 rounded-xl border border-base-300 object-cover"
                           onError={(event) => {
-                            event.currentTarget.onerror = null;
                             event.currentTarget.style.display = "none";
                           }}
                         />
@@ -598,7 +689,7 @@ const Cart = () => {
                         onClick={() => handleDelete(item?._id)}
                         aria-label={`Remove ${item?.name || "product"}`}
                       >
-                        {deleteMutation.isPending ? (
+                        {isDeletingThisItem ? (
                           <span className="loading loading-spinner loading-xs" />
                         ) : (
                           <FaTrash />
@@ -623,7 +714,9 @@ const Cart = () => {
             })}
           </div>
 
-          {/* ORDER SUMMARY */}
+          {/* ====================================================
+              ORDER SUMMARY
+          ==================================================== */}
 
           <div className="lg:col-span-4">
             <div className="sticky top-6 rounded-2xl border border-base-300 bg-base-100 p-6 shadow-sm">
@@ -674,16 +767,19 @@ const Cart = () => {
 
                 <div className="flex justify-between">
                   <span>Subtotal</span>
+
                   <span>৳{summary.subtotal.toFixed(2)}</span>
                 </div>
 
                 <div className="flex justify-between text-success">
                   <span>Discount</span>
+
                   <span>- ৳{summary.discount.toFixed(2)}</span>
                 </div>
 
                 <div className="flex justify-between">
                   <span>Shipping</span>
+
                   <span>
                     {summary.shipping === 0
                       ? "FREE"
@@ -693,6 +789,7 @@ const Cart = () => {
 
                 <div className="flex justify-between">
                   <span>Tax</span>
+
                   <span>৳{summary.tax.toFixed(2)}</span>
                 </div>
               </div>
@@ -726,7 +823,7 @@ const Cart = () => {
                 {isUpdating ? "Updating..." : "Proceed to Checkout"}
               </button>
 
-              {/* CONTINUE SHOPPING */}
+              {/* CONTINUE */}
 
               <button
                 type="button"
