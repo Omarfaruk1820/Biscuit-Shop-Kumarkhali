@@ -1,7 +1,6 @@
 import { useContext, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
-import axios from "axios";
 import {
   FaEnvelope,
   FaEye,
@@ -15,19 +14,42 @@ import { AuthContext } from "./AuthProvider";
 import { useToast } from "../context/ToastProvider";
 import GoogleSignIn from "./GoogleSign";
 
-const API = import.meta.env.VITE_API_URL;
-
 const Register = () => {
-  const { createUser, loading: authLoading } = useContext(AuthContext);
+  // ============================================================
+  // AUTH
+  // ============================================================
+
+  const {
+    createUser,
+    updateUserProfile,
+    refreshUser,
+    loading: authLoading,
+  } = useContext(AuthContext);
+
+  // ============================================================
+  // TOAST
+  // ============================================================
 
   const { addToast } = useToast();
+
+  // ============================================================
+  // ROUTER
+  // ============================================================
 
   const navigate = useNavigate();
   const location = useLocation();
 
+  // ============================================================
+  // STATE
+  // ============================================================
+
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  // ============================================================
+  // FORM
+  // ============================================================
 
   const {
     register,
@@ -38,6 +60,7 @@ const Register = () => {
   } = useForm({
     mode: "onTouched",
     reValidateMode: "onChange",
+
     defaultValues: {
       name: "",
       email: "",
@@ -51,28 +74,45 @@ const Register = () => {
 
   const isSubmitting = loading || authLoading;
 
-  // =========================================================
-  // REGISTER
-  // =========================================================
+  // ============================================================
+  // SUBMIT
+  // ============================================================
 
   const onSubmit = async (formData) => {
-    if (isSubmitting) return;
-
-    if (!API) {
-      addToast("API URL is not configured.", "error");
+    if (isSubmitting) {
       return;
     }
 
     setLoading(true);
 
     try {
-      const name = formData.name.trim();
-      const email = formData.email.trim().toLowerCase();
-      const passwordValue = formData.password;
+      const name = String(formData.name || "").trim();
 
-      // =====================================================
-      // 1. CREATE FIREBASE AUTH ACCOUNT
-      // =====================================================
+      const email = String(formData.email || "")
+        .trim()
+        .toLowerCase();
+
+      const passwordValue = String(formData.password || "");
+
+      // ========================================================
+      // BASIC VALIDATION
+      // ========================================================
+
+      if (!name) {
+        throw new Error("Full name is required.");
+      }
+
+      if (!email) {
+        throw new Error("Email is required.");
+      }
+
+      if (!passwordValue) {
+        throw new Error("Password is required.");
+      }
+
+      // ========================================================
+      // 1. CREATE FIREBASE ACCOUNT
+      // ========================================================
 
       const credential = await createUser(email, passwordValue);
 
@@ -82,54 +122,40 @@ const Register = () => {
         throw new Error("Unable to create the authentication account.");
       }
 
-      // =====================================================
-      // 2. SAVE ALL APPLICATION USER INFORMATION
-      //    TO MONGODB /users
+      // ========================================================
+      // 2. UPDATE FIREBASE PROFILE
+      // ========================================================
+      // updateUserProfile() already:
       //
-      //    IMPORTANT:
-      //    Do NOT send role from frontend.
-      //    Server automatically creates:
+      // 1. Updates Firebase displayName/photoURL
+      // 2. Saves the user to MongoDB
       //
-      //    role: "user"
-      //    status: "active"
-      // =====================================================
+      // Therefore, DO NOT call saveUserToDatabase()
+      // separately here.
 
-      const userData = {
-        name,
-        email,
-        photo: "",
-        provider: "password",
-        emailVerified: Boolean(firebaseUser.emailVerified),
-      };
+      await updateUserProfile(name, "");
 
-      const response = await axios.post(`${API}/users`, userData, {
-        withCredentials: true,
-        timeout: 15000,
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
+      // ========================================================
+      // 3. LOAD FINAL APPLICATION USER
+      // ========================================================
 
-      if (!response.data?.success) {
-        throw new Error(
-          response.data?.message || "Failed to save user information.",
-        );
-      }
+      await refreshUser();
 
-      // =====================================================
-      // 3. SUCCESS
-      // =====================================================
+      // ========================================================
+      // 4. RESET FORM
+      // ========================================================
 
       reset();
 
-      addToast(
-        "🎉 Registration successful! Welcome to Biscuit Shop.",
-        "success",
-      );
+      // ========================================================
+      // 5. SUCCESS MESSAGE
+      // ========================================================
 
-      // =====================================================
-      // 4. REDIRECT
-      // =====================================================
+      addToast("Registration successful! Welcome to Biscuit Shop.", "success");
+
+      // ========================================================
+      // 6. REDIRECT
+      // ========================================================
 
       const redirectPath = location.state?.from?.pathname || "/";
 
@@ -162,6 +188,10 @@ const Register = () => {
           message = "Too many requests. Please try again later.";
           break;
 
+        case "auth/operation-not-allowed":
+          message = "Email and password registration is currently disabled.";
+          break;
+
         default:
           message = error?.response?.data?.message || error?.message || message;
       }
@@ -172,13 +202,17 @@ const Register = () => {
     }
   };
 
+  // ============================================================
+  // UI
+  // ============================================================
+
   return (
     <div className="min-h-screen bg-base-200 px-4 py-10">
       <div className="mx-auto w-full max-w-md">
         <div className="rounded-3xl border border-base-300 bg-base-100 p-6 shadow-xl sm:p-8">
-          {/* =================================================
+          {/* ==================================================
               HEADER
-          ================================================= */}
+          ================================================== */}
 
           <div className="text-center">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-warning/10">
@@ -192,18 +226,18 @@ const Register = () => {
             </p>
           </div>
 
-          {/* =================================================
+          {/* ==================================================
               FORM
-          ================================================= */}
+          ================================================== */}
 
           <form
             onSubmit={handleSubmit(onSubmit)}
             noValidate
             className="mt-8 space-y-5"
           >
-            {/* =================================================
+            {/* ==================================================
                 NAME
-            ================================================= */}
+            ================================================== */}
 
             <div>
               <label htmlFor="name" className="label">
@@ -239,7 +273,8 @@ const Register = () => {
                     },
 
                     validate: (value) =>
-                      value.trim().length >= 3 || "Please enter a valid name.",
+                      String(value).trim().length >= 3 ||
+                      "Please enter a valid name.",
                   })}
                 />
               </label>
@@ -249,9 +284,9 @@ const Register = () => {
               )}
             </div>
 
-            {/* =================================================
+            {/* ==================================================
                 EMAIL
-            ================================================= */}
+            ================================================== */}
 
             <div>
               <label htmlFor="email" className="label">
@@ -281,7 +316,7 @@ const Register = () => {
                       message: "Please enter a valid email address.",
                     },
 
-                    setValueAs: (value) => value.trim().toLowerCase(),
+                    setValueAs: (value) => String(value).trim().toLowerCase(),
                   })}
                 />
               </label>
@@ -293,9 +328,9 @@ const Register = () => {
               )}
             </div>
 
-            {/* =================================================
+            {/* ==================================================
                 PASSWORD
-            ================================================= */}
+            ================================================== */}
 
             <div>
               <label htmlFor="password" className="label">
@@ -358,9 +393,9 @@ const Register = () => {
               )}
             </div>
 
-            {/* =================================================
+            {/* ==================================================
                 CONFIRM PASSWORD
-            ================================================= */}
+            ================================================== */}
 
             <div>
               <label htmlFor="confirmPassword" className="label">
@@ -417,9 +452,9 @@ const Register = () => {
               )}
             </div>
 
-            {/* =================================================
+            {/* ==================================================
                 TERMS
-            ================================================= */}
+            ================================================== */}
 
             <div>
               <label className="flex cursor-pointer items-start gap-3">
@@ -455,9 +490,9 @@ const Register = () => {
               )}
             </div>
 
-            {/* =================================================
-                REGISTER BUTTON
-            ================================================= */}
+            {/* ==================================================
+                SUBMIT
+            ================================================== */}
 
             <button
               type="submit"
@@ -472,17 +507,17 @@ const Register = () => {
             </button>
           </form>
 
-          {/* =================================================
-              GOOGLE LOGIN
-          ================================================= */}
+          {/* ==================================================
+              GOOGLE SIGN IN
+          ================================================== */}
 
           <div className="divider my-7">OR</div>
 
           <GoogleSignIn />
 
-          {/* =================================================
+          {/* ==================================================
               LOGIN LINK
-          ================================================= */}
+          ================================================== */}
 
           <div className="mt-7 text-center">
             <p className="text-sm">
@@ -500,9 +535,9 @@ const Register = () => {
           </div>
         </div>
 
-        {/* =================================================
+        {/* ==================================================
             FOOTER
-        ================================================= */}
+        ================================================== */}
 
         <div className="mt-6 text-center text-xs text-base-content/60">
           By creating an account, you agree to our{" "}

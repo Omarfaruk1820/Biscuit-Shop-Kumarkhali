@@ -4,21 +4,19 @@ import axios from "axios";
 // API URL
 // ============================================================
 
-const API_URL = import.meta.env.VITE_API_URL?.trim();
+const API_URL = String(import.meta.env.VITE_API_URL || "").trim();
 
 if (!API_URL) {
   throw new Error("Missing VITE_API_URL environment variable.");
 }
 
 // ============================================================
-// AXIOS INSTANCE
+// AXIOS SECURE INSTANCE
 // ============================================================
 
 const axiosSecure = axios.create({
   baseURL: API_URL,
 
-  // Important:
-  // Sends JWT cookie to the backend.
   withCredentials: true,
 
   timeout: 15000,
@@ -43,8 +41,8 @@ axiosSecure.interceptors.response.use(
     // NETWORK ERROR
     // ========================================================
 
-    if (!error.response) {
-      console.error("Axios Network Error:", error.message);
+    if (!error?.response) {
+      console.error("Axios Network Error:", error?.message || "Network error.");
 
       return Promise.reject(error);
     }
@@ -55,25 +53,14 @@ axiosSecure.interceptors.response.use(
 
     const status = error.response.status;
 
+    const message = error.response?.data?.message || "Request failed.";
+
     if (status === 401) {
-      console.warn(
-        "401 Unauthorized:",
-        error.response?.data?.message || "Authentication required.",
-      );
-    }
-
-    if (status === 403) {
-      console.warn(
-        "403 Forbidden:",
-        error.response?.data?.message || "Access denied.",
-      );
-    }
-
-    if (status >= 500) {
-      console.error(
-        "Server Error:",
-        error.response?.data?.message || "Internal server error.",
-      );
+      console.warn("401 Unauthorized:", message);
+    } else if (status === 403) {
+      console.warn("403 Forbidden:", message);
+    } else if (status >= 500) {
+      console.error("Server Error:", message);
     }
 
     return Promise.reject(error);
