@@ -54,7 +54,7 @@ const Cart = () => {
 
     queryFn: fetchCart,
 
-    enabled: Boolean(user && email) && !authLoading,
+    enabled: Boolean(user?.email) && !authLoading,
 
     staleTime: 1000 * 60,
 
@@ -76,7 +76,7 @@ const Cart = () => {
   const cart = Array.isArray(data?.data) ? data.data : [];
 
   // ============================================================
-  // SERVER SUMMARY
+  // CART SUMMARY
   // ============================================================
 
   const summary = useMemo(() => {
@@ -120,19 +120,17 @@ const Cart = () => {
   // ============================================================
 
   const refreshCart = async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({
-        queryKey: ["cart", email],
-      }),
+    await queryClient.invalidateQueries({
+      queryKey: ["cart", email],
+    });
 
-      queryClient.invalidateQueries({
-        queryKey: ["cart-count"],
-      }),
+    queryClient.invalidateQueries({
+      queryKey: ["cart-count"],
+    });
 
-      queryClient.invalidateQueries({
-        queryKey: ["cart-summary"],
-      }),
-    ]);
+    queryClient.invalidateQueries({
+      queryKey: ["cart-summary"],
+    });
   };
 
   // ============================================================
@@ -168,7 +166,7 @@ const Cart = () => {
   });
 
   // ============================================================
-  // DELETE CART ITEM
+  // DELETE ITEM
   // ============================================================
 
   const deleteMutation = useMutation({
@@ -206,7 +204,7 @@ const Cart = () => {
   const isUpdating = quantityMutation.isPending || deleteMutation.isPending;
 
   // ============================================================
-  // INCREASE QUANTITY
+  // INCREASE
   // ============================================================
 
   const handleIncrease = (item) => {
@@ -232,7 +230,7 @@ const Cart = () => {
   };
 
   // ============================================================
-  // DECREASE QUANTITY
+  // DECREASE
   // ============================================================
 
   const handleDecrease = (item) => {
@@ -253,7 +251,7 @@ const Cart = () => {
   };
 
   // ============================================================
-  // DELETE ITEM
+  // DELETE
   // ============================================================
 
   const handleDelete = (cartId) => {
@@ -305,12 +303,13 @@ const Cart = () => {
 
   // ============================================================
   // INITIAL LOADING
-  //
-  // Skeleton appears only during the first load.
-  // Once data exists, refetching will NOT remove the cart UI.
   // ============================================================
 
   const initialLoading = authLoading || (isPending && !data);
+
+  // ============================================================
+  // LOADING UI
+  // ============================================================
 
   if (initialLoading) {
     return (
@@ -331,8 +330,6 @@ const Cart = () => {
           {/* CONTENT SKELETON */}
 
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
-            {/* ITEM SKELETONS */}
-
             <div className="space-y-5 lg:col-span-8">
               {[1, 2, 3].map((item) => (
                 <div
@@ -356,8 +353,6 @@ const Cart = () => {
               ))}
             </div>
 
-            {/* SUMMARY SKELETON */}
-
             <div className="lg:col-span-4">
               <div className="h-[520px] animate-pulse rounded-2xl bg-base-300" />
             </div>
@@ -368,13 +363,13 @@ const Cart = () => {
   }
 
   // ============================================================
-  // ERROR
+  // ERROR UI
   // ============================================================
 
   if (isError) {
     return (
       <section className="min-h-screen bg-base-200 px-4 py-12 md:px-6 lg:px-8">
-        <div className="mx-auto flex min-h-[60vh] max-w-2xl items-center justify-center">
+        <div className="mx-auto flex min-h-[500px] max-w-3xl items-center justify-center">
           <div className="w-full rounded-2xl border border-error/20 bg-base-100 p-8 text-center shadow-sm">
             <FaShoppingCart className="mx-auto text-5xl text-error" />
 
@@ -411,9 +406,9 @@ const Cart = () => {
   if (data && cart.length === 0) {
     return (
       <section className="min-h-screen bg-base-200 px-4 py-12 md:px-6 lg:px-8">
-        <div className="mx-auto flex min-h-[60vh] max-w-2xl items-center justify-center">
-          <div className="w-full rounded-2xl border border-base-300 bg-base-100 p-8 text-center shadow-sm">
-            <FaShoppingCart className="mx-auto text-6xl text-base-content/30" />
+        <div className="mx-auto flex min-h-[500px] max-w-3xl items-center justify-center">
+          <div className="w-full rounded-2xl border border-base-300 bg-base-100 p-10 text-center shadow-sm">
+            <FaShoppingCart className="mx-auto text-6xl text-primary" />
 
             <h1 className="mt-6 text-3xl font-bold">Your Cart is Empty</h1>
 
@@ -442,9 +437,7 @@ const Cart = () => {
   return (
     <section className="min-h-screen bg-base-200 px-4 py-8 md:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl">
-        {/* ======================================================
-            HEADER
-        ====================================================== */}
+        {/* HEADER */}
 
         <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
           <div>
@@ -465,9 +458,7 @@ const Cart = () => {
           </button>
         </div>
 
-        {/* ======================================================
-            BACKGROUND REFRESH
-        ====================================================== */}
+        {/* BACKGROUND REFRESH */}
 
         {isFetching && !isPending && (
           <div className="mb-5 flex items-center gap-2 text-sm text-base-content/60">
@@ -476,14 +467,10 @@ const Cart = () => {
           </div>
         )}
 
-        {/* ======================================================
-            MAIN GRID
-        ====================================================== */}
+        {/* MAIN GRID */}
 
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
-          {/* ====================================================
-              CART ITEMS
-          ==================================================== */}
+          {/* CART ITEMS */}
 
           <div className="space-y-5 lg:col-span-8">
             {cart.map((item) => {
@@ -497,31 +484,24 @@ const Cart = () => {
 
               const discount = Number(item?.discount) || 0;
 
-              const isThisItemUpdating = quantityMutation.isPending;
-
-              const isThisItemDeleting = deleteMutation.isPending;
-
               return (
                 <div
-                  key={String(item._id)}
+                  key={String(item?._id)}
                   className="rounded-2xl border border-base-300 bg-base-100 p-4 shadow-sm transition hover:shadow-md md:p-5"
                 >
                   <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
-                    {/* ==================================================
-                        PRODUCT IMAGE
-                    ================================================== */}
+                    {/* IMAGE */}
 
                     <div className="flex shrink-0 justify-center sm:block">
                       {item?.image ? (
                         <img
                           src={item.image}
-                          alt={item?.name || "Product"}
+                          alt={item?.name || "Cart product"}
                           loading="lazy"
                           decoding="async"
                           className="h-28 w-28 rounded-xl border border-base-300 object-cover"
                           onError={(event) => {
                             event.currentTarget.onerror = null;
-
                             event.currentTarget.style.display = "none";
                           }}
                         />
@@ -532,9 +512,7 @@ const Cart = () => {
                       )}
                     </div>
 
-                    {/* ==================================================
-                        PRODUCT INFORMATION
-                    ================================================== */}
+                    {/* PRODUCT INFO */}
 
                     <div className="min-w-0 flex-1">
                       <h2 className="line-clamp-2 text-lg font-bold md:text-xl">
@@ -578,38 +556,34 @@ const Cart = () => {
                       </div>
                     </div>
 
-                    {/* ==================================================
-                        QUANTITY + DELETE
-                    ================================================== */}
+                    {/* QUANTITY */}
 
                     <div className="flex items-center justify-between gap-4 sm:flex-col sm:items-end">
                       <div className="join">
-                        {/* DECREASE */}
-
                         <button
                           type="button"
                           className="btn btn-sm join-item"
                           disabled={quantity <= 1 || isUpdating}
                           onClick={() => handleDecrease(item)}
-                          aria-label={`Decrease ${item?.name || "product"} quantity`}
+                          aria-label={`Decrease ${
+                            item?.name || "product"
+                          } quantity`}
                         >
                           <FaMinus />
                         </button>
 
-                        {/* CURRENT QUANTITY */}
-
                         <span className="btn btn-sm join-item no-animation cursor-default">
                           {quantity}
                         </span>
-
-                        {/* INCREASE */}
 
                         <button
                           type="button"
                           className="btn btn-sm join-item"
                           disabled={quantity >= MAX_QUANTITY || isUpdating}
                           onClick={() => handleIncrease(item)}
-                          aria-label={`Increase ${item?.name || "product"} quantity`}
+                          aria-label={`Increase ${
+                            item?.name || "product"
+                          } quantity`}
                         >
                           <FaPlus />
                         </button>
@@ -624,7 +598,7 @@ const Cart = () => {
                         onClick={() => handleDelete(item?._id)}
                         aria-label={`Remove ${item?.name || "product"}`}
                       >
-                        {isThisItemDeleting ? (
+                        {deleteMutation.isPending ? (
                           <span className="loading loading-spinner loading-xs" />
                         ) : (
                           <FaTrash />
@@ -633,9 +607,7 @@ const Cart = () => {
                     </div>
                   </div>
 
-                  {/* ==================================================
-                      ITEM SUBTOTAL
-                  ================================================== */}
+                  {/* SUBTOTAL */}
 
                   <div className="mt-5 flex items-center justify-between border-t border-base-300 pt-4">
                     <span className="text-sm text-base-content/60">
@@ -651,9 +623,7 @@ const Cart = () => {
             })}
           </div>
 
-          {/* ====================================================
-              ORDER SUMMARY
-          ==================================================== */}
+          {/* ORDER SUMMARY */}
 
           <div className="lg:col-span-4">
             <div className="sticky top-6 rounded-2xl border border-base-300 bg-base-100 p-6 shadow-sm">
@@ -665,9 +635,7 @@ const Cart = () => {
                 <h2 className="text-2xl font-bold">Order Summary</h2>
               </div>
 
-              {/* ==================================================
-                  FREE SHIPPING
-              ================================================== */}
+              {/* SHIPPING */}
 
               {summary.shipping > 0 ? (
                 <div className="mt-5">
@@ -691,38 +659,31 @@ const Cart = () => {
 
               <div className="divider" />
 
-              {/* ==================================================
-                  SUMMARY DETAILS
-              ================================================== */}
+              {/* SUMMARY */}
 
               <div className="space-y-3">
                 <div className="flex justify-between">
                   <span>Total Items</span>
-
                   <span>{summary.totalItems}</span>
                 </div>
 
                 <div className="flex justify-between">
                   <span>Total Quantity</span>
-
                   <span>{summary.totalQuantity}</span>
                 </div>
 
                 <div className="flex justify-between">
                   <span>Subtotal</span>
-
                   <span>৳{summary.subtotal.toFixed(2)}</span>
                 </div>
 
                 <div className="flex justify-between text-success">
                   <span>Discount</span>
-
                   <span>- ৳{summary.discount.toFixed(2)}</span>
                 </div>
 
                 <div className="flex justify-between">
                   <span>Shipping</span>
-
                   <span>
                     {summary.shipping === 0
                       ? "FREE"
@@ -732,16 +693,13 @@ const Cart = () => {
 
                 <div className="flex justify-between">
                   <span>Tax</span>
-
                   <span>৳{summary.tax.toFixed(2)}</span>
                 </div>
               </div>
 
               <div className="divider" />
 
-              {/* ==================================================
-                  GRAND TOTAL
-              ================================================== */}
+              {/* GRAND TOTAL */}
 
               <div className="flex justify-between text-xl font-bold">
                 <span>Grand Total</span>
@@ -751,9 +709,7 @@ const Cart = () => {
                 </span>
               </div>
 
-              {/* ==================================================
-                  CHECKOUT
-              ================================================== */}
+              {/* CHECKOUT */}
 
               <button
                 type="button"
@@ -770,9 +726,7 @@ const Cart = () => {
                 {isUpdating ? "Updating..." : "Proceed to Checkout"}
               </button>
 
-              {/* ==================================================
-                  CONTINUE SHOPPING
-              ================================================== */}
+              {/* CONTINUE SHOPPING */}
 
               <button
                 type="button"
@@ -785,13 +739,9 @@ const Cart = () => {
 
               <div className="divider" />
 
-              {/* ==================================================
-                  FEATURES
-              ================================================== */}
+              {/* FEATURES */}
 
               <div className="space-y-5">
-                {/* DELIVERY */}
-
                 <div className="flex items-start gap-3">
                   <FaTruck className="mt-1 text-xl text-primary" />
 
@@ -804,8 +754,6 @@ const Cart = () => {
                   </div>
                 </div>
 
-                {/* PAYMENT */}
-
                 <div className="flex items-start gap-3">
                   <FaShieldAlt className="mt-1 text-xl text-success" />
 
@@ -817,8 +765,6 @@ const Cart = () => {
                     </p>
                   </div>
                 </div>
-
-                {/* RETURNS */}
 
                 <div className="flex items-start gap-3">
                   <FaShoppingCart className="mt-1 text-xl text-warning" />
