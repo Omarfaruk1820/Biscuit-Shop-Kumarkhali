@@ -5,9 +5,9 @@ import { sendPasswordResetEmail } from "firebase/auth";
 
 import {
   FaEnvelope,
-  FaLock,
   FaEye,
   FaEyeSlash,
+  FaLock,
   FaSignInAlt,
 } from "react-icons/fa";
 
@@ -17,20 +17,40 @@ import { useToast } from "../context/ToastProvider";
 import GoogleSignIn from "./GoogleSign";
 
 const Login = () => {
+  // ============================================================
+  // AUTH CONTEXT
+  // ============================================================
+
   const { loginUser, user, loading: authLoading } = useContext(AuthContext);
 
+  // ============================================================
+  // TOAST
+  // ============================================================
+
   const { addToast } = useToast();
+
+  // ============================================================
+  // ROUTER
+  // ============================================================
 
   const navigate = useNavigate();
   const location = useLocation();
 
   const from = location.state?.from?.pathname || "/";
 
+  // ============================================================
+  // STATE
+  // ============================================================
+
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
 
-  const isLoading = loading || authLoading;
+  const isSubmitting = loading || authLoading;
+
+  // ============================================================
+  // FORM
+  // ============================================================
 
   const {
     register,
@@ -41,68 +61,152 @@ const Login = () => {
     formState: { errors },
   } = useForm({
     mode: "onTouched",
+    reValidateMode: "onChange",
+
     defaultValues: {
       email: "",
       password: "",
     },
   });
 
-  /* ======================================================
-     REMEMBER EMAIL
-  ====================================================== */
+  // ============================================================
+  // LOAD REMEMBERED EMAIL
+  // ============================================================
 
   useEffect(() => {
-    const rememberedEmail = localStorage.getItem("remember-email");
+    try {
+      const rememberedEmail = localStorage.getItem("remember-email");
 
-    if (rememberedEmail) {
-      setValue("email", rememberedEmail);
-      setRememberMe(true);
+      if (rememberedEmail) {
+        setValue("email", rememberedEmail);
+        setRememberMe(true);
+      }
+    } catch (error) {
+      console.error("LOAD REMEMBERED EMAIL ERROR:", error);
     }
   }, [setValue]);
 
-  /* ======================================================
-     REDIRECT AFTER AUTHENTICATION
-  ====================================================== */
+  // ============================================================
+  // REDIRECT AFTER AUTHENTICATION
+  //
+  // Login
+  //   ↓
+  // Firebase
+  //   ↓
+  // AuthProvider
+  //   ↓
+  // MongoDB
+  //   ↓
+  // JWT Cookie
+  //   ↓
+  // /auth/me
+  //   ↓
+  // user
+  //   ↓
+  // redirect
+  // ============================================================
 
   useEffect(() => {
-    if (authLoading) return;
+    if (authLoading) {
+      return;
+    }
 
-    if (!user) return;
+    if (!user) {
+      return;
+    }
 
     navigate(from, {
       replace: true,
     });
   }, [user, authLoading, navigate, from]);
 
-  /* ======================================================
-     LOGIN
-  ====================================================== */
+  // ============================================================
+  // LOGIN SUBMIT
+  // ============================================================
 
   const onSubmit = async (formData) => {
-    if (loading) return;
+    if (loading || authLoading) {
+      return;
+    }
 
     setLoading(true);
 
     try {
-      const email = formData.email.trim().toLowerCase();
-      const password = formData.password;
+      // --------------------------------------------------------
+      // NORMALIZE INPUT
+      // --------------------------------------------------------
+
+      const email = String(formData.email || "")
+        .trim()
+        .toLowerCase();
+
+      const password = String(formData.password || "");
+
+      // --------------------------------------------------------
+      // EXTRA VALIDATION
+      // --------------------------------------------------------
+
+      if (!email) {
+        throw new Error("Email is required.");
+      }
+
+      if (!password) {
+        throw new Error("Password is required.");
+      }
+
+      // --------------------------------------------------------
+      // FIREBASE LOGIN
+      //
+      // AuthProvider will automatically handle:
+      //
+      // Firebase user
+      //      ↓
+      // /users
+      //      ↓
+      // /auth/jwt
+      //      ↓
+      // /auth/me
+      //      ↓
+      // application user
+      // --------------------------------------------------------
 
       await loginUser(email, password);
 
-      if (rememberMe) {
-        localStorage.setItem("remember-email", email);
-      } else {
-        localStorage.removeItem("remember-email");
+      // --------------------------------------------------------
+      // REMEMBER EMAIL
+      // --------------------------------------------------------
+
+      try {
+        if (rememberMe) {
+          localStorage.setItem("remember-email", email);
+        } else {
+          localStorage.removeItem("remember-email");
+        }
+      } catch (storageError) {
+        console.error("REMEMBER EMAIL ERROR:", storageError);
       }
+
+      // --------------------------------------------------------
+      // RESET PASSWORD FIELD
+      // --------------------------------------------------------
 
       reset({
         email: rememberMe ? email : "",
         password: "",
       });
 
-      addToast("Login successful!", "success");
+      // --------------------------------------------------------
+      // SUCCESS MESSAGE
+      // --------------------------------------------------------
 
-      // Navigation is handled by auth state effect.
+      addToast("Login successful! Welcome back.", "success");
+
+      // --------------------------------------------------------
+      // DO NOT NAVIGATE HERE
+      //
+      // AuthProvider updates `user`.
+      // The useEffect above handles navigation.
+      // --------------------------------------------------------
     } catch (error) {
       console.error("LOGIN ERROR:", error);
 
@@ -137,8 +241,15 @@ const Login = () => {
           message = "Too many login attempts. Please try again later.";
           break;
 
+        case "auth/operation-not-allowed":
+          message = "Email and password login is currently disabled.";
+          break;
+
         default:
-          message = error?.message || "Unable to login.";
+          message =
+            error?.response?.data?.message ||
+            error?.message ||
+            "Unable to login.";
       }
 
       addToast(message, "error");
@@ -147,15 +258,29 @@ const Login = () => {
     }
   };
 
-  /* ======================================================
-     FORGOT PASSWORD
-  ====================================================== */
+  // ============================================================
+  // FORGOT PASSWORD
+  // ============================================================
 
   const handleForgotPassword = async () => {
-    const email = watch("email")?.trim().toLowerCase();
+    if (isSubmitting) {
+      return;
+    }
+
+    const email = String(watch("email") || "")
+      .trim()
+      .toLowerCase();
 
     if (!email) {
       addToast("Please enter your email address first.", "warning");
+      return;
+    }
+
+    // Basic email validation
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!emailPattern.test(email)) {
+      addToast("Please enter a valid email address.", "warning");
       return;
     }
 
@@ -190,6 +315,10 @@ const Login = () => {
           message = "Too many requests. Please try again later.";
           break;
 
+        case "auth/missing-email":
+          message = "Please enter your email address.";
+          break;
+
         default:
           message = error?.message || "Unable to send password reset email.";
       }
@@ -198,200 +327,232 @@ const Login = () => {
     }
   };
 
-  /* ======================================================
-     UI
-  ====================================================== */
+  // ============================================================
+  // UI
+  // ============================================================
 
   return (
     <div className="min-h-screen bg-base-200 px-4 py-10">
       <div className="mx-auto w-full max-w-md">
-        <div className="card bg-base-100 shadow-xl">
-          <div className="card-body">
-            {/* Header */}
+        {/* ======================================================
+            LOGIN CARD
+        ====================================================== */}
 
-            <div className="text-center">
-              <h1 className="text-3xl font-bold">Welcome Back 👋</h1>
+        <div className="rounded-3xl border border-base-300 bg-base-100 p-6 shadow-xl sm:p-8">
+          {/* ====================================================
+              HEADER
+          ==================================================== */}
 
-              <p className="mt-2 text-base-content/70">
-                Login to your MobileHub account
-              </p>
+          <div className="text-center">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-warning/10">
+              <FaSignInAlt className="text-3xl text-warning" />
             </div>
 
-            {/* Form */}
+            <h1 className="text-3xl font-bold">Welcome Back 👋</h1>
 
-            <form onSubmit={handleSubmit(onSubmit)} className="mt-8 space-y-5">
-              {/* Email */}
+            <p className="mt-2 text-base-content/70">
+              Login to your Biscuit Shop account
+            </p>
+          </div>
 
-              <div>
-                <label htmlFor="email" className="label">
-                  <span className="label-text font-medium">Email Address</span>
-                </label>
+          {/* ====================================================
+              LOGIN FORM
+          ==================================================== */}
 
-                <div
-                  className={`input input-bordered flex w-full items-center gap-3 ${
-                    errors.email ? "input-error" : ""
-                  }`}
-                >
-                  <FaEnvelope className="text-base-content/50" />
+          <form
+            onSubmit={handleSubmit(onSubmit)}
+            noValidate
+            className="mt-8 space-y-5"
+          >
+            {/* ==================================================
+                EMAIL
+            ================================================== */}
 
-                  <input
-                    id="email"
-                    type="email"
-                    autoComplete="email"
-                    spellCheck={false}
-                    disabled={isLoading}
-                    placeholder="Enter your email"
-                    className="grow bg-transparent outline-none"
-                    {...register("email", {
-                      required: "Email is required.",
-                      pattern: {
-                        value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-                        message: "Please enter a valid email address.",
-                      },
-                    })}
-                  />
-                </div>
+            <div>
+              <label htmlFor="email" className="label">
+                <span className="label-text font-semibold">Email Address</span>
+              </label>
 
-                {errors.email && (
-                  <p className="mt-2 text-sm text-error">
-                    {errors.email.message}
-                  </p>
-                )}
+              <div
+                className={`input input-bordered flex w-full items-center gap-3 ${
+                  errors.email ? "input-error" : ""
+                }`}
+              >
+                <FaEnvelope className="text-base-content/50" />
+
+                <input
+                  id="email"
+                  type="email"
+                  autoComplete="email"
+                  spellCheck={false}
+                  disabled={isSubmitting}
+                  placeholder="Enter your email"
+                  className="grow bg-transparent outline-none"
+                  {...register("email", {
+                    required: "Email is required.",
+
+                    pattern: {
+                      value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+                      message: "Please enter a valid email address.",
+                    },
+
+                    setValueAs: (value) => String(value).trim().toLowerCase(),
+                  })}
+                />
               </div>
 
-              {/* Password */}
+              {errors.email && (
+                <p className="mt-2 text-sm text-error">
+                  {errors.email.message}
+                </p>
+              )}
+            </div>
 
-              <div>
-                <label htmlFor="password" className="label">
-                  <span className="label-text font-medium">Password</span>
-                </label>
+            {/* ==================================================
+                PASSWORD
+            ================================================== */}
 
-                <div
-                  className={`input input-bordered flex w-full items-center gap-3 ${
-                    errors.password ? "input-error" : ""
-                  }`}
-                >
-                  <FaLock className="text-base-content/50" />
+            <div>
+              <label htmlFor="password" className="label">
+                <span className="label-text font-semibold">Password</span>
+              </label>
 
-                  <input
-                    id="password"
-                    type={showPassword ? "text" : "password"}
-                    autoComplete="current-password"
-                    disabled={isLoading}
-                    placeholder="Enter your password"
-                    className="grow bg-transparent outline-none"
-                    {...register("password", {
-                      required: "Password is required.",
-                      minLength: {
-                        value: 6,
-                        message: "Password must be at least 6 characters.",
-                      },
-                      maxLength: {
-                        value: 50,
-                        message: "Password cannot exceed 50 characters.",
-                      },
-                    })}
-                  />
+              <div
+                className={`input input-bordered flex w-full items-center gap-3 ${
+                  errors.password ? "input-error" : ""
+                }`}
+              >
+                <FaLock className="text-base-content/50" />
 
-                  <button
-                    type="button"
-                    disabled={isLoading}
-                    aria-label={
-                      showPassword ? "Hide password" : "Show password"
-                    }
-                    onClick={() => setShowPassword((previous) => !previous)}
-                    className="text-base-content/60 hover:text-warning"
-                  >
-                    {showPassword ? (
-                      <FaEyeSlash size={18} />
-                    ) : (
-                      <FaEye size={18} />
-                    )}
-                  </button>
-                </div>
+                <input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="current-password"
+                  disabled={isSubmitting}
+                  placeholder="Enter your password"
+                  className="grow bg-transparent outline-none"
+                  {...register("password", {
+                    required: "Password is required.",
 
-                {errors.password && (
-                  <p className="mt-2 text-sm text-error">
-                    {errors.password.message}
-                  </p>
-                )}
-              </div>
+                    minLength: {
+                      value: 6,
+                      message: "Password must be at least 6 characters.",
+                    },
 
-              {/* Remember + Forgot */}
-
-              <div className="flex items-center justify-between text-sm">
-                <label className="flex cursor-pointer items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={rememberMe}
-                    disabled={isLoading}
-                    onChange={(event) => setRememberMe(event.target.checked)}
-                    className="checkbox checkbox-warning checkbox-sm"
-                  />
-
-                  <span>Remember me</span>
-                </label>
+                    maxLength: {
+                      value: 50,
+                      message: "Password cannot exceed 50 characters.",
+                    },
+                  })}
+                />
 
                 <button
                   type="button"
-                  disabled={isLoading}
-                  onClick={handleForgotPassword}
-                  className="font-medium text-warning hover:underline disabled:opacity-60"
+                  disabled={isSubmitting}
+                  onClick={() => setShowPassword((previous) => !previous)}
+                  className="text-base-content/60 transition hover:text-warning disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
                 >
-                  Forgot Password?
+                  {showPassword ? (
+                    <FaEyeSlash size={18} />
+                  ) : (
+                    <FaEye size={18} />
+                  )}
                 </button>
               </div>
 
-              {/* Login */}
+              {errors.password && (
+                <p className="mt-2 text-sm text-error">
+                  {errors.password.message}
+                </p>
+              )}
+            </div>
+
+            {/* ==================================================
+                REMEMBER ME + FORGOT PASSWORD
+            ================================================== */}
+
+            <div className="flex items-center justify-between gap-4 text-sm">
+              <label className="flex cursor-pointer items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  disabled={isSubmitting}
+                  onChange={(event) => setRememberMe(event.target.checked)}
+                  className="checkbox checkbox-warning checkbox-sm"
+                />
+
+                <span>Remember me</span>
+              </label>
 
               <button
-                type="submit"
-                disabled={isLoading}
-                className="btn btn-warning w-full"
+                type="button"
+                disabled={isSubmitting}
+                onClick={handleForgotPassword}
+                className="font-semibold text-warning transition hover:underline disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {isLoading && (
-                  <span className="loading loading-spinner loading-sm" />
-                )}
-
-                {isLoading ? (
-                  "Signing In..."
-                ) : (
-                  <>
-                    <FaSignInAlt />
-                    Login
-                  </>
-                )}
+                Forgot Password?
               </button>
-            </form>
-
-            {/* Divider */}
-
-            <div className="divider my-6">OR</div>
-
-            {/* Google */}
-
-            <GoogleSignIn />
-
-            {/* Register */}
-
-            <div className="mt-8 text-center">
-              <p className="text-sm text-base-content/70">
-                Don't have an account?{" "}
-                <Link
-                  to="/register"
-                  state={{
-                    from: location.state?.from,
-                  }}
-                  className="font-semibold text-warning hover:underline"
-                >
-                  Create Account
-                </Link>
-              </p>
             </div>
+
+            {/* ==================================================
+                LOGIN BUTTON
+            ================================================== */}
+
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="btn btn-warning w-full"
+            >
+              {isSubmitting ? (
+                <>
+                  <span className="loading loading-spinner loading-sm" />
+                  Signing In...
+                </>
+              ) : (
+                <>
+                  <FaSignInAlt />
+                  Login
+                </>
+              )}
+            </button>
+          </form>
+
+          {/* ====================================================
+              DIVIDER
+          ==================================================== */}
+
+          <div className="divider my-7">OR</div>
+
+          {/* ====================================================
+              GOOGLE LOGIN
+          ==================================================== */}
+
+          <GoogleSignIn />
+
+          {/* ====================================================
+              REGISTER LINK
+          ==================================================== */}
+
+          <div className="mt-8 text-center">
+            <p className="text-sm text-base-content/70">
+              Don't have an account?{" "}
+              <Link
+                to="/register"
+                state={{
+                  from: location.state?.from,
+                }}
+                className="font-semibold text-warning transition hover:underline"
+              >
+                Create Account
+              </Link>
+            </p>
           </div>
         </div>
 
-        {/* Terms */}
+        {/* ======================================================
+            TERMS
+        ====================================================== */}
 
         <div className="mt-6 text-center text-xs text-base-content/60">
           By signing in, you agree to our{" "}

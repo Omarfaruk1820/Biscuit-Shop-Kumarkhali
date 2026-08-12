@@ -21,31 +21,66 @@ import axiosPublic from "../hooks/axiosPublic";
 
 export const AuthContext = createContext(null);
 
+// ============================================================
+// GOOGLE PROVIDER
+// ============================================================
+
 const googleProvider = new GoogleAuthProvider();
 
 googleProvider.setCustomParameters({
   prompt: "select_account",
 });
 
+// ============================================================
+// AUTH PROVIDER
+// ============================================================
+
 const AuthProvider = ({ children }) => {
-  // ============================================================
+  // ==========================================================
   // STATE
-  // ============================================================
+  // ==========================================================
 
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // ============================================================
+  // ==========================================================
   // NORMALIZE EMAIL
-  // ============================================================
+  // ==========================================================
 
   const normalizeEmail = useCallback((email = "") => {
     return String(email).trim().toLowerCase();
   }, []);
 
-  // ============================================================
-  // SAVE USER TO DATABASE
-  // ============================================================
+  // ==========================================================
+  // GET FIREBASE ID TOKEN
+  // ==========================================================
+
+  const getFirebaseIdToken = useCallback(
+    async (firebaseUser, forceRefresh = false) => {
+      if (!firebaseUser?.uid) {
+        throw new Error("Firebase user is not available.");
+      }
+
+      const token = await firebaseUser.getIdToken(forceRefresh);
+
+      if (!token || typeof token !== "string") {
+        throw new Error("Failed to get Firebase authentication token.");
+      }
+
+      return token;
+    },
+    [],
+  );
+
+  // ==========================================================
+  // SAVE / SYNC USER WITH MONGODB
+  //
+  // Firebase User
+  //      ↓
+  // Firebase ID Token
+  //      ↓
+  // POST /users
+  // ==========================================================
 
   const saveUserToDatabase = useCallback(
     async (firebaseUser) => {
@@ -53,24 +88,22 @@ const AuthProvider = ({ children }) => {
         throw new Error("Firebase user ID not found.");
       }
 
-      if (!firebaseUser?.email) {
-        throw new Error("User email not found.");
-      }
-
       const email = normalizeEmail(firebaseUser.email);
 
       if (!email) {
-        throw new Error("User email is required.");
+        throw new Error("Firebase user email not found.");
       }
 
-      const idToken = await firebaseUser.getIdToken();
+      const idToken = await getFirebaseIdToken(firebaseUser);
+
+      const provider = firebaseUser.providerData?.[0]?.providerId || "password";
 
       const payload = {
         uid: firebaseUser.uid,
         email,
         name: String(firebaseUser.displayName || "").trim(),
         photo: String(firebaseUser.photoURL || "").trim(),
-        provider: firebaseUser.providerData?.[0]?.providerId || "password",
+        provider,
         emailVerified: Boolean(firebaseUser.emailVerified),
       };
 
@@ -89,49 +122,58 @@ const AuthProvider = ({ children }) => {
 
       return response.data;
     },
-    [normalizeEmail],
+    [normalizeEmail, getFirebaseIdToken],
   );
 
-  // ============================================================
-  // CREATE JWT
-  // ============================================================
+  // ==========================================================
+  // CREATE APPLICATION JWT
+  //
+  // Firebase ID Token
+  //      ↓
+  // POST /auth/jwt
+  //      ↓
+  // HTTP-only Cookie
+  // ==========================================================
 
   const createJWT = useCallback(
-    async (email) => {
-      const normalizedEmail = normalizeEmail(email);
-
-      if (!normalizedEmail) {
-        throw new Error("User email is required.");
+    async (firebaseUser) => {
+      if (!firebaseUser?.uid) {
+        throw new Error("Firebase user is not available.");
       }
+
+      const idToken = await getFirebaseIdToken(firebaseUser);
 
       const response = await axiosPublic.post(
         "/auth/jwt",
+        {},
         {
-          email: normalizedEmail,
-        },
-        {
-          withCredentials: true,
-          timeout: 15000,
           headers: {
+            Authorization: `Bearer ${idToken}`,
             "Content-Type": "application/json",
           },
+          withCredentials: true,
+          timeout: 15000,
         },
       );
 
       if (!response.data?.success) {
         throw new Error(
-          response.data?.message || "Failed to generate authentication token.",
+          response.data?.message || "Failed to create authentication session.",
         );
       }
 
       return response.data;
     },
-    [normalizeEmail],
+    [getFirebaseIdToken],
   );
 
-  // ============================================================
-  // GET CURRENT USER FROM SERVER
-  // ============================================================
+  // ==========================================================
+  // GET CURRENT APPLICATION USER
+  //
+  // Application JWT Cookie
+  //      ↓
+  // GET /auth/me
+  // ==========================================================
 
   const getCurrentUser = useCallback(async () => {
     const response = await axiosPublic.get("/auth/me", {
@@ -148,9 +190,9 @@ const AuthProvider = ({ children }) => {
     return response.data.user;
   }, []);
 
-  // ============================================================
+  // ==========================================================
   // CREATE FIREBASE USER
-  // ============================================================
+  // ==========================================================
 
   const createUser = useCallback(
     async (email, password) => {
@@ -169,9 +211,9 @@ const AuthProvider = ({ children }) => {
     [normalizeEmail],
   );
 
-  // ============================================================
+  // ==========================================================
   // LOGIN USER
-  // ============================================================
+  // ==========================================================
 
   const loginUser = useCallback(
     async (email, password) => {
@@ -190,17 +232,23 @@ const AuthProvider = ({ children }) => {
     [normalizeEmail],
   );
 
-  // ============================================================
+  // ==========================================================
   // GOOGLE LOGIN
-  // ============================================================
+  // ==========================================================
 
   const signInGoogle = useCallback(async () => {
     return signInWithPopup(auth, googleProvider);
   }, []);
 
-  // ============================================================
-  // UPDATE FIREBASE PROFILE
-  // ============================================================
+  // ==========================================================
+  // UPDATE USER PROFILE
+  //
+  // Firebase profile
+  //      ↓
+  // MongoDB user
+  //      ↓
+  // Local state
+  // ==========================================================
 
   const updateUserProfile = useCallback(
     async (name, photo = "") => {
@@ -217,13 +265,24 @@ const AuthProvider = ({ children }) => {
         throw new Error("Name is required.");
       }
 
+      // --------------------------------------------------------
+      // UPDATE FIREBASE PROFILE
+      // --------------------------------------------------------
+
       await updateProfile(currentUser, {
         displayName: cleanName,
         photoURL: cleanPhoto,
       });
 
-      // Save updated Firebase profile to MongoDB.
+      // --------------------------------------------------------
+      // SYNC MONGODB
+      // --------------------------------------------------------
+
       await saveUserToDatabase(currentUser);
+
+      // --------------------------------------------------------
+      // UPDATE LOCAL STATE
+      // --------------------------------------------------------
 
       setUser((previousUser) => {
         if (!previousUser) {
@@ -242,20 +301,32 @@ const AuthProvider = ({ children }) => {
     [saveUserToDatabase],
   );
 
-  // ============================================================
+  // ==========================================================
   // CLEAR USER
-  // ============================================================
+  // ==========================================================
 
   const clearUser = useCallback(() => {
     setUser(null);
   }, []);
 
-  // ============================================================
+  // ==========================================================
   // SIGN OUT
-  // ============================================================
+  //
+  // Server JWT Cookie
+  //      ↓
+  // /auth/logout
+  //
+  // Firebase Session
+  //      ↓
+  // Firebase signOut
+  // ==========================================================
 
   const signOutUser = useCallback(async () => {
     try {
+      // --------------------------------------------------------
+      // CLEAR SERVER COOKIE
+      // --------------------------------------------------------
+
       try {
         await axiosPublic.post(
           "/auth/logout",
@@ -269,7 +340,15 @@ const AuthProvider = ({ children }) => {
         console.error("SERVER LOGOUT ERROR:", serverError);
       }
 
+      // --------------------------------------------------------
+      // CLEAR FIREBASE SESSION
+      // --------------------------------------------------------
+
       await signOut(auth);
+
+      // --------------------------------------------------------
+      // CLEAR LOCAL STATE
+      // --------------------------------------------------------
 
       setUser(null);
     } catch (error) {
@@ -281,9 +360,9 @@ const AuthProvider = ({ children }) => {
     }
   }, []);
 
-  // ============================================================
+  // ==========================================================
   // BUILD APPLICATION USER
-  // ============================================================
+  // ==========================================================
 
   const buildUser = useCallback(
     (firebaseUser, dbUser) => {
@@ -307,21 +386,33 @@ const AuthProvider = ({ children }) => {
           firebaseUser?.providerData?.[0]?.providerId ||
           "password",
 
+        emailVerified:
+          Boolean(firebaseUser?.emailVerified) ||
+          Boolean(dbUser?.emailVerified),
+
         createdAt: dbUser?.createdAt || null,
 
         updatedAt: dbUser?.updatedAt || null,
 
         lastLogin: dbUser?.lastLogin || null,
-
-        emailVerified: Boolean(firebaseUser?.emailVerified),
       };
     },
     [normalizeEmail],
   );
 
-  // ============================================================
+  // ==========================================================
   // AUTH STATE LISTENER
-  // ============================================================
+  //
+  // Firebase Auth
+  //      ↓
+  // POST /users
+  //      ↓
+  // POST /auth/jwt
+  //      ↓
+  // GET /auth/me
+  //      ↓
+  // Application User
+  // ==========================================================
 
   useEffect(() => {
     let mounted = true;
@@ -331,41 +422,63 @@ const AuthProvider = ({ children }) => {
         return;
       }
 
+      // ------------------------------------------------------
+      // NO FIREBASE USER
+      // ------------------------------------------------------
+
       if (!firebaseUser) {
         setUser(null);
         setLoading(false);
+
         return;
       }
 
       setLoading(true);
 
       try {
+        // ----------------------------------------------------
+        // VALIDATE EMAIL
+        // ----------------------------------------------------
+
         const email = normalizeEmail(firebaseUser.email);
 
         if (!email) {
           throw new Error("Authenticated email not found.");
         }
 
-        // Make sure Firebase user exists in MongoDB.
+        // ----------------------------------------------------
+        // SAVE / SYNC USER
+        // ----------------------------------------------------
+
         await saveUserToDatabase(firebaseUser);
 
         if (!mounted) {
           return;
         }
 
-        // Create server JWT cookie.
-        await createJWT(email);
+        // ----------------------------------------------------
+        // CREATE APPLICATION JWT
+        // ----------------------------------------------------
+
+        await createJWT(firebaseUser);
 
         if (!mounted) {
           return;
         }
 
-        // Get final MongoDB user.
+        // ----------------------------------------------------
+        // GET DATABASE USER
+        // ----------------------------------------------------
+
         const dbUser = await getCurrentUser();
 
         if (!mounted) {
           return;
         }
+
+        // ----------------------------------------------------
+        // BUILD APPLICATION USER
+        // ----------------------------------------------------
 
         const applicationUser = buildUser(firebaseUser, dbUser);
 
@@ -377,9 +490,16 @@ const AuthProvider = ({ children }) => {
           return;
         }
 
+        // ----------------------------------------------------
+        // CLEAR APPLICATION USER
+        // ----------------------------------------------------
+
         setUser(null);
 
-        // Clear server JWT.
+        // ----------------------------------------------------
+        // CLEAR SERVER COOKIE
+        // ----------------------------------------------------
+
         try {
           await axiosPublic.post(
             "/auth/logout",
@@ -393,7 +513,10 @@ const AuthProvider = ({ children }) => {
           console.error("AUTH COOKIE LOGOUT ERROR:", logoutError);
         }
 
-        // Clear Firebase session.
+        // ----------------------------------------------------
+        // CLEAR FIREBASE SESSION
+        // ----------------------------------------------------
+
         try {
           await signOut(auth);
         } catch (firebaseError) {
@@ -418,12 +541,12 @@ const AuthProvider = ({ children }) => {
     buildUser,
   ]);
 
-  // ============================================================
+  // ==========================================================
   // REFRESH USER
-  // ============================================================
+  // ==========================================================
 
   const refreshUser = useCallback(async () => {
-    const currentUser = auth?.currentUser;
+    const currentUser = auth.currentUser;
 
     if (!currentUser) {
       setUser(null);
@@ -431,15 +554,27 @@ const AuthProvider = ({ children }) => {
     }
 
     try {
-      const email = normalizeEmail(currentUser.email);
+      // --------------------------------------------------------
+      // REFRESH FIREBASE TOKEN
+      // --------------------------------------------------------
 
-      if (!email) {
-        throw new Error("Authenticated email not found.");
-      }
+      await getFirebaseIdToken(currentUser, true);
 
-      await createJWT(email);
+      // --------------------------------------------------------
+      // CREATE / REFRESH SERVER JWT
+      // --------------------------------------------------------
+
+      await createJWT(currentUser);
+
+      // --------------------------------------------------------
+      // GET SERVER USER
+      // --------------------------------------------------------
 
       const dbUser = await getCurrentUser();
+
+      // --------------------------------------------------------
+      // BUILD APPLICATION USER
+      // --------------------------------------------------------
 
       const updatedUser = buildUser(currentUser, dbUser);
 
@@ -451,11 +586,11 @@ const AuthProvider = ({ children }) => {
 
       throw error;
     }
-  }, [normalizeEmail, createJWT, getCurrentUser, buildUser]);
+  }, [getFirebaseIdToken, createJWT, getCurrentUser, buildUser]);
 
-  // ============================================================
+  // ==========================================================
   // CONTEXT VALUE
-  // ============================================================
+  // ==========================================================
 
   const authInfo = useMemo(
     () => ({
@@ -465,15 +600,15 @@ const AuthProvider = ({ children }) => {
       createUser,
       loginUser,
       signInGoogle,
+
       signOutUser,
 
       updateUserProfile,
 
-      // IMPORTANT:
-      // Register.jsx needs this function.
       saveUserToDatabase,
 
       refreshUser,
+
       clearUser,
 
       setUser,
@@ -491,6 +626,10 @@ const AuthProvider = ({ children }) => {
       clearUser,
     ],
   );
+
+  // ==========================================================
+  // PROVIDER
+  // ==========================================================
 
   return (
     <AuthContext.Provider value={authInfo}>{children}</AuthContext.Provider>

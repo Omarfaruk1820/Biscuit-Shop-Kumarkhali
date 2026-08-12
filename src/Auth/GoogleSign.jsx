@@ -5,57 +5,66 @@ import { AuthContext } from "./AuthProvider";
 import { useToast } from "../context/ToastProvider";
 
 const GoogleSignIn = () => {
-  // ======================================================
-  // Context
-  // ======================================================
-
-  const { signInGoogle } = useContext(AuthContext);
-
+  const { signInGoogle, loading: authLoading } = useContext(AuthContext);
   const { addToast } = useToast();
-
-  // ======================================================
-  // Loading State
-  // ======================================================
 
   const [loading, setLoading] = useState(false);
 
-  // ======================================================
-  // Google Login
-  // ======================================================
+  const isLoading = loading || authLoading;
 
   const handleGoogleLogin = async () => {
-    if (loading) return;
+    if (isLoading) {
+      return;
+    }
+
+    setLoading(true);
 
     try {
-      setLoading(true);
-
-      // Firebase Login
+      // Firebase Google authentication.
+      //
+      // AuthProvider's onAuthStateChanged() will automatically:
+      //
+      // Firebase User
+      //      ↓
+      // Save / sync user to MongoDB
+      //      ↓
+      // Create application JWT
+      //      ↓
+      // GET /auth/me
+      //      ↓
+      // Set application user
+      //
+      // Therefore, this component does NOT:
+      // - save the user to MongoDB
+      // - create JWT
+      // - set user
+      // - navigate
       await signInGoogle();
 
-      // Don't Navigate
-      // Don't Set User
-      // Don't Set Role
-      // AuthProvider will handle everything.
+      addToast("Google sign-in successful!", "success");
     } catch (error) {
-      console.error("Google Sign-In Error:", error);
+      console.error("GOOGLE SIGN-IN ERROR:", error);
 
-      if (error.code === "auth/popup-closed-by-user") {
+      // User closed the popup.
+      if (error?.code === "auth/popup-closed-by-user") {
         return;
       }
 
-      let message = "Google Sign-In failed.";
+      let message = "Google sign-in failed. Please try again.";
 
-      switch (error.code) {
+      switch (error?.code) {
         case "auth/popup-blocked":
-          message = "Popup blocked by browser.";
+          message =
+            "Google sign-in popup was blocked. Please allow popups for this site.";
           break;
 
         case "auth/network-request-failed":
-          message = "Please check your internet connection.";
+          message =
+            "Network error. Please check your internet connection and try again.";
           break;
 
         case "auth/too-many-requests":
-          message = "Too many attempts. Please try again later.";
+          message = "Too many sign-in attempts. Please try again later.";
           break;
 
         case "auth/account-exists-with-different-credential":
@@ -63,8 +72,25 @@ const GoogleSignIn = () => {
             "This email is already registered with another sign-in method.";
           break;
 
+        case "auth/cancelled-popup-request":
+          message = "Another Google sign-in request is already in progress.";
+          break;
+
+        case "auth/operation-not-allowed":
+          message =
+            "Google sign-in is currently disabled. Please contact support.";
+          break;
+
+        case "auth/user-disabled":
+          message = "This account has been disabled.";
+          break;
+
         default:
-          message = error.message || message;
+          if (error?.response?.data?.message) {
+            message = error.response.data.message;
+          } else if (error?.message) {
+            message = error.message;
+          }
       }
 
       addToast(message, "error");
@@ -77,18 +103,21 @@ const GoogleSignIn = () => {
     <button
       type="button"
       onClick={handleGoogleLogin}
-      disabled={loading}
+      disabled={isLoading}
       className="btn btn-outline w-full gap-3"
-      aria-busy={loading}
+      aria-busy={isLoading}
     >
-      {loading ? (
+      {isLoading ? (
         <>
-          <span className="loading loading-spinner loading-sm"></span>
+          <span
+            className="loading loading-spinner loading-sm"
+            aria-hidden="true"
+          />
           Signing in...
         </>
       ) : (
         <>
-          <FcGoogle size={22} />
+          <FcGoogle size={22} aria-hidden="true" />
           Continue with Google
         </>
       )}

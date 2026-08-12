@@ -8,20 +8,47 @@ import { AuthContext } from "../../Auth/AuthProvider";
 import { useToast } from "../../context/ToastProvider";
 import { useFlyToCart } from "../../hooks/useFlyToCart";
 
-const API = import.meta.env.VITE_API_URL;
+const API_URL = import.meta.env.VITE_API_URL;
 
-const LIMIT = 8;
+const PRODUCTS_PER_PAGE = 8;
 
 const ProductCard = () => {
+  // ============================================================
+  // ROUTER
+  // ============================================================
+
   const navigate = useNavigate();
+
+  // ============================================================
+  // REACT QUERY
+  // ============================================================
+
   const queryClient = useQueryClient();
 
+  // ============================================================
+  // AUTH
+  // ============================================================
+
   const { user } = useContext(AuthContext);
+
+  // ============================================================
+  // TOAST
+  // ============================================================
+
   const { addToast } = useToast();
+
+  // ============================================================
+  // FLY TO CART
+  // ============================================================
+
   const { flyToCart } = useFlyToCart();
 
+  // ============================================================
+  // LOCAL STATE
+  // ============================================================
+
   const [currentPage, setCurrentPage] = useState(1);
-  const [addingId, setAddingId] = useState(null);
+  const [addingProductId, setAddingProductId] = useState(null);
 
   // ============================================================
   // FETCH PRODUCTS
@@ -30,38 +57,47 @@ const ProductCard = () => {
   const fetchProducts = async ({ queryKey, signal }) => {
     const [, page] = queryKey;
 
-    if (!API) {
+    if (!API_URL) {
       throw new Error("API URL is not configured.");
     }
 
-    const response = await axios.get(`${API}/products`, {
+    const response = await axios.get(`${API_URL}/products`, {
       params: {
         page,
-        limit: LIMIT,
+        limit: PRODUCTS_PER_PAGE,
       },
+
       signal,
+
       timeout: 15000,
     });
 
     if (!response.data?.success) {
-      throw new Error(response.data?.message || "Failed to fetch products.");
+      throw new Error(response.data?.message || "Failed to load products.");
     }
 
     return response.data;
   };
 
   // ============================================================
-  // REACT QUERY
+  // PRODUCTS QUERY
   // ============================================================
 
   const { data, isLoading, isError, error, isFetching, refetch } = useQuery({
     queryKey: ["products", currentPage],
+
     queryFn: fetchProducts,
+
     staleTime: 1000 * 60 * 2,
+
     gcTime: 1000 * 60 * 10,
+
     retry: 1,
+
     refetchOnWindowFocus: false,
+
     refetchOnReconnect: true,
+
     placeholderData: (previousData) => previousData,
   });
 
@@ -71,7 +107,10 @@ const ProductCard = () => {
 
   const products = Array.isArray(data?.data) ? data.data : [];
 
-  const pagination = data?.pagination || {};
+  const pagination =
+    data?.pagination && typeof data.pagination === "object"
+      ? data.pagination
+      : {};
 
   const totalPages = Math.max(Number(pagination.totalPages) || 1, 1);
 
@@ -84,22 +123,33 @@ const ProductCard = () => {
       return;
     }
 
-    const nextPage = currentPage + 1;
-
     queryClient.prefetchQuery({
-      queryKey: ["products", nextPage],
+      queryKey: ["products", currentPage + 1],
+
       queryFn: fetchProducts,
+
       staleTime: 1000 * 60 * 2,
+
       gcTime: 1000 * 60 * 10,
     });
   }, [currentPage, totalPages, queryClient]);
 
   // ============================================================
-  // PAGE NAVIGATION
+  // GO TO PAGE
   // ============================================================
 
   const goToPage = (page) => {
-    const safePage = Math.min(Math.max(Number(page) || 1, 1), totalPages);
+    const numericPage = Number(page);
+
+    if (!Number.isFinite(numericPage)) {
+      return;
+    }
+
+    const safePage = Math.min(Math.max(Math.floor(numericPage), 1), totalPages);
+
+    if (safePage === currentPage) {
+      return;
+    }
 
     setCurrentPage(safePage);
 
@@ -110,81 +160,104 @@ const ProductCard = () => {
   };
 
   // ============================================================
+  // LOGIN REDIRECT
+  // ============================================================
+
+  const redirectToLogin = () => {
+    navigate("/login", {
+      state: {
+        from: {
+          pathname: window.location.pathname,
+
+          search: window.location.search,
+        },
+      },
+    });
+  };
+
+  // ============================================================
   // ADD TO CART
   // ============================================================
 
   const handleAddToCart = async (product, event) => {
     event.stopPropagation();
 
-    // ------------------------------------------
+    // ----------------------------------------------------------
     // Authentication
-    // ------------------------------------------
+    // ----------------------------------------------------------
 
     if (!user) {
-      addToast("Please login first.", "error");
+      addToast("Please login first.", "warning");
 
-      navigate("/login", {
-        state: {
-          from: {
-            pathname: window.location.pathname,
-          },
-        },
-      });
+      redirectToLogin();
 
       return;
     }
 
-    // ------------------------------------------
+    // ----------------------------------------------------------
     // Product validation
-    // ------------------------------------------
+    // ----------------------------------------------------------
 
-    if (!product?._id) {
+    const productId = String(product?._id || "").trim();
+
+    if (!productId) {
       addToast("Invalid product.", "error");
+
       return;
     }
 
-    const stock = Number(product.stock);
+    const stock = Number(product?.stock);
 
     if (!Number.isFinite(stock) || stock <= 0) {
-      addToast("This product is out of stock.", "error");
+      addToast("This product is out of stock.", "warning");
+
       return;
     }
 
-    // ------------------------------------------
-    // Prevent duplicate click
-    // ------------------------------------------
+    // ----------------------------------------------------------
+    // Prevent duplicate request
+    // ----------------------------------------------------------
 
-    if (addingId) {
+    if (addingProductId !== null) {
       return;
     }
+
+    setAddingProductId(productId);
 
     try {
-      setAddingId(String(product._id));
-
-      // ------------------------------------------
-      // Fly-to-cart elements
-      // ------------------------------------------
+      // --------------------------------------------------------
+      // Find animation elements BEFORE API request
+      // --------------------------------------------------------
 
       const productCard = event.currentTarget.closest(".product-card");
 
-      const image = productCard?.querySelector("img");
+      const productImage = productCard?.querySelector("img");
 
       const cartIcon = document.querySelector(".cart-icon");
 
-      // ------------------------------------------
-      // Add cart API
+      // --------------------------------------------------------
       // POST /carts
-      // ------------------------------------------
+      //
+      // IMPORTANT:
+      //
+      // Only send productId + quantity.
+      //
+      // Backend should load the product from MongoDB and
+      // calculate the actual price/product information.
+      // --------------------------------------------------------
 
       const response = await axios.post(
-        `${API}/carts`,
+        `${API_URL}/carts`,
         {
-          productId: product._id,
+          productId,
+
           quantity: 1,
         },
         {
           withCredentials: true,
+
           timeout: 15000,
+
           headers: {
             "Content-Type": "application/json",
           },
@@ -197,18 +270,20 @@ const ProductCard = () => {
         );
       }
 
-      // ------------------------------------------
-      // Success
-      // ------------------------------------------
+      // --------------------------------------------------------
+      // Success toast
+      // --------------------------------------------------------
 
-      addToast(
-        `🛒 ${product.name || "Product"} added to your cart.`,
-        "success",
-      );
+      const productName =
+        typeof product?.name === "string" && product.name.trim()
+          ? product.name.trim()
+          : "Product";
 
-      // ------------------------------------------
-      // Refresh cart related queries
-      // ------------------------------------------
+      addToast(`${productName} added to your cart.`, "success");
+
+      // --------------------------------------------------------
+      // Refresh cart queries
+      // --------------------------------------------------------
 
       await Promise.all([
         queryClient.invalidateQueries({
@@ -228,43 +303,73 @@ const ProductCard = () => {
         }),
       ]);
 
-      // ------------------------------------------
-      // Fly to cart animation
-      // ------------------------------------------
+      // --------------------------------------------------------
+      // Fly product image to cart
+      // --------------------------------------------------------
 
-      if (image && cartIcon && typeof flyToCart === "function") {
-        flyToCart(image, cartIcon);
+      if (productImage && cartIcon && typeof flyToCart === "function") {
+        flyToCart(productImage, cartIcon);
       }
     } catch (error) {
       console.error("ADD TO CART ERROR:", error);
 
-      // ------------------------------------------
-      // Backend error
-      // ------------------------------------------
+      // --------------------------------------------------------
+      // Unauthorized
+      // --------------------------------------------------------
 
       if (error?.response?.status === 401) {
-        addToast("Please login first.", "error");
+        addToast("Your session has expired. Please login again.", "warning");
 
-        navigate("/login", {
-          state: {
-            from: {
-              pathname: window.location.pathname,
-            },
-          },
-        });
+        redirectToLogin();
 
         return;
       }
 
+      // --------------------------------------------------------
+      // Forbidden
+      // --------------------------------------------------------
+
       if (error?.response?.status === 403) {
         addToast(
           error?.response?.data?.message ||
-            "You are not allowed to add items to cart.",
+            "You are not allowed to add this product to the cart.",
           "error",
         );
 
         return;
       }
+
+      // --------------------------------------------------------
+      // Not found
+      // --------------------------------------------------------
+
+      if (error?.response?.status === 404) {
+        addToast(
+          error?.response?.data?.message ||
+            "This product is no longer available.",
+          "error",
+        );
+
+        return;
+      }
+
+      // --------------------------------------------------------
+      // Conflict
+      // --------------------------------------------------------
+
+      if (error?.response?.status === 409) {
+        addToast(
+          error?.response?.data?.message ||
+            "This product is currently unavailable.",
+          "warning",
+        );
+
+        return;
+      }
+
+      // --------------------------------------------------------
+      // Generic error
+      // --------------------------------------------------------
 
       const message =
         error?.response?.data?.message ||
@@ -273,7 +378,7 @@ const ProductCard = () => {
 
       addToast(message, "error");
     } finally {
-      setAddingId(null);
+      setAddingProductId(null);
     }
   };
 
@@ -285,34 +390,36 @@ const ProductCard = () => {
     return (
       <section className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
         <div className="mb-8">
-          <div className="h-8 w-64 animate-pulse rounded bg-gray-200" />
+          <div className="h-8 w-64 animate-pulse rounded bg-base-300" />
 
-          <div className="mt-3 h-5 w-96 max-w-full animate-pulse rounded bg-gray-200" />
+          <div className="mt-3 h-5 w-96 max-w-full animate-pulse rounded bg-base-300" />
         </div>
 
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-          {Array.from({ length: LIMIT }).map((_, index) => (
+          {Array.from({
+            length: PRODUCTS_PER_PAGE,
+          }).map((_, index) => (
             <div
               key={index}
-              className="overflow-hidden rounded-2xl border bg-white shadow-sm"
+              className="overflow-hidden rounded-2xl border border-base-300 bg-base-100 shadow-sm"
             >
-              <div className="h-56 animate-pulse bg-gray-200" />
+              <div className="h-56 animate-pulse bg-base-300" />
 
               <div className="space-y-4 p-4">
-                <div className="h-6 w-24 animate-pulse rounded bg-gray-200" />
+                <div className="h-6 w-24 animate-pulse rounded bg-base-300" />
 
-                <div className="h-5 w-full animate-pulse rounded bg-gray-200" />
+                <div className="h-5 w-full animate-pulse rounded bg-base-300" />
 
-                <div className="h-5 w-3/4 animate-pulse rounded bg-gray-200" />
+                <div className="h-5 w-3/4 animate-pulse rounded bg-base-300" />
 
-                <div className="h-4 w-20 animate-pulse rounded bg-gray-200" />
+                <div className="h-4 w-20 animate-pulse rounded bg-base-300" />
 
-                <div className="h-8 w-28 animate-pulse rounded bg-gray-200" />
+                <div className="h-8 w-28 animate-pulse rounded bg-base-300" />
 
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="h-11 animate-pulse rounded-xl bg-gray-200" />
+                  <div className="h-11 animate-pulse rounded-xl bg-base-300" />
 
-                  <div className="h-11 animate-pulse rounded-xl bg-gray-200" />
+                  <div className="h-11 animate-pulse rounded-xl bg-base-300" />
                 </div>
               </div>
             </div>
@@ -330,21 +437,28 @@ const ProductCard = () => {
     return (
       <section className="mx-auto w-full max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
         <div className="flex flex-col items-center justify-center text-center">
-          <h2 className="text-2xl font-bold text-gray-800">
-            Failed to load products
-          </h2>
+          <div className="text-5xl">⚠️</div>
 
-          <p className="mt-2 max-w-md text-sm text-gray-500">
-            {error?.message || "Something went wrong while fetching products."}
+          <h2 className="mt-4 text-2xl font-bold">Failed to load products</h2>
+
+          <p className="mt-2 max-w-md text-sm text-base-content/60">
+            {error?.message || "Something went wrong while loading products."}
           </p>
 
           <button
             type="button"
             onClick={() => refetch()}
             disabled={isFetching}
-            className="mt-6 rounded-xl bg-amber-500 px-6 py-3 font-semibold text-white transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-60"
+            className="btn btn-warning mt-6"
           >
-            {isFetching ? "Trying..." : "Try Again"}
+            {isFetching ? (
+              <>
+                <FaSpinner className="animate-spin" />
+                Trying...
+              </>
+            ) : (
+              "Try Again"
+            )}
           </button>
         </div>
       </section>
@@ -355,17 +469,15 @@ const ProductCard = () => {
   // EMPTY UI
   // ============================================================
 
-  if (!products.length) {
+  if (products.length === 0) {
     return (
       <section className="mx-auto w-full max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
         <div className="flex flex-col items-center justify-center text-center">
           <div className="text-5xl">🍪</div>
 
-          <h2 className="mt-4 text-2xl font-bold text-gray-800">
-            No Products Found
-          </h2>
+          <h2 className="mt-4 text-2xl font-bold">No Products Found</h2>
 
-          <p className="mt-2 text-gray-500">
+          <p className="mt-2 text-base-content/60">
             There are currently no products available.
           </p>
         </div>
@@ -379,32 +491,42 @@ const ProductCard = () => {
 
   return (
     <section className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
-      {/* Header */}
+      {/* ======================================================
+          HEADER
+      ====================================================== */}
 
       <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
-          <h2 className="text-3xl font-extrabold text-gray-800">
-            🍪 Biscuit Collection
-          </h2>
+          <h2 className="text-3xl font-extrabold">🍪 Biscuit Collection</h2>
 
-          <p className="mt-2 text-gray-500">
+          <p className="mt-2 text-base-content/60">
             Fresh, crispy and delicious snacks for your everyday cravings.
           </p>
         </div>
 
         {isFetching && !isLoading && (
-          <div className="flex items-center gap-2 text-sm text-gray-500">
-            <FaSpinner className="animate-spin text-amber-500" />
+          <div className="flex items-center gap-2 text-sm text-base-content/60">
+            <FaSpinner className="animate-spin text-warning" />
             Updating...
           </div>
         )}
       </div>
 
-      {/* Products */}
+      {/* ======================================================
+          PRODUCTS
+      ====================================================== */}
 
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
         {products.map((product) => {
           const productId = String(product?._id || "");
+
+          if (!productId) {
+            return null;
+          }
+
+          // ----------------------------------------------------
+          // Product values
+          // ----------------------------------------------------
 
           const price = Math.max(Number(product?.price) || 0, 0);
 
@@ -413,8 +535,9 @@ const ProductCard = () => {
             100,
           );
 
-          const finalPrice = Number(
-            (price - (price * discount) / 100).toFixed(2),
+          const finalPrice = Math.max(
+            Number((price - (price * discount) / 100).toFixed(2)),
+            0,
           );
 
           const stock = Math.max(Number(product?.stock) || 0, 0);
@@ -441,17 +564,23 @@ const ProductCard = () => {
               ? product.category.trim()
               : "General";
 
-          const isAdding = addingId === productId;
+          const isAdding = addingProductId === productId;
+
+          // ----------------------------------------------------
+          // Product card
+          // ----------------------------------------------------
 
           return (
             <article
               key={productId}
-              className="product-card group cursor-pointer overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm transition duration-300 hover:-translate-y-2 hover:shadow-2xl"
+              className="product-card group cursor-pointer overflow-hidden rounded-2xl border border-base-300 bg-base-100 shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-xl"
               onClick={() => navigate(`/product/${productId}`)}
             >
-              {/* Image */}
+              {/* ==================================================
+                  IMAGE
+              ================================================== */}
 
-              <div className="relative h-56 overflow-hidden bg-gray-50">
+              <div className="relative h-56 overflow-hidden bg-base-200">
                 {imageUrl ? (
                   <img
                     src={imageUrl}
@@ -460,14 +589,11 @@ const ProductCard = () => {
                     decoding="async"
                     className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
                     onError={(event) => {
-                      event.currentTarget.onerror = null;
-
-                      event.currentTarget.src =
-                        "https://via.placeholder.com/400x400?text=No+Image";
+                      event.currentTarget.style.display = "none";
                     }}
                   />
                 ) : (
-                  <div className="flex h-full w-full items-center justify-center text-sm text-gray-400">
+                  <div className="flex h-full w-full items-center justify-center text-sm text-base-content/40">
                     No Image
                   </div>
                 )}
@@ -475,7 +601,7 @@ const ProductCard = () => {
                 {/* Discount */}
 
                 {discount > 0 && (
-                  <span className="absolute left-3 top-3 rounded-full bg-red-500 px-3 py-1 text-xs font-bold text-white shadow">
+                  <span className="absolute left-3 top-3 rounded-full bg-error px-3 py-1 text-xs font-bold text-error-content shadow">
                     -{discount}%
                   </span>
                 )}
@@ -483,31 +609,33 @@ const ProductCard = () => {
                 {/* Hot */}
 
                 {discount >= 15 && (
-                  <span className="absolute right-3 top-3 rounded-full bg-amber-500 px-3 py-1 text-xs font-semibold text-white">
+                  <span className="absolute right-3 top-3 rounded-full bg-warning px-3 py-1 text-xs font-bold text-warning-content shadow">
                     HOT
                   </span>
                 )}
               </div>
 
-              {/* Content */}
+              {/* ==================================================
+                  CONTENT
+              ================================================== */}
 
               <div className="p-4">
                 {/* Brand */}
 
-                <span className="inline-flex rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-700">
+                <span className="inline-flex rounded-full bg-warning/10 px-3 py-1 text-xs font-medium text-warning">
                   {brand}
                 </span>
 
                 {/* Name */}
 
-                <h3 className="mt-3 min-h-[48px] line-clamp-2 font-bold text-gray-800">
+                <h3 className="mt-3 min-h-[48px] line-clamp-2 font-bold">
                   {productName}
                 </h3>
 
                 {/* Category */}
 
                 <div className="mt-2">
-                  <span className="inline-flex rounded-full bg-gray-100 px-3 py-1 text-xs capitalize text-gray-600">
+                  <span className="inline-flex rounded-full bg-base-200 px-3 py-1 text-xs capitalize text-base-content/60">
                     {category}
                   </span>
                 </div>
@@ -515,26 +643,28 @@ const ProductCard = () => {
                 {/* Rating */}
 
                 <div className="mt-4 flex items-center justify-between">
-                  <div className="flex items-center gap-1 text-yellow-500">
+                  <div className="flex items-center gap-1 text-warning">
                     <FaStar />
 
-                    <span className="text-sm font-semibold text-gray-700">
+                    <span className="text-sm font-semibold">
                       {rating.toFixed(1)}
                     </span>
                   </div>
 
-                  <span className="text-xs text-gray-400">({reviews})</span>
+                  <span className="text-xs text-base-content/40">
+                    ({reviews})
+                  </span>
                 </div>
 
                 {/* Price */}
 
                 <div className="mt-4">
-                  <h4 className="text-2xl font-bold text-amber-600">
+                  <h4 className="text-2xl font-bold text-warning">
                     ৳{finalPrice.toFixed(2)}
                   </h4>
 
                   {discount > 0 && (
-                    <p className="text-sm text-gray-400 line-through">
+                    <p className="text-sm text-base-content/40 line-through">
                       ৳{price.toFixed(2)}
                     </p>
                   )}
@@ -544,17 +674,19 @@ const ProductCard = () => {
 
                 <div className="mt-3">
                   {stock > 0 ? (
-                    <span className="inline-flex rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-700">
+                    <span className="inline-flex rounded-full bg-success/10 px-3 py-1 text-xs font-medium text-success">
                       In Stock ({stock})
                     </span>
                   ) : (
-                    <span className="inline-flex rounded-full bg-red-100 px-3 py-1 text-xs font-medium text-red-600">
+                    <span className="inline-flex rounded-full bg-error/10 px-3 py-1 text-xs font-medium text-error">
                       Out Of Stock
                     </span>
                   )}
                 </div>
 
-                {/* Buttons */}
+                {/* ==================================================
+                    BUTTONS
+                ================================================== */}
 
                 <div className="mt-5 grid grid-cols-2 gap-3">
                   {/* Details */}
@@ -566,7 +698,7 @@ const ProductCard = () => {
 
                       navigate(`/product/${productId}`);
                     }}
-                    className="h-11 rounded-xl border font-semibold transition hover:bg-gray-100"
+                    className="h-11 rounded-xl border border-base-300 font-semibold transition hover:bg-base-200"
                   >
                     Details
                   </button>
@@ -577,10 +709,10 @@ const ProductCard = () => {
                     type="button"
                     disabled={isAdding || stock <= 0}
                     onClick={(event) => handleAddToCart(product, event)}
-                    className={`flex h-11 items-center justify-center gap-2 rounded-xl font-semibold text-white transition active:scale-95 ${
+                    className={`flex h-11 items-center justify-center gap-2 rounded-xl font-semibold transition active:scale-95 ${
                       stock > 0
-                        ? "bg-amber-500 hover:bg-amber-600"
-                        : "cursor-not-allowed bg-gray-400"
+                        ? "bg-warning text-warning-content hover:bg-warning/90"
+                        : "cursor-not-allowed bg-base-300 text-base-content/40"
                     }`}
                   >
                     {isAdding ? (
@@ -602,7 +734,9 @@ const ProductCard = () => {
         })}
       </div>
 
-      {/* Pagination */}
+      {/* ======================================================
+          PAGINATION
+      ====================================================== */}
 
       {totalPages > 1 && (
         <div className="mt-12 flex flex-wrap justify-center gap-3">
@@ -612,7 +746,7 @@ const ProductCard = () => {
             type="button"
             disabled={currentPage === 1 || isFetching}
             onClick={() => goToPage(currentPage - 1)}
-            className="rounded-xl border px-4 py-2 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+            className="rounded-xl border border-base-300 px-4 py-2 transition hover:bg-base-200 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Previous
           </button>
@@ -628,8 +762,8 @@ const ProductCard = () => {
                 onClick={() => goToPage(page)}
                 className={`h-10 w-10 rounded-xl font-semibold transition ${
                   currentPage === page
-                    ? "bg-amber-500 text-white"
-                    : "border hover:bg-gray-100"
+                    ? "bg-warning text-warning-content"
+                    : "border border-base-300 hover:bg-base-200"
                 } disabled:cursor-not-allowed disabled:opacity-60`}
               >
                 {page}
@@ -643,19 +777,21 @@ const ProductCard = () => {
             type="button"
             disabled={currentPage === totalPages || isFetching}
             onClick={() => goToPage(currentPage + 1)}
-            className="rounded-xl border px-4 py-2 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+            className="rounded-xl border border-base-300 px-4 py-2 transition hover:bg-base-200 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Next
           </button>
         </div>
       )}
 
-      {/* Fetching indicator */}
+      {/* ======================================================
+          FETCHING INDICATOR
+      ====================================================== */}
 
       {isFetching && !isLoading && (
         <div className="mt-6 flex justify-center">
-          <div className="flex items-center gap-3 rounded-full border bg-white px-5 py-3 text-sm text-gray-600 shadow">
-            <FaSpinner className="animate-spin text-amber-500" />
+          <div className="flex items-center gap-3 rounded-full border border-base-300 bg-base-100 px-5 py-3 text-sm text-base-content/60 shadow-sm">
+            <FaSpinner className="animate-spin text-warning" />
             Loading products...
           </div>
         </div>

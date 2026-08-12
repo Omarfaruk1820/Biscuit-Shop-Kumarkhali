@@ -14,6 +14,7 @@ import {
 } from "react-icons/fa";
 
 import { AuthContext } from "../../Auth/AuthProvider";
+import { useToast } from "../../context/ToastProvider";
 import axiosSecure from "../../hooks/axiosSecure";
 
 // ============================================================
@@ -68,6 +69,12 @@ const Cart = () => {
   const [deletingCartId, setDeletingCartId] = useState(null);
 
   // ==========================================================
+  // TOAST
+  // ==========================================================
+
+  const { addToast } = useToast();
+
+  // ==========================================================
   // USER EMAIL
   // ==========================================================
 
@@ -78,7 +85,7 @@ const Cart = () => {
   }, [user?.email]);
 
   // ==========================================================
-  // CART QUERY KEY
+  // QUERY KEY
   // ==========================================================
 
   const cartQueryKey = useMemo(() => {
@@ -87,6 +94,7 @@ const Cart = () => {
 
   // ==========================================================
   // FETCH CART
+  // GET /carts
   // ==========================================================
 
   const fetchCart = useCallback(async () => {
@@ -108,17 +116,11 @@ const Cart = () => {
   const { data, isPending, isFetching, isError, error, refetch } = useQuery({
     queryKey: cartQueryKey,
     queryFn: fetchCart,
-
     enabled: Boolean(email) && !authLoading,
-
     staleTime: 60 * 1000,
-
     gcTime: 10 * 60 * 1000,
-
     retry: 1,
-
     refetchOnWindowFocus: false,
-
     refetchOnReconnect: true,
   });
 
@@ -127,11 +129,7 @@ const Cart = () => {
   // ==========================================================
 
   const cart = useMemo(() => {
-    if (!Array.isArray(data?.data)) {
-      return [];
-    }
-
-    return data.data;
+    return Array.isArray(data?.data) ? data.data : [];
   }, [data?.data]);
 
   // ==========================================================
@@ -141,34 +139,21 @@ const Cart = () => {
   const summary = useMemo(() => {
     const serverSummary = data?.summary || {};
 
-    const totalItems = toSafeNumber(serverSummary.totalItems);
-    const totalQuantity = toSafeNumber(serverSummary.totalQuantity);
-
-    const subtotal = toSafeNumber(serverSummary.subtotal);
-
-    const discount = toSafeNumber(
-      serverSummary.discount ?? serverSummary.totalDiscount ?? 0,
-    );
-
-    const shipping = toSafeNumber(serverSummary.shipping);
-
-    const tax = toSafeNumber(serverSummary.tax);
-
-    const grandTotal = toSafeNumber(serverSummary.grandTotal);
-
     return {
-      totalItems,
-      totalQuantity,
-      subtotal,
-      discount,
-      shipping,
-      tax,
-      grandTotal,
+      totalItems: toSafeNumber(serverSummary.totalItems),
+      totalQuantity: toSafeNumber(serverSummary.totalQuantity),
+      subtotal: toSafeNumber(serverSummary.subtotal),
+      discount: toSafeNumber(
+        serverSummary.discount ?? serverSummary.totalDiscount,
+      ),
+      shipping: toSafeNumber(serverSummary.shipping),
+      tax: toSafeNumber(serverSummary.tax),
+      grandTotal: toSafeNumber(serverSummary.grandTotal),
     };
   }, [data?.summary]);
 
   // ==========================================================
-  // FREE SHIPPING
+  // SHIPPING
   // ==========================================================
 
   const freeShippingRemaining = useMemo(() => {
@@ -182,10 +167,10 @@ const Cart = () => {
   const hasFreeShipping = summary.shipping <= 0;
 
   // ==========================================================
-  // INVALIDATE CART RELATED QUERIES
+  // INVALIDATE CART QUERIES
   // ==========================================================
 
-  const invalidateCartQueries = useCallback(async () => {
+  const refreshCart = useCallback(async () => {
     await Promise.all([
       queryClient.invalidateQueries({
         queryKey: cartQueryKey,
@@ -198,11 +183,16 @@ const Cart = () => {
       queryClient.invalidateQueries({
         queryKey: ["cart-summary"],
       }),
+
+      queryClient.invalidateQueries({
+        queryKey: ["validated-cart"],
+      }),
     ]);
   }, [queryClient, cartQueryKey]);
 
   // ==========================================================
-  // UPDATE QUANTITY MUTATION
+  // UPDATE QUANTITY
+  // PATCH /carts/:id
   // ==========================================================
 
   const quantityMutation = useMutation({
@@ -237,17 +227,20 @@ const Cart = () => {
     },
 
     onSuccess: async () => {
-      await invalidateCartQueries();
+      await refreshCart();
+
+      addToast("Cart quantity updated.", "success");
     },
 
     onError: (mutationError) => {
       console.error("UPDATE CART QUANTITY ERROR:", mutationError);
 
-      window.alert(
+      const message =
         mutationError?.response?.data?.message ||
-          mutationError?.message ||
-          "Failed to update cart quantity.",
-      );
+        mutationError?.message ||
+        "Failed to update cart quantity.";
+
+      addToast(message, "error");
     },
 
     onSettled: () => {
@@ -256,7 +249,8 @@ const Cart = () => {
   });
 
   // ==========================================================
-  // DELETE CART ITEM MUTATION
+  // DELETE CART ITEM
+  // DELETE /carts/:id
   // ==========================================================
 
   const deleteMutation = useMutation({
@@ -281,17 +275,20 @@ const Cart = () => {
     },
 
     onSuccess: async () => {
-      await invalidateCartQueries();
+      await refreshCart();
+
+      addToast("Product removed from cart.", "success");
     },
 
     onError: (mutationError) => {
       console.error("DELETE CART ITEM ERROR:", mutationError);
 
-      window.alert(
+      const message =
         mutationError?.response?.data?.message ||
-          mutationError?.message ||
-          "Failed to remove cart item.",
-      );
+        mutationError?.message ||
+        "Failed to remove cart item.";
+
+      addToast(message, "error");
     },
 
     onSettled: () => {
@@ -304,9 +301,7 @@ const Cart = () => {
   // ==========================================================
 
   const isQuantityUpdating = quantityMutation.isPending;
-
   const isDeleting = deleteMutation.isPending;
-
   const isUpdating = isQuantityUpdating || isDeleting;
 
   // ==========================================================
@@ -319,14 +314,14 @@ const Cart = () => {
         return;
       }
 
-      const quantity = toSafeNumber(item.quantity);
+      const quantity = Math.floor(toSafeNumber(item.quantity, 1));
 
-      if (!Number.isInteger(quantity) || quantity < 1) {
+      if (quantity < 1) {
         return;
       }
 
       if (quantity >= MAX_QUANTITY) {
-        window.alert(`Maximum quantity is ${MAX_QUANTITY}.`);
+        addToast(`Maximum quantity is ${MAX_QUANTITY}.`, "warning");
 
         return;
       }
@@ -336,7 +331,7 @@ const Cart = () => {
         quantity: quantity + 1,
       });
     },
-    [isUpdating, quantityMutation],
+    [isUpdating, quantityMutation, addToast],
   );
 
   // ==========================================================
@@ -349,9 +344,9 @@ const Cart = () => {
         return;
       }
 
-      const quantity = toSafeNumber(item.quantity);
+      const quantity = Math.floor(toSafeNumber(item.quantity, 1));
 
-      if (!Number.isInteger(quantity) || quantity <= 1) {
+      if (quantity <= 1) {
         return;
       }
 
@@ -404,13 +399,12 @@ const Cart = () => {
     }
 
     if (cart.length === 0) {
-      window.alert("Your cart is empty.");
-
+      addToast("Your cart is empty.", "warning");
       return;
     }
 
     navigate("/checkout");
-  }, [user, email, cart.length, navigate]);
+  }, [user, email, cart.length, navigate, addToast]);
 
   // ==========================================================
   // CONTINUE SHOPPING
@@ -434,8 +428,6 @@ const Cart = () => {
     return (
       <section className="min-h-screen bg-base-200 px-4 py-8 md:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl">
-          {/* Header Skeleton */}
-
           <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
             <div>
               <div className="h-10 w-56 animate-pulse rounded-lg bg-base-300" />
@@ -445,8 +437,6 @@ const Cart = () => {
 
             <div className="h-12 w-48 animate-pulse rounded-lg bg-base-300" />
           </div>
-
-          {/* Content Skeleton */}
 
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
             <div className="space-y-5 lg:col-span-8">
@@ -594,9 +584,7 @@ const Cart = () => {
   return (
     <section className="min-h-screen bg-base-200 px-4 py-8 md:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl">
-        {/* ================================================== */}
         {/* HEADER */}
-        {/* ================================================== */}
 
         <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
           <div>
@@ -617,9 +605,7 @@ const Cart = () => {
           </button>
         </div>
 
-        {/* ================================================== */}
         {/* BACKGROUND REFRESH */}
-        {/* ================================================== */}
 
         {isFetching && !isPending && (
           <div className="mb-5 flex items-center gap-2 text-sm text-base-content/60">
@@ -628,14 +614,10 @@ const Cart = () => {
           </div>
         )}
 
-        {/* ================================================== */}
         {/* MAIN GRID */}
-        {/* ================================================== */}
 
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
-          {/* ================================================= */}
           {/* CART ITEMS */}
-          {/* ================================================= */}
 
           <div className="space-y-5 lg:col-span-8">
             {cart.map((item) => {
@@ -643,14 +625,17 @@ const Cart = () => {
 
               const price = toSafeNumber(item?.price);
 
-              const finalPrice = toSafeNumber(item?.finalPrice);
+              const finalPrice = toSafeNumber(item?.finalPrice, price);
 
               const quantity = Math.max(
                 1,
                 Math.floor(toSafeNumber(item?.quantity, 1)),
               );
 
-              const subtotal = toSafeNumber(item?.subtotal);
+              const subtotal = toSafeNumber(
+                item?.subtotal,
+                finalPrice * quantity,
+              );
 
               const discount = toSafeNumber(item?.discount);
 
@@ -663,8 +648,6 @@ const Cart = () => {
                   key={itemId}
                   className="rounded-2xl border border-base-300 bg-base-100 p-4 shadow-sm transition hover:shadow-md md:p-5"
                 >
-                  {/* PRODUCT */}
-
                   <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
                     {/* IMAGE */}
 
@@ -808,9 +791,7 @@ const Cart = () => {
             })}
           </div>
 
-          {/* ================================================= */}
           {/* ORDER SUMMARY */}
-          {/* ================================================= */}
 
           <div className="lg:col-span-4">
             <div className="sticky top-6 rounded-2xl border border-base-300 bg-base-100 p-6 shadow-sm">
@@ -822,7 +803,7 @@ const Cart = () => {
                 <h2 className="text-2xl font-bold">Order Summary</h2>
               </div>
 
-              {/* SHIPPING PROGRESS */}
+              {/* SHIPPING */}
 
               {hasFreeShipping ? (
                 <div className="alert alert-success mt-5">
@@ -856,13 +837,11 @@ const Cart = () => {
               <div className="space-y-3">
                 <div className="flex justify-between">
                   <span>Total Items</span>
-
                   <span>{summary.totalItems}</span>
                 </div>
 
                 <div className="flex justify-between">
                   <span>Total Quantity</span>
-
                   <span>{summary.totalQuantity}</span>
                 </div>
 
@@ -940,8 +919,6 @@ const Cart = () => {
               {/* FEATURES */}
 
               <div className="space-y-5">
-                {/* DELIVERY */}
-
                 <div className="flex items-start gap-3">
                   <FaTruck className="mt-1 text-xl text-primary" />
 
@@ -954,8 +931,6 @@ const Cart = () => {
                   </div>
                 </div>
 
-                {/* PAYMENT */}
-
                 <div className="flex items-start gap-3">
                   <FaShieldAlt className="mt-1 text-xl text-success" />
 
@@ -967,8 +942,6 @@ const Cart = () => {
                     </p>
                   </div>
                 </div>
-
-                {/* RETURNS */}
 
                 <div className="flex items-start gap-3">
                   <FaShoppingCart className="mt-1 text-xl text-warning" />

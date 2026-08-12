@@ -22,7 +22,6 @@ const Register = () => {
   const {
     createUser,
     updateUserProfile,
-    refreshUser,
     loading: authLoading,
   } = useContext(AuthContext);
 
@@ -40,7 +39,7 @@ const Register = () => {
   const location = useLocation();
 
   // ============================================================
-  // STATE
+  // LOCAL STATE
   // ============================================================
 
   const [loading, setLoading] = useState(false);
@@ -86,6 +85,10 @@ const Register = () => {
     setLoading(true);
 
     try {
+      // --------------------------------------------------------
+      // CLEAN FORM DATA
+      // --------------------------------------------------------
+
       const name = String(formData.name || "").trim();
 
       const email = String(formData.email || "")
@@ -94,9 +97,9 @@ const Register = () => {
 
       const passwordValue = String(formData.password || "");
 
-      // ========================================================
-      // BASIC VALIDATION
-      // ========================================================
+      // --------------------------------------------------------
+      // EXTRA VALIDATION
+      // --------------------------------------------------------
 
       if (!name) {
         throw new Error("Full name is required.");
@@ -110,52 +113,57 @@ const Register = () => {
         throw new Error("Password is required.");
       }
 
-      // ========================================================
+      // --------------------------------------------------------
       // 1. CREATE FIREBASE ACCOUNT
-      // ========================================================
+      // --------------------------------------------------------
 
       const credential = await createUser(email, passwordValue);
 
       const firebaseUser = credential?.user;
 
       if (!firebaseUser) {
-        throw new Error("Unable to create the authentication account.");
+        throw new Error("Unable to create your authentication account.");
       }
 
-      // ========================================================
+      // --------------------------------------------------------
       // 2. UPDATE FIREBASE PROFILE
-      // ========================================================
-      // updateUserProfile() already:
       //
-      // 1. Updates Firebase displayName/photoURL
-      // 2. Saves the user to MongoDB
+      // updateUserProfile() inside AuthProvider:
       //
-      // Therefore, DO NOT call saveUserToDatabase()
-      // separately here.
+      // Firebase profile
+      //       ↓
+      // MongoDB /users
+      //
+      // AuthProvider's onAuthStateChanged then handles:
+      //
+      // Firebase user
+      //       ↓
+      // MongoDB
+      //       ↓
+      // /auth/jwt
+      //       ↓
+      // /auth/me
+      //       ↓
+      // Application user
+      // --------------------------------------------------------
 
       await updateUserProfile(name, "");
 
-      // ========================================================
-      // 3. LOAD FINAL APPLICATION USER
-      // ========================================================
-
-      await refreshUser();
-
-      // ========================================================
-      // 4. RESET FORM
-      // ========================================================
+      // --------------------------------------------------------
+      // RESET FORM
+      // --------------------------------------------------------
 
       reset();
 
-      // ========================================================
-      // 5. SUCCESS MESSAGE
-      // ========================================================
+      // --------------------------------------------------------
+      // SUCCESS MESSAGE
+      // --------------------------------------------------------
 
       addToast("Registration successful! Welcome to Biscuit Shop.", "success");
 
-      // ========================================================
-      // 6. REDIRECT
-      // ========================================================
+      // --------------------------------------------------------
+      // REDIRECT
+      // --------------------------------------------------------
 
       const redirectPath = location.state?.from?.pathname || "/";
 
@@ -165,7 +173,11 @@ const Register = () => {
     } catch (error) {
       console.error("REGISTER ERROR:", error);
 
-      let message = "Registration failed.";
+      let message = "Registration failed. Please try again.";
+
+      // --------------------------------------------------------
+      // FIREBASE ERRORS
+      // --------------------------------------------------------
 
       switch (error?.code) {
         case "auth/email-already-in-use":
@@ -191,6 +203,10 @@ const Register = () => {
         case "auth/operation-not-allowed":
           message = "Email and password registration is currently disabled.";
           break;
+
+        // ------------------------------------------------------
+        // SERVER ERRORS
+        // ------------------------------------------------------
 
         default:
           message = error?.response?.data?.message || error?.message || message;
@@ -227,7 +243,7 @@ const Register = () => {
           </div>
 
           {/* ==================================================
-              FORM
+              REGISTER FORM
           ================================================== */}
 
           <form
