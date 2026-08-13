@@ -2,95 +2,128 @@ import { useContext, useEffect, useState } from "react";
 import axios from "axios";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FaCartPlus, FaSpinner, FaStar } from "react-icons/fa";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { AuthContext } from "../../Auth/AuthProvider";
 import { useToast } from "../../context/ToastProvider";
 import { useFlyToCart } from "../../hooks/useFlyToCart";
 
-const API_URL = import.meta.env.VITE_API_URL;
+// ============================================================
+// CONFIG
+// ============================================================
+
+const API_URL = String(import.meta.env.VITE_API_URL || "")
+  .trim()
+  .replace(/\/+$/, "");
 
 const PRODUCTS_PER_PAGE = 8;
 
+const PRODUCTS_STALE_TIME = 1000 * 60 * 2;
+const PRODUCTS_GC_TIME = 1000 * 60 * 10;
+
+// ============================================================
+// API
+// ============================================================
+
+const fetchProducts = async ({ queryKey, signal }) => {
+  const [, page] = queryKey;
+
+  if (!API_URL) {
+    throw new Error("API URL is not configured.");
+  }
+
+  const response = await axios.get(`${API_URL}/products`, {
+    params: {
+      page,
+      limit: PRODUCTS_PER_PAGE,
+    },
+    signal,
+    timeout: 15000,
+  });
+
+  if (!response.data?.success) {
+    throw new Error(response.data?.message || "Failed to load products.");
+  }
+
+  return response.data;
+};
+
+// ============================================================
+// HELPERS
+// ============================================================
+
+const safeNumber = (value, fallback = 0) => {
+  const number = Number(value);
+
+  return Number.isFinite(number) ? number : fallback;
+};
+
+const getFinalPrice = (price, discount) => {
+  const safePrice = Math.max(safeNumber(price), 0);
+
+  const safeDiscount = Math.min(Math.max(safeNumber(discount), 0), 100);
+
+  return Math.max(
+    Number((safePrice - (safePrice * safeDiscount) / 100).toFixed(2)),
+    0,
+  );
+};
+
+// ============================================================
+// COMPONENT
+// ============================================================
+
 const ProductCard = () => {
-  // ============================================================
+  // ==========================================================
   // ROUTER
-  // ============================================================
+  // ==========================================================
 
   const navigate = useNavigate();
+  const location = useLocation();
 
-  // ============================================================
+  // ==========================================================
   // REACT QUERY
-  // ============================================================
+  // ==========================================================
 
   const queryClient = useQueryClient();
 
-  // ============================================================
+  // ==========================================================
   // AUTH
-  // ============================================================
+  // ==========================================================
 
   const { user } = useContext(AuthContext);
 
-  // ============================================================
+  // ==========================================================
   // TOAST
-  // ============================================================
+  // ==========================================================
 
   const { addToast } = useToast();
 
-  // ============================================================
+  // ==========================================================
   // FLY TO CART
-  // ============================================================
+  // ==========================================================
 
   const { flyToCart } = useFlyToCart();
 
-  // ============================================================
+  // ==========================================================
   // LOCAL STATE
-  // ============================================================
+  // ==========================================================
 
   const [currentPage, setCurrentPage] = useState(1);
   const [addingProductId, setAddingProductId] = useState(null);
 
-  // ============================================================
-  // FETCH PRODUCTS
-  // ============================================================
-
-  const fetchProducts = async ({ queryKey, signal }) => {
-    const [, page] = queryKey;
-
-    if (!API_URL) {
-      throw new Error("API URL is not configured.");
-    }
-
-    const response = await axios.get(`${API_URL}/products`, {
-      params: {
-        page,
-        limit: PRODUCTS_PER_PAGE,
-      },
-
-      signal,
-
-      timeout: 15000,
-    });
-
-    if (!response.data?.success) {
-      throw new Error(response.data?.message || "Failed to load products.");
-    }
-
-    return response.data;
-  };
-
-  // ============================================================
+  // ==========================================================
   // PRODUCTS QUERY
-  // ============================================================
+  // ==========================================================
 
   const { data, isLoading, isError, error, isFetching, refetch } = useQuery({
     queryKey: ["products", currentPage],
 
     queryFn: fetchProducts,
 
-    staleTime: 1000 * 60 * 2,
+    staleTime: PRODUCTS_STALE_TIME,
 
-    gcTime: 1000 * 60 * 10,
+    gcTime: PRODUCTS_GC_TIME,
 
     retry: 1,
 
@@ -101,9 +134,9 @@ const ProductCard = () => {
     placeholderData: (previousData) => previousData,
   });
 
-  // ============================================================
+  // ==========================================================
   // RESPONSE DATA
-  // ============================================================
+  // ==========================================================
 
   const products = Array.isArray(data?.data) ? data.data : [];
 
@@ -112,11 +145,11 @@ const ProductCard = () => {
       ? data.pagination
       : {};
 
-  const totalPages = Math.max(Number(pagination.totalPages) || 1, 1);
+  const totalPages = Math.max(safeNumber(pagination.totalPages, 1), 1);
 
-  // ============================================================
+  // ==========================================================
   // PREFETCH NEXT PAGE
-  // ============================================================
+  // ==========================================================
 
   useEffect(() => {
     if (currentPage >= totalPages) {
@@ -128,15 +161,15 @@ const ProductCard = () => {
 
       queryFn: fetchProducts,
 
-      staleTime: 1000 * 60 * 2,
+      staleTime: PRODUCTS_STALE_TIME,
 
-      gcTime: 1000 * 60 * 10,
+      gcTime: PRODUCTS_GC_TIME,
     });
   }, [currentPage, totalPages, queryClient]);
 
-  // ============================================================
-  // GO TO PAGE
-  // ============================================================
+  // ==========================================================
+  // PAGE NAVIGATION
+  // ==========================================================
 
   const goToPage = (page) => {
     const numericPage = Number(page);
@@ -159,64 +192,67 @@ const ProductCard = () => {
     });
   };
 
-  // ============================================================
+  // ==========================================================
   // LOGIN REDIRECT
-  // ============================================================
+  // ==========================================================
 
   const redirectToLogin = () => {
     navigate("/login", {
       state: {
         from: {
-          pathname: window.location.pathname,
-
-          search: window.location.search,
+          pathname: location.pathname,
+          search: location.search,
         },
       },
     });
   };
 
-  // ============================================================
+  // ==========================================================
   // ADD TO CART
-  // ============================================================
+  // ==========================================================
 
   const handleAddToCart = async (product, event) => {
     event.stopPropagation();
 
-    // ----------------------------------------------------------
-    // Authentication
-    // ----------------------------------------------------------
+    // --------------------------------------------------------
+    // AUTHENTICATION
+    // --------------------------------------------------------
 
     if (!user) {
-      addToast("Please login first.", "warning");
+      addToast("Please login before adding products to your cart.", "warning");
 
       redirectToLogin();
 
       return;
     }
 
-    // ----------------------------------------------------------
-    // Product validation
-    // ----------------------------------------------------------
+    // --------------------------------------------------------
+    // PRODUCT ID
+    // --------------------------------------------------------
 
     const productId = String(product?._id || "").trim();
 
     if (!productId) {
-      addToast("Invalid product.", "error");
+      addToast("This product has an invalid ID.", "error");
 
       return;
     }
 
-    const stock = Number(product?.stock);
+    // --------------------------------------------------------
+    // STOCK
+    // --------------------------------------------------------
 
-    if (!Number.isFinite(stock) || stock <= 0) {
-      addToast("This product is out of stock.", "warning");
+    const stock = Math.max(safeNumber(product?.stock), 0);
+
+    if (stock <= 0) {
+      addToast("This product is currently out of stock.", "warning");
 
       return;
     }
 
-    // ----------------------------------------------------------
-    // Prevent duplicate request
-    // ----------------------------------------------------------
+    // --------------------------------------------------------
+    // PREVENT DUPLICATE REQUESTS
+    // --------------------------------------------------------
 
     if (addingProductId !== null) {
       return;
@@ -224,33 +260,32 @@ const ProductCard = () => {
 
     setAddingProductId(productId);
 
+    // --------------------------------------------------------
+    // ANIMATION ELEMENTS
+    // --------------------------------------------------------
+
+    const productCard = event.currentTarget.closest(".product-card");
+
+    const productImage = productCard?.querySelector("img");
+
+    const cartIcon = document.querySelector(".cart-icon");
+
     try {
-      // --------------------------------------------------------
-      // Find animation elements BEFORE API request
-      // --------------------------------------------------------
-
-      const productCard = event.currentTarget.closest(".product-card");
-
-      const productImage = productCard?.querySelector("img");
-
-      const cartIcon = document.querySelector(".cart-icon");
-
-      // --------------------------------------------------------
+      // ======================================================
       // POST /carts
       //
       // IMPORTANT:
       //
-      // Only send productId + quantity.
+      // Only productId + quantity are sent.
       //
-      // Backend should load the product from MongoDB and
-      // calculate the actual price/product information.
-      // --------------------------------------------------------
+      // The backend should load the actual product from
+      // MongoDB and calculate the correct cart information.
+      // ======================================================
 
       const response = await axios.post(
         `${API_URL}/carts`,
         {
           productId,
-
           quantity: 1,
         },
         {
@@ -264,15 +299,19 @@ const ProductCard = () => {
         },
       );
 
+      // ======================================================
+      // RESPONSE VALIDATION
+      // ======================================================
+
       if (!response.data?.success) {
         throw new Error(
           response.data?.message || "Failed to add product to cart.",
         );
       }
 
-      // --------------------------------------------------------
-      // Success toast
-      // --------------------------------------------------------
+      // ======================================================
+      // SUCCESS MESSAGE
+      // ======================================================
 
       const productName =
         typeof product?.name === "string" && product.name.trim()
@@ -281,9 +320,9 @@ const ProductCard = () => {
 
       addToast(`${productName} added to your cart.`, "success");
 
-      // --------------------------------------------------------
-      // Refresh cart queries
-      // --------------------------------------------------------
+      // ======================================================
+      // INVALIDATE CART QUERIES
+      // ======================================================
 
       await Promise.all([
         queryClient.invalidateQueries({
@@ -303,9 +342,9 @@ const ProductCard = () => {
         }),
       ]);
 
-      // --------------------------------------------------------
-      // Fly product image to cart
-      // --------------------------------------------------------
+      // ======================================================
+      // FLY TO CART ANIMATION
+      // ======================================================
 
       if (productImage && cartIcon && typeof flyToCart === "function") {
         flyToCart(productImage, cartIcon);
@@ -313,9 +352,9 @@ const ProductCard = () => {
     } catch (error) {
       console.error("ADD TO CART ERROR:", error);
 
-      // --------------------------------------------------------
-      // Unauthorized
-      // --------------------------------------------------------
+      // ======================================================
+      // 401
+      // ======================================================
 
       if (error?.response?.status === 401) {
         addToast("Your session has expired. Please login again.", "warning");
@@ -325,9 +364,9 @@ const ProductCard = () => {
         return;
       }
 
-      // --------------------------------------------------------
-      // Forbidden
-      // --------------------------------------------------------
+      // ======================================================
+      // 403
+      // ======================================================
 
       if (error?.response?.status === 403) {
         addToast(
@@ -339,9 +378,9 @@ const ProductCard = () => {
         return;
       }
 
-      // --------------------------------------------------------
-      // Not found
-      // --------------------------------------------------------
+      // ======================================================
+      // 404
+      // ======================================================
 
       if (error?.response?.status === 404) {
         addToast(
@@ -353,23 +392,36 @@ const ProductCard = () => {
         return;
       }
 
-      // --------------------------------------------------------
-      // Conflict
-      // --------------------------------------------------------
+      // ======================================================
+      // 409
+      // ======================================================
 
       if (error?.response?.status === 409) {
         addToast(
           error?.response?.data?.message ||
-            "This product is currently unavailable.",
+            "The requested quantity is not currently available.",
           "warning",
         );
 
         return;
       }
 
-      // --------------------------------------------------------
-      // Generic error
-      // --------------------------------------------------------
+      // ======================================================
+      // 422
+      // ======================================================
+
+      if (error?.response?.status === 422) {
+        addToast(
+          error?.response?.data?.message || "Invalid cart information.",
+          "warning",
+        );
+
+        return;
+      }
+
+      // ======================================================
+      // NETWORK / SERVER / GENERIC ERROR
+      // ======================================================
 
       const message =
         error?.response?.data?.message ||
@@ -382,9 +434,9 @@ const ProductCard = () => {
     }
   };
 
-  // ============================================================
+  // ==========================================================
   // LOADING UI
-  // ============================================================
+  // ==========================================================
 
   if (isLoading) {
     return (
@@ -429,19 +481,19 @@ const ProductCard = () => {
     );
   }
 
-  // ============================================================
+  // ==========================================================
   // ERROR UI
-  // ============================================================
+  // ==========================================================
 
   if (isError) {
     return (
-      <section className="mx-auto w-full max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
-        <div className="flex flex-col items-center justify-center text-center">
+      <section className="mx-auto flex w-full max-w-7xl items-center justify-center px-4 py-16 sm:px-6 lg:px-8">
+        <div className="flex max-w-md flex-col items-center text-center">
           <div className="text-5xl">⚠️</div>
 
           <h2 className="mt-4 text-2xl font-bold">Failed to load products</h2>
 
-          <p className="mt-2 max-w-md text-sm text-base-content/60">
+          <p className="mt-2 text-sm text-base-content/60">
             {error?.message || "Something went wrong while loading products."}
           </p>
 
@@ -465,14 +517,14 @@ const ProductCard = () => {
     );
   }
 
-  // ============================================================
+  // ==========================================================
   // EMPTY UI
-  // ============================================================
+  // ==========================================================
 
   if (products.length === 0) {
     return (
-      <section className="mx-auto w-full max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
-        <div className="flex flex-col items-center justify-center text-center">
+      <section className="mx-auto flex w-full max-w-7xl items-center justify-center px-4 py-16 sm:px-6 lg:px-8">
+        <div className="flex flex-col items-center text-center">
           <div className="text-5xl">🍪</div>
 
           <h2 className="mt-4 text-2xl font-bold">No Products Found</h2>
@@ -485,9 +537,9 @@ const ProductCard = () => {
     );
   }
 
-  // ============================================================
+  // ==========================================================
   // PRODUCT LIST
-  // ============================================================
+  // ==========================================================
 
   return (
     <section className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
@@ -518,33 +570,30 @@ const ProductCard = () => {
 
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
         {products.map((product) => {
-          const productId = String(product?._id || "");
+          const productId = String(product?._id || "").trim();
 
           if (!productId) {
             return null;
           }
 
           // ----------------------------------------------------
-          // Product values
+          // PRODUCT DATA
           // ----------------------------------------------------
 
-          const price = Math.max(Number(product?.price) || 0, 0);
+          const price = Math.max(safeNumber(product?.price), 0);
 
           const discount = Math.min(
-            Math.max(Number(product?.discount) || 0, 0),
+            Math.max(safeNumber(product?.discount), 0),
             100,
           );
 
-          const finalPrice = Math.max(
-            Number((price - (price * discount) / 100).toFixed(2)),
-            0,
-          );
+          const finalPrice = getFinalPrice(price, discount);
 
-          const stock = Math.max(Number(product?.stock) || 0, 0);
+          const stock = Math.max(safeNumber(product?.stock), 0);
 
-          const rating = Math.min(Math.max(Number(product?.rating) || 0, 0), 5);
+          const rating = Math.min(Math.max(safeNumber(product?.rating), 0), 5);
 
-          const reviews = Math.max(Number(product?.reviews) || 0, 0);
+          const reviews = Math.max(safeNumber(product?.reviews), 0);
 
           const imageUrl =
             typeof product?.image === "string" ? product.image.trim() : "";
@@ -567,14 +616,22 @@ const ProductCard = () => {
           const isAdding = addingProductId === productId;
 
           // ----------------------------------------------------
-          // Product card
+          // DETAILS NAVIGATION
+          // ----------------------------------------------------
+
+          const openProductDetails = () => {
+            navigate(`/product/${productId}`);
+          };
+
+          // ----------------------------------------------------
+          // CARD
           // ----------------------------------------------------
 
           return (
             <article
               key={productId}
               className="product-card group cursor-pointer overflow-hidden rounded-2xl border border-base-300 bg-base-100 shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-xl"
-              onClick={() => navigate(`/product/${productId}`)}
+              onClick={openProductDetails}
             >
               {/* ==================================================
                   IMAGE
@@ -598,7 +655,7 @@ const ProductCard = () => {
                   </div>
                 )}
 
-                {/* Discount */}
+                {/* DISCOUNT */}
 
                 {discount > 0 && (
                   <span className="absolute left-3 top-3 rounded-full bg-error px-3 py-1 text-xs font-bold text-error-content shadow">
@@ -606,7 +663,7 @@ const ProductCard = () => {
                   </span>
                 )}
 
-                {/* Hot */}
+                {/* HOT */}
 
                 {discount >= 15 && (
                   <span className="absolute right-3 top-3 rounded-full bg-warning px-3 py-1 text-xs font-bold text-warning-content shadow">
@@ -620,19 +677,19 @@ const ProductCard = () => {
               ================================================== */}
 
               <div className="p-4">
-                {/* Brand */}
+                {/* BRAND */}
 
-                <span className="inline-flex rounded-full bg-warning/10 px-3 py-1 text-xs font-medium text-warning">
-                  {brand}
+                <span className="inline-flex max-w-full rounded-full bg-warning/10 px-3 py-1 text-xs font-medium text-warning">
+                  <span className="truncate">{brand}</span>
                 </span>
 
-                {/* Name */}
+                {/* NAME */}
 
                 <h3 className="mt-3 min-h-[48px] line-clamp-2 font-bold">
                   {productName}
                 </h3>
 
-                {/* Category */}
+                {/* CATEGORY */}
 
                 <div className="mt-2">
                   <span className="inline-flex rounded-full bg-base-200 px-3 py-1 text-xs capitalize text-base-content/60">
@@ -640,7 +697,7 @@ const ProductCard = () => {
                   </span>
                 </div>
 
-                {/* Rating */}
+                {/* RATING */}
 
                 <div className="mt-4 flex items-center justify-between">
                   <div className="flex items-center gap-1 text-warning">
@@ -656,7 +713,7 @@ const ProductCard = () => {
                   </span>
                 </div>
 
-                {/* Price */}
+                {/* PRICE */}
 
                 <div className="mt-4">
                   <h4 className="text-2xl font-bold text-warning">
@@ -670,7 +727,7 @@ const ProductCard = () => {
                   )}
                 </div>
 
-                {/* Stock */}
+                {/* STOCK */}
 
                 <div className="mt-3">
                   {stock > 0 ? (
@@ -689,21 +746,21 @@ const ProductCard = () => {
                 ================================================== */}
 
                 <div className="mt-5 grid grid-cols-2 gap-3">
-                  {/* Details */}
+                  {/* DETAILS */}
 
                   <button
                     type="button"
                     onClick={(event) => {
                       event.stopPropagation();
 
-                      navigate(`/product/${productId}`);
+                      openProductDetails();
                     }}
                     className="h-11 rounded-xl border border-base-300 font-semibold transition hover:bg-base-200"
                   >
                     Details
                   </button>
 
-                  {/* Cart */}
+                  {/* CART */}
 
                   <button
                     type="button"
@@ -739,8 +796,8 @@ const ProductCard = () => {
       ====================================================== */}
 
       {totalPages > 1 && (
-        <div className="mt-12 flex flex-wrap justify-center gap-3">
-          {/* Previous */}
+        <div className="mt-12 flex flex-wrap items-center justify-center gap-3">
+          {/* PREVIOUS */}
 
           <button
             type="button"
@@ -751,27 +808,30 @@ const ProductCard = () => {
             Previous
           </button>
 
-          {/* Page Numbers */}
+          {/* PAGE NUMBERS */}
 
-          {Array.from({ length: totalPages }, (_, index) => index + 1).map(
-            (page) => (
-              <button
-                type="button"
-                key={page}
-                disabled={isFetching}
-                onClick={() => goToPage(page)}
-                className={`h-10 w-10 rounded-xl font-semibold transition ${
-                  currentPage === page
-                    ? "bg-warning text-warning-content"
-                    : "border border-base-300 hover:bg-base-200"
-                } disabled:cursor-not-allowed disabled:opacity-60`}
-              >
-                {page}
-              </button>
-            ),
-          )}
+          {Array.from(
+            {
+              length: totalPages,
+            },
+            (_, index) => index + 1,
+          ).map((page) => (
+            <button
+              type="button"
+              key={page}
+              disabled={isFetching}
+              onClick={() => goToPage(page)}
+              className={`h-10 w-10 rounded-xl font-semibold transition ${
+                currentPage === page
+                  ? "bg-warning text-warning-content"
+                  : "border border-base-300 hover:bg-base-200"
+              } disabled:cursor-not-allowed disabled:opacity-60`}
+            >
+              {page}
+            </button>
+          ))}
 
-          {/* Next */}
+          {/* NEXT */}
 
           <button
             type="button"
