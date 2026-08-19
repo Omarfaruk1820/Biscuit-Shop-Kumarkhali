@@ -575,7 +575,7 @@ const Navbar = () => {
 
             {/* USER ACTIONS */}
 
-            {isLoggedIn && (
+            {/* {isLoggedIn && (
               <div className="mt-5 space-y-2 border-t border-gray-200 pt-5">
                 <Link
                   to="/profile"
@@ -620,7 +620,7 @@ const Navbar = () => {
                   <span>Logout</span>
                 </button>
               </div>
-            )}
+            )} */}
           </div>
         </div>
       </nav>

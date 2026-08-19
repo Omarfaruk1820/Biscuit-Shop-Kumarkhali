@@ -14,7 +14,7 @@ import {
   FaSignInAlt,
 } from "react-icons/fa";
 
-import auth from "./firebase.config";
+import { auth } from "./firebase.config";
 import { AuthContext } from "./AuthProvider";
 import { useToast } from "../context/ToastProvider";
 import GoogleSignIn from "./GoogleSign";
@@ -81,7 +81,7 @@ const Login = () => {
   });
 
   // ==========================================================
-  // EMAIL
+  // FORM VALUES
   // ==========================================================
 
   const emailValue = watch("email");
@@ -93,7 +93,7 @@ const Login = () => {
   const isSubmitting = loading || authLoading;
 
   // ==========================================================
-  // LOAD REMEMBERED EMAIL
+  // REMEMBER EMAIL
   // ==========================================================
 
   useEffect(() => {
@@ -113,6 +113,15 @@ const Login = () => {
 
   // ==========================================================
   // REDIRECT AFTER LOGIN
+  // ==========================================================
+  //
+  // IMPORTANT:
+  //
+  // Login.jsx does NOT navigate immediately after loginUser().
+  //
+  // AuthProvider updates `user`.
+  // Once `user` exists, this effect redirects the user.
+  //
   // ==========================================================
 
   useEffect(() => {
@@ -148,9 +157,9 @@ const Login = () => {
     setLoading(true);
 
     try {
-      // ------------------------------------------------------
+      // ======================================================
       // CLEAN INPUT
-      // ------------------------------------------------------
+      // ======================================================
 
       const email = String(formData.email || "")
         .trim()
@@ -158,9 +167,9 @@ const Login = () => {
 
       const password = String(formData.password || "");
 
-      // ------------------------------------------------------
+      // ======================================================
       // EXTRA VALIDATION
-      // ------------------------------------------------------
+      // ======================================================
 
       if (!email) {
         throw new Error("Email is required.");
@@ -174,9 +183,9 @@ const Login = () => {
         throw new Error("Password is required.");
       }
 
-      // ------------------------------------------------------
+      // ======================================================
       // REMEMBER EMAIL
-      // ------------------------------------------------------
+      // ======================================================
 
       try {
         if (rememberMe) {
@@ -191,27 +200,27 @@ const Login = () => {
         );
       }
 
-      // ------------------------------------------------------
+      // ======================================================
       // LOGIN
-      // ------------------------------------------------------
+      // ======================================================
       //
       // AuthProvider handles:
       //
-      // Firebase login
-      //       ↓
-      // Email verification
-      //       ↓
+      // Firebase signInWithEmailAndPassword()
+      //              ↓
+      // Firebase email verification check
+      //              ↓
       // POST /users
-      //       ↓
+      //              ↓
       // POST /auth/jwt
-      //       ↓
+      //              ↓
       // GET /auth/me
-      //       ↓
+      //              ↓
       // setUser()
       //
-      // Therefore Login.jsx does NOT repeat those operations.
+      // Login.jsx should NOT duplicate these operations.
       //
-      // ------------------------------------------------------
+      // ======================================================
 
       const serverUser = await loginUser(email, password);
 
@@ -219,36 +228,40 @@ const Login = () => {
         throw new Error("Login could not be completed.");
       }
 
-      // ------------------------------------------------------
+      // ======================================================
       // CLEAR PASSWORD
-      // ------------------------------------------------------
+      // ======================================================
 
       reset({
         email: rememberMe ? email : "",
         password: "",
       });
 
-      // ------------------------------------------------------
-      // SUCCESS
-      // ------------------------------------------------------
-      //
-      // Do NOT navigate here.
-      //
-      // AuthProvider updates `user`.
-      // The redirect useEffect handles navigation.
-      //
-      // ------------------------------------------------------
+      // ======================================================
+      // SUCCESS TOAST
+      // ======================================================
 
       addToast("Login successful! Welcome back.", "success");
+
+      // ======================================================
+      // IMPORTANT
+      // ======================================================
+      //
+      // Do NOT call navigate() here.
+      //
+      // AuthProvider updates `user`.
+      // The redirect useEffect above handles navigation.
+      //
+      // ======================================================
     } catch (error) {
       console.error(
         "LOGIN ERROR:",
         error?.response?.data || error?.message || error,
       );
 
-      // ------------------------------------------------------
+      // ======================================================
       // ERROR MESSAGE
-      // ------------------------------------------------------
+      // ======================================================
 
       let message = "Unable to login. Please try again.";
 
@@ -324,9 +337,9 @@ const Login = () => {
       .trim()
       .toLowerCase();
 
-    // --------------------------------------------------------
+    // ========================================================
     // EMAIL REQUIRED
-    // --------------------------------------------------------
+    // ========================================================
 
     if (!email) {
       addToast("Please enter your email address first.", "warning");
@@ -334,9 +347,9 @@ const Login = () => {
       return;
     }
 
-    // --------------------------------------------------------
+    // ========================================================
     // EMAIL VALIDATION
-    // --------------------------------------------------------
+    // ========================================================
 
     if (!EMAIL_REGEX.test(email)) {
       addToast("Please enter a valid email address.", "warning");
@@ -345,6 +358,10 @@ const Login = () => {
     }
 
     try {
+      // ======================================================
+      // FIREBASE PASSWORD RESET
+      // ======================================================
+
       await sendPasswordResetEmail(auth, email, {
         url: `${window.location.origin}/login`,
         handleCodeInApp: false,

@@ -1,7 +1,5 @@
 import { useContext, useState } from "react";
 
-import { sendEmailVerification, signOut } from "firebase/auth";
-
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { useForm } from "react-hook-form";
@@ -16,9 +14,9 @@ import {
 } from "react-icons/fa";
 
 import { AuthContext } from "./AuthProvider";
-import auth from "./firebase.config";
 
 import { useToast } from "../context/ToastProvider";
+
 import GoogleSignIn from "./GoogleSign";
 
 // ============================================================
@@ -46,11 +44,13 @@ const Register = () => {
   const location = useLocation();
 
   // ==========================================================
-  // STATE
+  // LOCAL STATE
   // ==========================================================
 
   const [loading, setLoading] = useState(false);
+
   const [showPassword, setShowPassword] = useState(false);
+
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   // ==========================================================
@@ -76,7 +76,15 @@ const Register = () => {
     },
   });
 
+  // ==========================================================
+  // PASSWORD
+  // ==========================================================
+
   const password = watch("password");
+
+  // ==========================================================
+  // SUBMITTING
+  // ==========================================================
 
   const isSubmitting = loading || authLoading;
 
@@ -91,11 +99,9 @@ const Register = () => {
 
     setLoading(true);
 
-    let firebaseUser = null;
-
     try {
       // ======================================================
-      // CLEAN DATA
+      // CLEAN FORM DATA
       // ======================================================
 
       const name = String(formData.name || "").trim();
@@ -131,78 +137,31 @@ const Register = () => {
       }
 
       // ======================================================
-      // CREATE FIREBASE + MONGODB USER
+      // CREATE ACCOUNT
+      //
+      // AuthProvider handles:
+      //
+      // createUserWithEmailAndPassword()
+      //        ↓
+      // updateProfile()
+      //        ↓
+      // POST /users
+      //        ↓
+      // sendEmailVerification()
+      //
+      // It does NOT create /auth/jwt.
       // ======================================================
 
-      /**
-       * AuthProvider handles:
-       *
-       * createUserWithEmailAndPassword()
-       *        ↓
-       * updateProfile()
-       *        ↓
-       * POST /users
-       *
-       * IMPORTANT:
-       *
-       * createUser() does NOT create:
-       *
-       * /auth/jwt
-       * /auth/me
-       *
-       * Therefore registration is NOT treated as login.
-       */
-
-      const credential = await createUser(email, passwordValue, name);
-
-      firebaseUser = credential?.user;
-
-      if (!firebaseUser) {
-        throw new Error("Unable to create your account.");
-      }
-
-      // ======================================================
-      // REFRESH FIREBASE USER
-      // ======================================================
-
-      await firebaseUser.reload();
-
-      const currentFirebaseUser = auth.currentUser;
-
-      if (!currentFirebaseUser) {
-        throw new Error("Your Firebase account could not be loaded.");
-      }
-
-      // ======================================================
-      // SEND EMAIL VERIFICATION
-      // ======================================================
-
-      if (!currentFirebaseUser.emailVerified) {
-        await sendEmailVerification(currentFirebaseUser);
-      }
-
-      // ======================================================
-      // SIGN OUT FIREBASE
-      // ======================================================
-
-      /**
-       * Very important.
-       *
-       * Firebase automatically signs the newly-created
-       * account in.
-       *
-       * Registration should NOT remain logged in.
-       */
-
-      await signOut(auth);
-
-      firebaseUser = null;
+      await createUser(email, passwordValue, name);
 
       // ======================================================
       // RESET FORM
       // ======================================================
 
       reset();
+
+      setShowPassword(false);
+      setShowConfirmPassword(false);
 
       // ======================================================
       // SUCCESS TOAST
@@ -214,17 +173,23 @@ const Register = () => {
       );
 
       // ======================================================
-      // REDIRECT
+      // LOGIN REDIRECT
+      //
+      // IMPORTANT:
+      //
+      // We do NOT redirect to home.
+      //
+      // User must verify email and then login.
       // ======================================================
 
-      const redirectPath = location.state?.from?.pathname || "/";
+      const fromPath = location.state?.from?.pathname || "/";
 
       navigate("/login", {
         replace: true,
 
         state: {
           from: {
-            pathname: redirectPath,
+            pathname: fromPath,
           },
 
           registrationSuccess: true,
@@ -243,22 +208,14 @@ const Register = () => {
       );
 
       // ======================================================
-      // FIREBASE CLEANUP
-      // ======================================================
-
-      if (firebaseUser || auth.currentUser) {
-        try {
-          await signOut(auth);
-        } catch (signOutError) {
-          console.error("REGISTER CLEANUP LOGOUT ERROR:", signOutError);
-        }
-      }
-
-      // ======================================================
       // ERROR MESSAGE
       // ======================================================
 
       let message = "Registration failed. Please try again.";
+
+      // ======================================================
+      // FIREBASE ERRORS
+      // ======================================================
 
       switch (error?.code) {
         case "auth/email-already-in-use":
@@ -294,9 +251,17 @@ const Register = () => {
             "Authentication quota has been exceeded. Please try again later.";
           break;
 
+        // ====================================================
+        // BACKEND ERRORS
+        // ====================================================
+
         default:
           message = error?.response?.data?.message || error?.message || message;
       }
+
+      // ======================================================
+      // ERROR TOAST
+      // ======================================================
 
       addToast(message, "error");
     } finally {
@@ -614,7 +579,7 @@ const Register = () => {
           </form>
 
           {/* ==================================================
-              GOOGLE SIGN IN
+              GOOGLE
           ================================================== */}
 
           <div className="divider my-7">OR</div>
