@@ -1,5 +1,7 @@
 import { useContext, useMemo, useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+
 import {
   FaBars,
   FaTimes,
@@ -13,262 +15,313 @@ import {
   FaChartLine,
 } from "react-icons/fa";
 
-import axios from "axios";
-import { useQuery } from "@tanstack/react-query";
-
 import { AuthContext } from "../../Auth/AuthProvider";
+import axiosSecure from "../../hooks/axiosSecure";
 import { useToast } from "../../context/ToastProvider";
 import MarqueeBar from "../home/MarqueeBar";
 
-const Navbar = () => {
-  // ==========================
-  // AUTH
-  // ==========================
+const REQUEST_TIMEOUT = 15000;
 
-  const { user, role, loading, signOutUser } = useContext(AuthContext);
+const CART_STALE_TIME = 1000 * 60 * 2;
+const CART_GC_TIME = 1000 * 60 * 10;
+
+const Navbar = () => {
+  const { user, loading: authLoading, signOutUser } = useContext(AuthContext);
 
   const navigate = useNavigate();
-
+  const queryClient = useQueryClient();
   const { addToast } = useToast();
-
-  // ==========================
-  // STATE
-  // ==========================
 
   const [isOpen, setIsOpen] = useState(false);
 
-  const email = user?.email || "";
+  // ==========================================================
+  // USER
+  // ==========================================================
 
-  // ==========================
-  // CART QUERY
-  // ==========================
+  const email = useMemo(
+    () =>
+      String(user?.email || "")
+        .trim()
+        .toLowerCase(),
+    [user?.email],
+  );
 
-  const {
-    data: carts = [],
-    isLoading: cartLoading,
-    isError: cartError,
-  } = useQuery({
+  const userName =
+    String(user?.name || user?.displayName || "").trim() || "User";
+
+  const userPhoto = String(user?.photo || user?.photoURL || "").trim();
+
+  const userRole = String(user?.role || "user")
+    .trim()
+    .toLowerCase();
+
+  const userStatus = String(user?.status || "active")
+    .trim()
+    .toLowerCase();
+
+  // ==========================================================
+  // AUTH STATUS
+  // ==========================================================
+
+  const isLoggedIn = !authLoading && Boolean(email) && userStatus === "active";
+
+  const isAdmin = userRole === "admin";
+
+  // ==========================================================
+  // CART
+  //
+  // Authentication is handled by the HTTP-only JWT cookie.
+  // We do NOT send email manually.
+  // ==========================================================
+
+  const { data: cartResponse, isLoading: cartLoading } = useQuery({
     queryKey: ["cart", email],
-    enabled: !!email,
+
+    enabled: isLoggedIn && Boolean(email),
 
     queryFn: async () => {
-      try {
-        const res = await axios.get(`${import.meta.env.VITE_API_URL}/carts`, {
-          params: { email },
-          withCredentials: true,
-        });
+      const response = await axiosSecure.get("/carts", {
+        withCredentials: true,
+        timeout: REQUEST_TIMEOUT,
+      });
 
-        return Array.isArray(res.data?.data) ? res.data.data : [];
-      } catch (error) {
-        console.error("Failed to fetch cart:", error);
-        return [];
+      if (!response?.data?.success) {
+        throw new Error(response?.data?.message || "Failed to load cart.");
       }
+
+      return response.data;
     },
 
-    staleTime: 1000 * 60 * 5, // 5 minutes
-    gcTime: 1000 * 60 * 10, // 10 minutes
+    staleTime: CART_STALE_TIME,
+    gcTime: CART_GC_TIME,
+
+    retry: false,
     refetchOnWindowFocus: false,
+    refetchOnReconnect: true,
   });
 
-  // ==========================
-  // CART COUNT
-  // ==========================
+  const cartItems = Array.isArray(cartResponse?.data) ? cartResponse.data : [];
 
   const cartCount = useMemo(() => {
-    if (!Array.isArray(carts)) return 0;
+    return cartItems.reduce((total, item) => {
+      const quantity = Number(item?.quantity);
 
-    return carts.reduce((total, item) => {
-      return total + (item.quantity || 1);
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        return total;
+      }
+
+      return total + quantity;
     }, 0);
-  }, [carts]);
+  }, [cartItems]);
 
-  // ==========================
-  // MOBILE MENU
-  // ==========================
+  const formattedCartCount = cartCount > 99 ? "99+" : cartCount;
 
-  const toggleMenu = () => {
-    setIsOpen((prev) => !prev);
-  };
+  // ==========================================================
+  // MENU
+  // ==========================================================
 
   const closeMenu = () => {
     setIsOpen(false);
   };
 
-  // ==========================
+  const toggleMenu = () => {
+    setIsOpen((previous) => !previous);
+  };
+
+  // ==========================================================
   // LOGOUT
-  // ==========================
+  // ==========================================================
 
   const handleLogout = async () => {
+    if (!isLoggedIn) {
+      closeMenu();
+      return;
+    }
+
     try {
       await signOutUser();
 
-      addToast("Logout successful 👋", "success");
+      queryClient.removeQueries({
+        queryKey: ["cart", email],
+      });
 
       closeMenu();
 
-      navigate("/login");
-    } catch (error) {
-      console.error(error);
+      addToast("Logout successful. See you again! 👋", "success");
 
-      addToast("Logout failed ❌", "error");
+      navigate("/login", {
+        replace: true,
+      });
+    } catch (error) {
+      console.error(
+        "NAVBAR LOGOUT ERROR:",
+        error?.response?.data || error?.message || error,
+      );
+
+      addToast(
+        error?.response?.data?.message ||
+          error?.message ||
+          "Logout failed. Please try again.",
+        "error",
+      );
     }
   };
 
-  // ==========================
-  // ACTIVE LINK STYLE
-  // ==========================
+  // ==========================================================
+  // NAV LINK CLASS
+  // ==========================================================
 
   const navLinkClass = ({ isActive }) =>
-    `flex items-center gap-2 px-3 py-2 rounded-lg font-medium transition-all duration-300 ${
+    [
+      "flex",
+      "items-center",
+      "gap-2",
+      "rounded-lg",
+      "px-3",
+      "py-2",
+      "font-medium",
+      "whitespace-nowrap",
+      "transition-all",
+      "duration-200",
+
       isActive
         ? "bg-amber-500 text-white shadow-md"
-        : "text-gray-700 hover:bg-amber-50 hover:text-amber-600"
-    }`;
-  // ==========================
-  // LOADING SKELETON
-  // ==========================
+        : "text-gray-700 hover:bg-amber-50 hover:text-amber-600",
+    ].join(" ");
 
-  if (loading) {
-    return (
-      <nav className="sticky top-0 z-50 bg-white border-b shadow-sm">
-        <div className="max-w-7xl mx-auto px-4">
-          <div className="h-16 flex items-center justify-between">
-            {/* Logo Skeleton */}
-            <div className="w-40 h-8 rounded-lg bg-gray-200 animate-pulse"></div>
-
-            {/* Desktop Menu Skeleton */}
-            <div className="hidden lg:flex items-center gap-5">
-              {[...Array(5)].map((_, index) => (
-                <div
-                  key={index}
-                  className="w-20 h-8 rounded-lg bg-gray-200 animate-pulse"
-                />
-              ))}
-            </div>
-
-            {/* Right Side Skeleton */}
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 rounded-full bg-gray-200 animate-pulse"></div>
-
-              <div className="hidden md:block w-24 h-10 rounded-lg bg-gray-200 animate-pulse"></div>
-            </div>
-          </div>
-        </div>
-      </nav>
-    );
-  }
-
-  // ==========================
+  // ==========================================================
   // PUBLIC LINKS
-  // ==========================
+  // ==========================================================
 
   const publicLinks = (
     <>
       <NavLink to="/" onClick={closeMenu} className={navLinkClass}>
         <FaHome />
-        Home
+        <span>Home</span>
       </NavLink>
 
       <NavLink to="/products" onClick={closeMenu} className={navLinkClass}>
         <FaBoxOpen />
-        Shop
+        <span>Shop</span>
       </NavLink>
 
       <NavLink to="/about" onClick={closeMenu} className={navLinkClass}>
         <FaInfoCircle />
-        About
+        <span>About</span>
       </NavLink>
 
       <NavLink to="/contact" onClick={closeMenu} className={navLinkClass}>
         <FaPhone />
-        Contact
+        <span>Contact</span>
       </NavLink>
     </>
   );
 
-  // ==========================
-  // USER LINKS
-  // ==========================
+  // ==========================================================
+  // AUTHENTICATED LINKS
+  // ==========================================================
 
-  const userLinks = user && (
-    <>
-      <NavLink to="/dashboard" onClick={closeMenu} className={navLinkClass}>
-        <FaChartLine />
-        Dashboard
-      </NavLink>
-    </>
-  );
+  const authenticatedLinks = isLoggedIn ? (
+    <NavLink to="/dashboard" onClick={closeMenu} className={navLinkClass}>
+      <FaChartLine />
+      <span>Dashboard</span>
+    </NavLink>
+  ) : null;
 
-  // ==========================
-  // ROLE BASED LINKS
-  // ==========================
+  // ==========================================================
+  // IMAGE FALLBACK
+  // ==========================================================
 
-  const roleBasedLinks = (
-    <>
-      {publicLinks}
-      {userLinks}
-    </>
-  );
+  const handleImageError = (event) => {
+    event.currentTarget.style.display = "none";
+  };
 
-  // ==========================
-  // DESKTOP NAVIGATION
-  // ==========================
+  // ==========================================================
+  // LOADING NAVBAR
+  // ==========================================================
 
-  const desktopNavigation = (
-    <div className="hidden lg:flex items-center gap-2">{roleBasedLinks}</div>
-  );
+  if (authLoading) {
+    return (
+      <>
+        <MarqueeBar />
 
-  // ==========================
-  // MOBILE NAVIGATION
-  // ==========================
+        <nav className="sticky top-0 z-50 border-b border-gray-200 bg-white shadow-sm">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div className="flex h-16 items-center justify-between">
+              <div className="h-8 w-36 animate-pulse rounded-lg bg-gray-200" />
 
-  const mobileNavigation = (
-    <div className="flex flex-col gap-2 py-2">{roleBasedLinks}</div>
-  );
+              <div className="hidden items-center gap-3 lg:flex">
+                {[1, 2, 3, 4].map((item) => (
+                  <div
+                    key={item}
+                    className="h-9 w-20 animate-pulse rounded-lg bg-gray-200"
+                  />
+                ))}
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 animate-pulse rounded-full bg-gray-200" />
+
+                <div className="hidden h-10 w-24 animate-pulse rounded-lg bg-gray-200 sm:block" />
+              </div>
+            </div>
+          </div>
+        </nav>
+      </>
+    );
+  }
+
+  // ==========================================================
+  // NAVBAR
+  // ==========================================================
+
   return (
     <>
-      {/* =======================
-          TOP MARQUEE
-      ======================== */}
       <MarqueeBar />
 
-      {/* =======================
-          NAVBAR
-      ======================== */}
-      <nav className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b shadow-sm">
-        <div className="max-w-7xl mx-auto px-4">
-          <div className="h-16 flex items-center justify-between">
-            {/* =======================
-                LOGO
-            ======================== */}
+      <nav className="sticky top-0 z-50 border-b border-gray-200 bg-white/95 shadow-sm backdrop-blur-md">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="flex min-h-16 items-center justify-between gap-4">
+            {/* LOGO */}
 
             <Link
               to="/"
-              className="text-xl lg:text-2xl font-bold text-amber-600 whitespace-nowrap"
+              onClick={closeMenu}
+              className="shrink-0 text-xl font-bold text-amber-600 sm:text-2xl"
             >
               Biscuit Shop
             </Link>
 
-            {/* =======================
-                DESKTOP NAVIGATION
-            ======================== */}
+            {/* DESKTOP NAVIGATION */}
 
-            {desktopNavigation}
+            <div className="hidden items-center gap-1 lg:flex xl:gap-2">
+              {publicLinks}
+              {authenticatedLinks}
+            </div>
 
-            {/* =======================
-                RIGHT SIDE
-            ======================== */}
+            {/* DESKTOP RIGHT */}
 
-            <div className="hidden lg:flex items-center gap-5">
+            <div className="hidden items-center gap-4 lg:flex">
               {/* CART */}
 
-              {user && (
-                <Link to="/cart" className="relative group">
-                  <FaShoppingCart className="text-2xl text-gray-700 group-hover:text-amber-500 duration-300" />
+              {isLoggedIn && (
+                <Link
+                  to="/cart"
+                  onClick={closeMenu}
+                  className="group relative flex h-10 w-10 items-center justify-center rounded-full transition hover:bg-amber-50"
+                  aria-label="Shopping cart"
+                >
+                  <FaShoppingCart
+                    className={`text-xl transition ${
+                      cartLoading
+                        ? "text-gray-400"
+                        : "text-gray-700 group-hover:text-amber-500"
+                    }`}
+                  />
 
                   {cartCount > 0 && (
-                    <span className="absolute -top-2 -right-2 min-w-[20px] h-5 px-1 rounded-full bg-red-500 text-white text-xs flex items-center justify-center">
-                      {cartCount}
+                    <span className="absolute -right-1 -top-1 flex min-h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-bold text-white">
+                      {formattedCartCount}
                     </span>
                   )}
                 </Link>
@@ -276,182 +329,297 @@ const Navbar = () => {
 
               {/* USER */}
 
-              {user ? (
+              {isLoggedIn ? (
                 <div className="dropdown dropdown-end">
                   <div
                     tabIndex={0}
                     role="button"
-                    className="flex items-center gap-3 cursor-pointer"
+                    className="flex cursor-pointer items-center gap-3 rounded-xl px-2 py-1 transition hover:bg-gray-50"
                   >
-                    <img
-                      loading="lazy"
-                      src={
-                        user?.photoURL || "https://i.ibb.co/4pDNDk1/avatar.png"
-                      }
-                      alt="User"
-                      className="w-10 h-10 rounded-full border-2 border-amber-500 object-cover"
-                    />
+                    {userPhoto ? (
+                      <img
+                        src={userPhoto}
+                        alt={`${userName} profile`}
+                        loading="lazy"
+                        referrerPolicy="no-referrer"
+                        onError={handleImageError}
+                        className="h-10 w-10 rounded-full border-2 border-amber-500 object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-amber-500 bg-amber-50 text-amber-600">
+                        <FaUser />
+                      </div>
+                    )}
 
-                    <div className="hidden xl:block">
-                      <h3 className="font-semibold">
-                        {user?.displayName || "User"}
-                      </h3>
+                    <div className="hidden max-w-44 xl:block">
+                      <p className="truncate text-sm font-semibold text-gray-800">
+                        {userName}
+                      </p>
 
-                      <p className="text-xs text-gray-500">{user?.email}</p>
+                      <p className="truncate text-xs text-gray-500">{email}</p>
                     </div>
                   </div>
 
-                  {/* =======================
-                      DROPDOWN
-                  ======================== */}
+                  {/* DROPDOWN */}
 
                   <ul
                     tabIndex={0}
-                    className="dropdown-content menu bg-base-100 rounded-xl shadow-xl mt-4 w-64 z-[999]"
+                    className="dropdown-content menu z-[999] mt-4 w-72 rounded-2xl border border-base-200 bg-base-100 p-2 shadow-xl"
                   >
                     <li className="pointer-events-none">
-                      <div className="flex flex-col">
-                        <span className="font-semibold">
-                          {user?.displayName}
-                        </span>
+                      <div className="flex items-center gap-3 rounded-xl p-3">
+                        {userPhoto ? (
+                          <img
+                            src={userPhoto}
+                            alt={`${userName} profile`}
+                            loading="lazy"
+                            referrerPolicy="no-referrer"
+                            onError={handleImageError}
+                            className="h-12 w-12 shrink-0 rounded-full border-2 border-amber-500 object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2 border-amber-500 bg-amber-50 text-amber-600">
+                            <FaUser />
+                          </div>
+                        )}
 
-                        <span className="text-xs text-gray-500 break-all">
-                          {user?.email}
-                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold text-gray-800">
+                            {userName}
+                          </p>
+
+                          <p className="break-all text-xs text-gray-500">
+                            {email}
+                          </p>
+
+                          <span className="mt-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-700">
+                            {userRole}
+                          </span>
+                        </div>
                       </div>
                     </li>
 
-                    <div className="divider my-1"></div>
+                    <div className="divider my-1" />
 
                     <li>
                       <Link to="/profile" onClick={closeMenu}>
                         <FaUser />
-                        Profile
+                        <span>Profile</span>
                       </Link>
                     </li>
 
                     <li>
                       <Link to="/dashboard" onClick={closeMenu}>
                         <FaChartLine />
-                        Dashboard
+                        <span>Dashboard</span>
                       </Link>
                     </li>
 
-                    <div className="divider my-1"></div>
+                    <li>
+                      <Link to="/cart" onClick={closeMenu}>
+                        <FaShoppingCart />
+                        <span>Cart</span>
+
+                        {cartCount > 0 && (
+                          <span className="ml-auto rounded-full bg-red-500 px-2 py-0.5 text-xs text-white">
+                            {formattedCartCount}
+                          </span>
+                        )}
+                      </Link>
+                    </li>
+
+                    <div className="divider my-1" />
 
                     <li>
-                      <button onClick={handleLogout} className="text-red-500">
+                      <button
+                        type="button"
+                        onClick={handleLogout}
+                        className="text-red-500 hover:bg-red-50 hover:text-red-600"
+                      >
                         <FaSignOutAlt />
-                        Logout
+                        <span>Logout</span>
                       </button>
                     </li>
                   </ul>
                 </div>
               ) : (
-                <div className="flex items-center gap-3">
-                  <Link to="/login">
-                    <button className="px-5 py-2 rounded-lg border border-amber-500 text-amber-600 hover:bg-amber-500 hover:text-white transition">
-                      Login
-                    </button>
+                <div className="flex items-center gap-2 xl:gap-3">
+                  <Link
+                    to="/login"
+                    onClick={closeMenu}
+                    className="rounded-lg border border-amber-500 px-4 py-2 font-medium text-amber-600 transition hover:bg-amber-500 hover:text-white"
+                  >
+                    Login
                   </Link>
 
-                  <Link to="/register">
-                    <button className="px-5 py-2 rounded-lg bg-amber-500 text-white hover:bg-amber-600 transition">
-                      Register
-                    </button>
+                  <Link
+                    to="/register"
+                    onClick={closeMenu}
+                    className="rounded-lg bg-amber-500 px-4 py-2 font-medium text-white transition hover:bg-amber-600"
+                  >
+                    Register
                   </Link>
                 </div>
               )}
             </div>
 
-            {/* =======================
-                MOBILE MENU BUTTON
-            ======================== */}
+            {/* MOBILE BUTTON */}
 
             <button
+              type="button"
               onClick={toggleMenu}
-              className="lg:hidden text-2xl text-gray-700"
+              className="flex h-10 w-10 items-center justify-center rounded-lg text-xl text-gray-700 transition hover:bg-amber-50 hover:text-amber-600 lg:hidden"
+              aria-label={
+                isOpen ? "Close navigation menu" : "Open navigation menu"
+              }
+              aria-expanded={isOpen}
+              aria-controls="mobile-navigation"
             >
               {isOpen ? <FaTimes /> : <FaBars />}
             </button>
           </div>
         </div>
 
-  
+        {/* MOBILE NAVIGATION */}
 
         <div
-          className={`lg:hidden overflow-hidden transition-all duration-300 ease-in-out ${
-            isOpen ? "max-h-screen opacity-100 border-t" : "max-h-0 opacity-0"
+          id="mobile-navigation"
+          className={`overflow-hidden border-t border-gray-200 transition-all duration-300 lg:hidden ${
+            isOpen
+              ? "max-h-[calc(100vh-4rem)] opacity-100"
+              : "max-h-0 border-t-0 opacity-0"
           }`}
         >
-          <div className="bg-white px-5 py-5 shadow-md">
-            {/* PROFILE */}
+          <div className="max-h-[calc(100vh-4rem)] overflow-y-auto bg-white px-4 py-5 sm:px-6">
+            {/* MOBILE USER */}
 
-            {user && (
-              <div className="flex items-center gap-3 pb-5 border-b">
-                <img
-                  loading="lazy"
-                  src={user?.photoURL || "https://i.ibb.co/4pDNDk1/avatar.png"}
-                  alt="User"
-                  className="w-14 h-14 rounded-full border-2 border-amber-500 object-cover"
-                />
+            {isLoggedIn && (
+              <div className="mb-5 rounded-2xl border border-amber-100 bg-amber-50 p-4">
+                <div className="flex items-center gap-3">
+                  {userPhoto ? (
+                    <img
+                      src={userPhoto}
+                      alt={`${userName} profile`}
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                      onError={handleImageError}
+                      className="h-14 w-14 shrink-0 rounded-full border-2 border-amber-500 object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 border-amber-500 bg-white text-xl text-amber-600">
+                      <FaUser />
+                    </div>
+                  )}
 
-                <div>
-                  <h3 className="font-semibold">{user?.displayName}</h3>
+                  <div className="min-w-0">
+                    <p className="truncate text-base font-bold text-gray-800">
+                      {userName}
+                    </p>
 
-                  <p className="text-xs text-gray-500 break-all">
-                    {user?.email}
-                  </p>
+                    <p className="break-all text-sm text-gray-500">{email}</p>
+
+                    <span className="mt-1 inline-block rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-semibold uppercase text-white">
+                      {userRole}
+                    </span>
+                  </div>
                 </div>
               </div>
             )}
 
-            {/* MOBILE NAVIGATION */}
+            {/* MOBILE LINKS */}
 
-            <div className="mt-5">{mobileNavigation}</div>
+            <div className="flex flex-col gap-1">
+              {publicLinks}
+              {authenticatedLinks}
 
-            {/* CART */}
+              {isLoggedIn && (
+                <NavLink
+                  to="/cart"
+                  onClick={closeMenu}
+                  className={navLinkClass}
+                >
+                  <FaShoppingCart />
 
-            {user && (
-              <NavLink to="/cart" onClick={closeMenu} className={navLinkClass}>
-                <FaShoppingCart />
-                Cart
-                {cartCount > 0 && (
-                  <span className="ml-auto bg-red-500 text-white text-xs px-2 py-1 rounded-full">
-                    {cartCount}
-                  </span>
-                )}
-              </NavLink>
-            )}
+                  <span>Cart</span>
+
+                  {cartCount > 0 && (
+                    <span className="ml-auto rounded-full bg-red-500 px-2 py-1 text-xs font-semibold text-white">
+                      {formattedCartCount}
+                    </span>
+                  )}
+                </NavLink>
+              )}
+            </div>
 
             {/* LOGIN / REGISTER */}
 
-            {!user && (
-              <div className="mt-6 flex flex-col gap-3">
-                <Link to="/login" onClick={closeMenu}>
-                  <button className="w-full py-2 rounded-lg border border-amber-500 text-amber-600 hover:bg-amber-500 hover:text-white transition">
-                    Login
-                  </button>
+            {!isLoggedIn && (
+              <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Link
+                  to="/login"
+                  onClick={closeMenu}
+                  className="flex items-center justify-center rounded-lg border border-amber-500 px-4 py-3 font-medium text-amber-600 transition hover:bg-amber-500 hover:text-white"
+                >
+                  Login
                 </Link>
 
-                <Link to="/register" onClick={closeMenu}>
-                  <button className="w-full py-2 rounded-lg bg-amber-500 text-white hover:bg-amber-600 transition">
-                    Register
-                  </button>
+                <Link
+                  to="/register"
+                  onClick={closeMenu}
+                  className="flex items-center justify-center rounded-lg bg-amber-500 px-4 py-3 font-medium text-white transition hover:bg-amber-600"
+                >
+                  Register
                 </Link>
               </div>
             )}
 
-            {/* LOGOUT */}
+            {/* USER ACTIONS */}
 
-            {user && (
-              <button
-                onClick={handleLogout}
-                className="mt-6 w-full bg-red-500 hover:bg-red-600 text-white py-2 rounded-lg flex items-center justify-center gap-2 transition"
-              >
-                <FaSignOutAlt />
-                Logout
-              </button>
+            {isLoggedIn && (
+              <div className="mt-5 space-y-2 border-t border-gray-200 pt-5">
+                <Link
+                  to="/profile"
+                  onClick={closeMenu}
+                  className="flex w-full items-center gap-3 rounded-lg px-3 py-3 font-medium text-gray-700 transition hover:bg-amber-50 hover:text-amber-600"
+                >
+                  <FaUser />
+                  <span>Profile</span>
+                </Link>
+
+                <Link
+                  to="/dashboard"
+                  onClick={closeMenu}
+                  className="flex w-full items-center gap-3 rounded-lg px-3 py-3 font-medium text-gray-700 transition hover:bg-amber-50 hover:text-amber-600"
+                >
+                  <FaChartLine />
+                  <span>Dashboard</span>
+                </Link>
+
+                <Link
+                  to="/cart"
+                  onClick={closeMenu}
+                  className="flex w-full items-center gap-3 rounded-lg px-3 py-3 font-medium text-gray-700 transition hover:bg-amber-50 hover:text-amber-600"
+                >
+                  <FaShoppingCart />
+
+                  <span>Cart</span>
+
+                  {cartCount > 0 && (
+                    <span className="ml-auto rounded-full bg-red-500 px-2 py-1 text-xs font-semibold text-white">
+                      {formattedCartCount}
+                    </span>
+                  )}
+                </Link>
+
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-red-500 px-4 py-3 font-medium text-white transition hover:bg-red-600"
+                >
+                  <FaSignOutAlt />
+                  <span>Logout</span>
+                </button>
+              </div>
             )}
           </div>
         </div>

@@ -1,8 +1,6 @@
-import axios from "axios";
+// src/api/axiosSecure.js
 
-// ============================================================
-// API URL
-// ============================================================
+import axios from "axios";
 
 const API_URL = String(import.meta.env.VITE_API_URL || "").trim();
 
@@ -10,15 +8,9 @@ if (!API_URL) {
   throw new Error("Missing VITE_API_URL environment variable.");
 }
 
-// ============================================================
-// AXIOS SECURE INSTANCE
-// ============================================================
-
 const axiosSecure = axios.create({
   baseURL: API_URL,
-
   withCredentials: true,
-
   timeout: 15000,
 
   headers: {
@@ -27,39 +19,31 @@ const axiosSecure = axios.create({
   },
 });
 
-// ============================================================
-// RESPONSE INTERCEPTOR
-// ============================================================
-
 axiosSecure.interceptors.response.use(
-  (response) => {
-    return response;
-  },
+  (response) => response,
 
   (error) => {
-    // ========================================================
-    // NETWORK ERROR
-    // ========================================================
-
     if (!error?.response) {
-      console.error("Axios Network Error:", error?.message || "Network error.");
+      console.error(
+        "Axios Secure Network Error:",
+        error?.message || "Network error.",
+      );
 
       return Promise.reject(error);
     }
 
-    // ========================================================
-    // HTTP ERROR
-    // ========================================================
-
     const status = error.response.status;
-
     const message = error.response?.data?.message || "Request failed.";
 
     if (status === 401) {
       console.warn("401 Unauthorized:", message);
-    } else if (status === 403) {
+    }
+
+    if (status === 403) {
       console.warn("403 Forbidden:", message);
-    } else if (status >= 500) {
+    }
+
+    if (status >= 500) {
       console.error("Server Error:", message);
     }
 

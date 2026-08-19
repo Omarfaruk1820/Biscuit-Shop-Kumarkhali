@@ -21,8 +21,10 @@ import axiosSecure from "../../hooks/axiosSecure";
 // CONSTANTS
 // ============================================================
 
-const FREE_SHIPPING_THRESHOLD = 1000;
 const MAX_QUANTITY = 99;
+
+const CART_STALE_TIME = 60 * 1000;
+const CART_GC_TIME = 10 * 60 * 1000;
 
 // ============================================================
 // HELPERS
@@ -62,20 +64,24 @@ const Cart = () => {
   const queryClient = useQueryClient();
 
   // ==========================================================
-  // LOCAL STATE
-  // ==========================================================
-
-  const [updatingCartId, setUpdatingCartId] = useState(null);
-  const [deletingCartId, setDeletingCartId] = useState(null);
-
-  // ==========================================================
   // TOAST
   // ==========================================================
 
   const { addToast } = useToast();
 
   // ==========================================================
-  // USER EMAIL
+  // LOCAL STATE
+  // ==========================================================
+
+  const [updatingCartId, setUpdatingCartId] = useState(null);
+
+  const [deletingCartId, setDeletingCartId] = useState(null);
+
+  // ==========================================================
+  // EMAIL
+  //
+  // Only used as part of the React Query cache key.
+  // It is NOT sent to the server for authentication.
   // ==========================================================
 
   const email = useMemo(() => {
@@ -88,38 +94,36 @@ const Cart = () => {
   // QUERY KEY
   // ==========================================================
 
-  const cartQueryKey = useMemo(() => {
-    return ["cart", email];
-  }, [email]);
+  const cartQueryKey = useMemo(() => ["cart", email], [email]);
 
   // ==========================================================
-  // FETCH CART
   // GET /carts
   // ==========================================================
 
   const fetchCart = useCallback(async () => {
     const response = await axiosSecure.get("/carts");
 
-    if (!response.data?.success) {
+    if (!response?.data?.success) {
       throw new Error(
-        response.data?.message || "Failed to load shopping cart.",
+        response?.data?.message || "Failed to load shopping cart.",
       );
     }
 
     return response.data;
   }, []);
 
-  // ==========================================================
-  // CART QUERY
-  // ==========================================================
-
   const { data, isPending, isFetching, isError, error, refetch } = useQuery({
     queryKey: cartQueryKey,
+
     queryFn: fetchCart,
+
     enabled: Boolean(email) && !authLoading,
-    staleTime: 60 * 1000,
-    gcTime: 10 * 60 * 1000,
+
+    staleTime: CART_STALE_TIME,
+    gcTime: CART_GC_TIME,
+
     retry: 1,
+
     refetchOnWindowFocus: false,
     refetchOnReconnect: true,
   });
@@ -134,6 +138,9 @@ const Cart = () => {
 
   // ==========================================================
   // SERVER SUMMARY
+  //
+  // The server is authoritative.
+  // Do not recalculate totals here.
   // ==========================================================
 
   const summary = useMemo(() => {
@@ -141,33 +148,25 @@ const Cart = () => {
 
     return {
       totalItems: toSafeNumber(serverSummary.totalItems),
+
       totalQuantity: toSafeNumber(serverSummary.totalQuantity),
+
       subtotal: toSafeNumber(serverSummary.subtotal),
+
       discount: toSafeNumber(
-        serverSummary.discount ?? serverSummary.totalDiscount,
+        serverSummary.totalDiscount ?? serverSummary.discount,
       ),
+
       shipping: toSafeNumber(serverSummary.shipping),
+
       tax: toSafeNumber(serverSummary.tax),
+
       grandTotal: toSafeNumber(serverSummary.grandTotal),
     };
   }, [data?.summary]);
 
   // ==========================================================
-  // SHIPPING
-  // ==========================================================
-
-  const freeShippingRemaining = useMemo(() => {
-    return Math.max(FREE_SHIPPING_THRESHOLD - summary.subtotal, 0);
-  }, [summary.subtotal]);
-
-  const shippingProgress = useMemo(() => {
-    return Math.min(Math.max(summary.subtotal, 0), FREE_SHIPPING_THRESHOLD);
-  }, [summary.subtotal]);
-
-  const hasFreeShipping = summary.shipping <= 0;
-
-  // ==========================================================
-  // INVALIDATE CART QUERIES
+  // REFRESH CART
   // ==========================================================
 
   const refreshCart = useCallback(async () => {
@@ -179,19 +178,12 @@ const Cart = () => {
       queryClient.invalidateQueries({
         queryKey: ["cart-count"],
       }),
-
-      queryClient.invalidateQueries({
-        queryKey: ["cart-summary"],
-      }),
-
-      queryClient.invalidateQueries({
-        queryKey: ["validated-cart"],
-      }),
     ]);
   }, [queryClient, cartQueryKey]);
 
   // ==========================================================
   // UPDATE QUANTITY
+  //
   // PATCH /carts/:id
   // ==========================================================
 
@@ -213,9 +205,9 @@ const Cart = () => {
         quantity,
       });
 
-      if (!response.data?.success) {
+      if (!response?.data?.success) {
         throw new Error(
-          response.data?.message || "Failed to update cart quantity.",
+          response?.data?.message || "Failed to update cart quantity.",
         );
       }
 
@@ -235,12 +227,12 @@ const Cart = () => {
     onError: (mutationError) => {
       console.error("UPDATE CART QUANTITY ERROR:", mutationError);
 
-      const message =
+      addToast(
         mutationError?.response?.data?.message ||
-        mutationError?.message ||
-        "Failed to update cart quantity.";
-
-      addToast(message, "error");
+          mutationError?.message ||
+          "Failed to update cart quantity.",
+        "error",
+      );
     },
 
     onSettled: () => {
@@ -249,7 +241,8 @@ const Cart = () => {
   });
 
   // ==========================================================
-  // DELETE CART ITEM
+  // DELETE ITEM
+  //
   // DELETE /carts/:id
   // ==========================================================
 
@@ -261,9 +254,9 @@ const Cart = () => {
 
       const response = await axiosSecure.delete(`/carts/${cartId}`);
 
-      if (!response.data?.success) {
+      if (!response?.data?.success) {
         throw new Error(
-          response.data?.message || "Failed to remove cart item.",
+          response?.data?.message || "Failed to remove cart item.",
         );
       }
 
@@ -283,12 +276,12 @@ const Cart = () => {
     onError: (mutationError) => {
       console.error("DELETE CART ITEM ERROR:", mutationError);
 
-      const message =
+      addToast(
         mutationError?.response?.data?.message ||
-        mutationError?.message ||
-        "Failed to remove cart item.";
-
-      addToast(message, "error");
+          mutationError?.message ||
+          "Failed to remove cart item.",
+        "error",
+      );
     },
 
     onSettled: () => {
@@ -297,15 +290,17 @@ const Cart = () => {
   });
 
   // ==========================================================
-  // MUTATION STATES
+  // MUTATION STATE
   // ==========================================================
 
   const isQuantityUpdating = quantityMutation.isPending;
+
   const isDeleting = deleteMutation.isPending;
+
   const isUpdating = isQuantityUpdating || isDeleting;
 
   // ==========================================================
-  // INCREASE QUANTITY
+  // INCREASE
   // ==========================================================
 
   const handleIncrease = useCallback(
@@ -315,10 +310,6 @@ const Cart = () => {
       }
 
       const quantity = Math.floor(toSafeNumber(item.quantity, 1));
-
-      if (quantity < 1) {
-        return;
-      }
 
       if (quantity >= MAX_QUANTITY) {
         addToast(`Maximum quantity is ${MAX_QUANTITY}.`, "warning");
@@ -335,7 +326,7 @@ const Cart = () => {
   );
 
   // ==========================================================
-  // DECREASE QUANTITY
+  // DECREASE
   // ==========================================================
 
   const handleDecrease = useCallback(
@@ -359,7 +350,7 @@ const Cart = () => {
   );
 
   // ==========================================================
-  // DELETE ITEM
+  // DELETE
   // ==========================================================
 
   const handleDelete = useCallback(
@@ -400,6 +391,7 @@ const Cart = () => {
 
     if (cart.length === 0) {
       addToast("Your cart is empty.", "warning");
+
       return;
     }
 
@@ -421,21 +413,17 @@ const Cart = () => {
   const initialLoading = authLoading || (Boolean(email) && isPending);
 
   // ==========================================================
-  // LOADING UI
+  // LOADING
   // ==========================================================
 
   if (initialLoading) {
     return (
       <section className="min-h-screen bg-base-200 px-4 py-8 md:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl">
-          <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
-            <div>
-              <div className="h-10 w-56 animate-pulse rounded-lg bg-base-300" />
+          <div className="mb-8">
+            <div className="h-10 w-56 animate-pulse rounded-lg bg-base-300" />
 
-              <div className="mt-3 h-5 w-48 animate-pulse rounded bg-base-300" />
-            </div>
-
-            <div className="h-12 w-48 animate-pulse rounded-lg bg-base-300" />
+            <div className="mt-3 h-5 w-48 animate-pulse rounded bg-base-300" />
           </div>
 
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
@@ -463,7 +451,7 @@ const Cart = () => {
             </div>
 
             <div className="lg:col-span-4">
-              <div className="h-[520px] animate-pulse rounded-2xl bg-base-300" />
+              <div className="h-[500px] animate-pulse rounded-2xl bg-base-300" />
             </div>
           </div>
         </div>
@@ -510,7 +498,7 @@ const Cart = () => {
   }
 
   // ==========================================================
-  // ERROR UI
+  // ERROR
   // ==========================================================
 
   if (isError) {
@@ -550,7 +538,7 @@ const Cart = () => {
   // EMPTY CART
   // ==========================================================
 
-  if (!isPending && cart.length === 0) {
+  if (cart.length === 0) {
     return (
       <section className="min-h-screen bg-base-200 px-4 py-12 md:px-6 lg:px-8">
         <div className="mx-auto flex min-h-[500px] max-w-3xl items-center justify-center">
@@ -670,7 +658,7 @@ const Cart = () => {
                       )}
                     </div>
 
-                    {/* PRODUCT INFORMATION */}
+                    {/* PRODUCT INFO */}
 
                     <div className="min-w-0 flex-1">
                       <h2 className="line-clamp-2 text-lg font-bold md:text-xl">
@@ -714,7 +702,7 @@ const Cart = () => {
                       </div>
                     </div>
 
-                    {/* QUANTITY + DELETE */}
+                    {/* ACTIONS */}
 
                     <div className="flex items-center justify-between gap-4 sm:flex-col sm:items-end">
                       {/* QUANTITY */}
@@ -775,7 +763,7 @@ const Cart = () => {
                     </div>
                   </div>
 
-                  {/* ITEM SUBTOTAL */}
+                  {/* SUBTOTAL */}
 
                   <div className="mt-5 flex items-center justify-between border-t border-base-300 pt-4">
                     <span className="text-sm text-base-content/60">
@@ -795,40 +783,11 @@ const Cart = () => {
 
           <div className="lg:col-span-4">
             <div className="sticky top-6 rounded-2xl border border-base-300 bg-base-100 p-6 shadow-sm">
-              {/* TITLE */}
-
               <div className="flex items-center gap-3">
                 <FaShoppingCart className="text-xl text-primary" />
 
                 <h2 className="text-2xl font-bold">Order Summary</h2>
               </div>
-
-              {/* SHIPPING */}
-
-              {hasFreeShipping ? (
-                <div className="alert alert-success mt-5">
-                  🎉 You unlocked FREE Shipping.
-                </div>
-              ) : (
-                <div className="mt-5">
-                  <div className="mb-2 flex justify-between text-sm">
-                    <span>Free Shipping Progress</span>
-
-                    <span>৳{formatCurrency(freeShippingRemaining)} left</span>
-                  </div>
-
-                  <progress
-                    className="progress progress-success w-full"
-                    value={shippingProgress}
-                    max={FREE_SHIPPING_THRESHOLD}
-                  />
-
-                  <p className="mt-2 text-xs text-base-content/50">
-                    Spend ৳{formatCurrency(freeShippingRemaining)} more to
-                    unlock free shipping.
-                  </p>
-                </div>
-              )}
 
               <div className="divider" />
 
@@ -916,7 +875,7 @@ const Cart = () => {
 
               <div className="divider" />
 
-              {/* FEATURES */}
+              {/* SERVICE FEATURES */}
 
               <div className="space-y-5">
                 <div className="flex items-start gap-3">

@@ -1,6 +1,15 @@
 import { useContext, useEffect, useMemo, useState } from "react";
+
 import axios from "axios";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+
+import {
+  keepPreviousData,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+
+import { useNavigate } from "react-router-dom";
+
 import {
   FaCartPlus,
   FaChevronLeft,
@@ -8,14 +17,13 @@ import {
   FaSpinner,
   FaStar,
 } from "react-icons/fa";
-import { useLocation, useNavigate } from "react-router-dom";
 
 import { AuthContext } from "../../Auth/AuthProvider";
 import { useToast } from "../../context/ToastProvider";
 import { useFlyToCart } from "../../hooks/useFlyToCart";
 
 // ============================================================
-// CONFIGURATION
+// CONFIG
 // ============================================================
 
 const API_URL = String(import.meta.env.VITE_API_URL || "")
@@ -24,51 +32,23 @@ const API_URL = String(import.meta.env.VITE_API_URL || "")
 
 const PRODUCTS_PER_PAGE = 8;
 
+const REQUEST_TIMEOUT = 15000;
+
 const PRODUCTS_STALE_TIME = 1000 * 60 * 2;
+
 const PRODUCTS_GC_TIME = 1000 * 60 * 10;
-
-// ============================================================
-// API
-// ============================================================
-
-const fetchProducts = async ({ queryKey, signal }) => {
-  const [, page] = queryKey;
-
-  if (!API_URL) {
-    throw new Error("API URL is not configured. Please check VITE_API_URL.");
-  }
-
-  const response = await axios.get(`${API_URL}/products`, {
-    params: {
-      page,
-      limit: PRODUCTS_PER_PAGE,
-    },
-    signal,
-    timeout: 15000,
-  });
-
-  if (!response?.data?.success) {
-    throw new Error(response?.data?.message || "Failed to load products.");
-  }
-
-  if (!Array.isArray(response?.data?.data)) {
-    throw new Error("Invalid products response from server.");
-  }
-
-  return response.data;
-};
 
 // ============================================================
 // HELPERS
 // ============================================================
 
-const safeNumber = (value, fallback = 0) => {
+const toNumber = (value, fallback = 0) => {
   const number = Number(value);
 
   return Number.isFinite(number) ? number : fallback;
 };
 
-const normalizeText = (value, fallback = "") => {
+const getText = (value, fallback = "") => {
   if (typeof value !== "string") {
     return fallback;
   }
@@ -78,67 +58,129 @@ const normalizeText = (value, fallback = "") => {
   return text || fallback;
 };
 
+const getProductId = (product) => {
+  return String(product?._id || "").trim();
+};
+
+const getPrice = (value) => {
+  return Math.max(toNumber(value), 0);
+};
+
+const getDiscount = (value) => {
+  return Math.min(Math.max(toNumber(value), 0), 100);
+};
+
+const getStock = (value) => {
+  return Math.max(Math.floor(toNumber(value)), 0);
+};
+
+const getRating = (value) => {
+  return Math.min(Math.max(toNumber(value), 0), 5);
+};
+
+const getReviews = (value) => {
+  return Math.max(Math.floor(toNumber(value)), 0);
+};
+
 const getFinalPrice = (price, discount) => {
-  const safePrice = Math.max(safeNumber(price), 0);
-
-  const safeDiscount = Math.min(Math.max(safeNumber(discount), 0), 100);
-
-  const finalPrice = safePrice - (safePrice * safeDiscount) / 100;
+  const finalPrice = price - (price * discount) / 100;
 
   return Math.max(Number(finalPrice.toFixed(2)), 0);
 };
 
+const getPaginationPages = (currentPage, totalPages) => {
+  const maxVisiblePages = 5;
+
+  if (totalPages <= maxVisiblePages) {
+    return Array.from({ length: totalPages }, (_, index) => index + 1);
+  }
+
+  let start = Math.max(currentPage - 2, 1);
+
+  let end = Math.min(start + maxVisiblePages - 1, totalPages);
+
+  if (end - start + 1 < maxVisiblePages) {
+    start = Math.max(end - maxVisiblePages + 1, 1);
+  }
+
+  return Array.from({ length: end - start + 1 }, (_, index) => start + index);
+};
+
 // ============================================================
-// COMPONENT
+// FETCH PRODUCTS
+// ============================================================
+
+const fetchProducts = async ({ queryKey, signal }) => {
+  const [, page] = queryKey;
+
+  if (!API_URL) {
+    throw new Error("API URL is not configured.");
+  }
+
+  const safePage = Math.max(Number(page) || 1, 1);
+
+  const response = await axios.get(`${API_URL}/products`, {
+    params: {
+      page: safePage,
+      limit: PRODUCTS_PER_PAGE,
+    },
+
+    signal,
+
+    timeout: REQUEST_TIMEOUT,
+
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  const result = response?.data;
+
+  if (!result?.success) {
+    throw new Error(result?.message || "Failed to load products.");
+  }
+
+  if (!Array.isArray(result?.data)) {
+    throw new Error("Invalid products response.");
+  }
+
+  return {
+    products: result.data,
+    pagination: result.pagination || {},
+  };
+};
+
+// ============================================================
+// PRODUCT CARD
 // ============================================================
 
 const ProductCard = () => {
-  // ==========================================================
-  // ROUTER
-  // ==========================================================
-
   const navigate = useNavigate();
-  const location = useLocation();
-
-  // ==========================================================
-  // REACT QUERY
-  // ==========================================================
 
   const queryClient = useQueryClient();
 
-  // ==========================================================
-  // AUTH
-  // ==========================================================
-
-  const { user } = useContext(AuthContext);
-
-  // ==========================================================
-  // TOAST
-  // ==========================================================
+  const { user, loading: authLoading } = useContext(AuthContext);
 
   const { addToast } = useToast();
 
-  // ==========================================================
-  // FLY TO CART
-  // ==========================================================
-
   const { flyToCart } = useFlyToCart();
 
-  // ==========================================================
-  // LOCAL STATE
-  // ==========================================================
-
   const [currentPage, setCurrentPage] = useState(1);
+
   const [addingProductId, setAddingProductId] = useState(null);
 
   // ==========================================================
-  // PRODUCTS QUERY
+  // PRODUCTS
   // ==========================================================
 
   const { data, isLoading, isError, error, isFetching, refetch } = useQuery({
     queryKey: ["products", currentPage],
 
     queryFn: fetchProducts,
+
+    enabled: Boolean(API_URL),
+
+    placeholderData: keepPreviousData,
 
     staleTime: PRODUCTS_STALE_TIME,
 
@@ -147,33 +189,43 @@ const ProductCard = () => {
     retry: 1,
 
     refetchOnWindowFocus: false,
-
-    refetchOnReconnect: true,
-
-    placeholderData: (previousData) => previousData,
   });
 
+  const products = Array.isArray(data?.products) ? data.products : [];
+
+  const pagination = data?.pagination || {};
+
+  const total = Math.max(toNumber(pagination.total), 0);
+
+  const totalPagesFromTotal =
+    total > 0 ? Math.ceil(total / PRODUCTS_PER_PAGE) : 0;
+
+  const totalPages = Math.max(
+    toNumber(pagination.totalPages, totalPagesFromTotal),
+    1,
+  );
+
+  const paginationPages = useMemo(
+    () => getPaginationPages(currentPage, totalPages),
+    [currentPage, totalPages],
+  );
+
   // ==========================================================
-  // RESPONSE DATA
+  // KEEP PAGE VALID
   // ==========================================================
 
-  const products = Array.isArray(data?.data) ? data.data : [];
-
-  const pagination =
-    data?.pagination && typeof data.pagination === "object"
-      ? data.pagination
-      : {};
-
-  const total = Math.max(safeNumber(pagination.total, 0), 0);
-
-  const totalPages = Math.max(Math.ceil(total / PRODUCTS_PER_PAGE), 1);
+  useEffect(() => {
+    if (!isLoading && currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages, isLoading]);
 
   // ==========================================================
   // PREFETCH NEXT PAGE
   // ==========================================================
 
   useEffect(() => {
-    if (currentPage >= totalPages) {
+    if (!API_URL || isLoading || currentPage >= totalPages) {
       return;
     }
 
@@ -186,20 +238,14 @@ const ProductCard = () => {
 
       gcTime: PRODUCTS_GC_TIME,
     });
-  }, [currentPage, totalPages, queryClient]);
+  }, [currentPage, totalPages, isLoading, queryClient]);
 
   // ==========================================================
   // PAGE NAVIGATION
   // ==========================================================
 
   const goToPage = (page) => {
-    const numericPage = Number(page);
-
-    if (!Number.isFinite(numericPage)) {
-      return;
-    }
-
-    const safePage = Math.min(Math.max(Math.floor(numericPage), 1), totalPages);
+    const safePage = Math.min(Math.max(Number(page) || 1, 1), totalPages);
 
     if (safePage === currentPage) {
       return;
@@ -214,6 +260,20 @@ const ProductCard = () => {
   };
 
   // ==========================================================
+  // PRODUCT DETAILS
+  // ==========================================================
+
+  const openProductDetails = (productId) => {
+    const id = String(productId || "").trim();
+
+    if (!id) {
+      return;
+    }
+
+    navigate(`/product/${id}`);
+  };
+
+  // ==========================================================
   // LOGIN REDIRECT
   // ==========================================================
 
@@ -221,23 +281,12 @@ const ProductCard = () => {
     navigate("/login", {
       state: {
         from: {
-          pathname: location.pathname,
-          search: location.search,
+          pathname: window.location.pathname,
+          search: window.location.search,
+          hash: window.location.hash,
         },
       },
     });
-  };
-
-  // ==========================================================
-  // PRODUCT DETAILS
-  // ==========================================================
-
-  const openProductDetails = (productId) => {
-    if (!productId) {
-      return;
-    }
-
-    navigate(`/product/${productId}`);
   };
 
   // ==========================================================
@@ -245,10 +294,10 @@ const ProductCard = () => {
   // ==========================================================
 
   const handleAddToCart = async (product, event) => {
-    event.stopPropagation();
+    event?.stopPropagation();
 
     // --------------------------------------------------------
-    // API CONFIGURATION
+    // API
     // --------------------------------------------------------
 
     if (!API_URL) {
@@ -258,8 +307,12 @@ const ProductCard = () => {
     }
 
     // --------------------------------------------------------
-    // AUTHENTICATION
+    // AUTH
     // --------------------------------------------------------
+
+    if (authLoading) {
+      return;
+    }
 
     if (!user) {
       addToast("Please login before adding products to your cart.", "warning");
@@ -270,10 +323,10 @@ const ProductCard = () => {
     }
 
     // --------------------------------------------------------
-    // PRODUCT ID
+    // PRODUCT
     // --------------------------------------------------------
 
-    const productId = String(product?._id || "").trim();
+    const productId = getProductId(product);
 
     if (!productId) {
       addToast("This product has an invalid ID.", "error");
@@ -285,7 +338,7 @@ const ProductCard = () => {
     // STOCK
     // --------------------------------------------------------
 
-    const stock = Math.max(safeNumber(product?.stock), 0);
+    const stock = getStock(product?.stock);
 
     if (stock <= 0) {
       addToast("This product is currently out of stock.", "warning");
@@ -294,7 +347,7 @@ const ProductCard = () => {
     }
 
     // --------------------------------------------------------
-    // PREVENT DUPLICATE REQUESTS
+    // DUPLICATE REQUEST
     // --------------------------------------------------------
 
     if (addingProductId !== null) {
@@ -304,10 +357,10 @@ const ProductCard = () => {
     setAddingProductId(productId);
 
     // --------------------------------------------------------
-    // FLY TO CART ELEMENTS
+    // FLY TO CART
     // --------------------------------------------------------
 
-    const productCard = event.currentTarget.closest(".product-card");
+    const productCard = event?.currentTarget?.closest?.(".product-card");
 
     const productImage = productCard?.querySelector("img");
 
@@ -315,7 +368,7 @@ const ProductCard = () => {
 
     try {
       // ------------------------------------------------------
-      // POST /carts
+      // CREATE / UPDATE CART
       // ------------------------------------------------------
 
       const response = await axios.post(
@@ -327,70 +380,72 @@ const ProductCard = () => {
         {
           withCredentials: true,
 
-          timeout: 15000,
+          timeout: REQUEST_TIMEOUT,
 
           headers: {
+            Accept: "application/json",
             "Content-Type": "application/json",
           },
         },
       );
 
-      // ------------------------------------------------------
-      // RESPONSE VALIDATION
-      // ------------------------------------------------------
+      const result = response?.data;
 
-      if (!response?.data?.success) {
-        throw new Error(
-          response?.data?.message || "Failed to add product to cart.",
-        );
+      if (!result?.success) {
+        throw new Error(result?.message || "Failed to add product to cart.");
       }
 
       // ------------------------------------------------------
       // SUCCESS
       // ------------------------------------------------------
 
-      const productName = normalizeText(product?.name, "Product");
+      const productName = getText(product?.name, "Product");
 
       addToast(`${productName} added to your cart.`, "success");
 
       // ------------------------------------------------------
-      // INVALIDATE CART QUERIES
+      // INVALIDATE CART
       // ------------------------------------------------------
 
-      await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: ["cart"],
-        }),
+      await queryClient.invalidateQueries({
+        queryKey: ["cart"],
+      });
 
-        queryClient.invalidateQueries({
-          queryKey: ["cart-count"],
-        }),
+      await queryClient.invalidateQueries({
+        queryKey: ["cart-count"],
+      });
 
-        queryClient.invalidateQueries({
-          queryKey: ["cart-summary"],
-        }),
+      await queryClient.invalidateQueries({
+        queryKey: ["cart-summary"],
+      });
 
-        queryClient.invalidateQueries({
-          queryKey: ["validated-cart"],
-        }),
-      ]);
+      await queryClient.invalidateQueries({
+        queryKey: ["validated-cart"],
+      });
 
       // ------------------------------------------------------
-      // FLY TO CART
+      // ANIMATION
       // ------------------------------------------------------
 
       if (productImage && cartIcon && typeof flyToCart === "function") {
-        flyToCart(productImage, cartIcon);
+        try {
+          flyToCart(productImage, cartIcon);
+        } catch (animationError) {
+          console.warn("Fly-to-cart animation failed:", animationError);
+        }
       }
     } catch (error) {
-      console.error("ADD TO CART ERROR:", error);
+      console.error(
+        "ADD TO CART ERROR:",
+        error?.response?.data || error?.message || error,
+      );
 
       const status = error?.response?.status;
 
       const serverMessage = error?.response?.data?.message;
 
       // ------------------------------------------------------
-      // 401
+      // UNAUTHORIZED
       // ------------------------------------------------------
 
       if (status === 401) {
@@ -402,13 +457,12 @@ const ProductCard = () => {
       }
 
       // ------------------------------------------------------
-      // 403
+      // FORBIDDEN
       // ------------------------------------------------------
 
       if (status === 403) {
         addToast(
-          serverMessage ||
-            "You are not allowed to add this product to the cart.",
+          serverMessage || "You are not allowed to add this product.",
           "error",
         );
 
@@ -416,7 +470,7 @@ const ProductCard = () => {
       }
 
       // ------------------------------------------------------
-      // 404
+      // NOT FOUND
       // ------------------------------------------------------
 
       if (status === 404) {
@@ -429,12 +483,12 @@ const ProductCard = () => {
       }
 
       // ------------------------------------------------------
-      // 409
+      // CONFLICT / STOCK
       // ------------------------------------------------------
 
       if (status === 409) {
         addToast(
-          serverMessage || "The requested quantity is not currently available.",
+          serverMessage || "The requested quantity is not available.",
           "warning",
         );
 
@@ -442,27 +496,27 @@ const ProductCard = () => {
       }
 
       // ------------------------------------------------------
-      // 422
+      // VALIDATION
       // ------------------------------------------------------
 
-      if (status === 422) {
+      if (status === 400 || status === 422) {
         addToast(serverMessage || "Invalid cart information.", "warning");
 
         return;
       }
 
       // ------------------------------------------------------
-      // 500
+      // SERVER ERROR
       // ------------------------------------------------------
 
-      if (status >= 500) {
+      if (typeof status === "number" && status >= 500) {
         addToast("Server error. Please try again later.", "error");
 
         return;
       }
 
       // ------------------------------------------------------
-      // NETWORK / GENERIC
+      // NETWORK
       // ------------------------------------------------------
 
       if (!error?.response) {
@@ -481,21 +535,7 @@ const ProductCard = () => {
   };
 
   // ==========================================================
-  // PAGINATION BUTTONS
-  // ==========================================================
-
-  const paginationPages = useMemo(() => {
-    const pages = [];
-
-    for (let page = 1; page <= totalPages; page += 1) {
-      pages.push(page);
-    }
-
-    return pages;
-  }, [totalPages]);
-
-  // ==========================================================
-  // LOADING UI
+  // LOADING
   // ==========================================================
 
   if (isLoading) {
@@ -541,58 +581,48 @@ const ProductCard = () => {
     );
   }
 
-  //   {
-  //   "version": 2,
-  //   "builds": [
-  //     {
-  //       "src": "index.js",
-  //       "use": "@vercel/node"
-  //     }
-  //   ],
-  //   "routes": [
-  //     {
-  //       "src": "/(.*)",
-  //       "dest": "/index.js"
-  //     }
-  //   ]
-  // }
-
   // ==========================================================
-  // ERROR UI
+  // ERROR
   // ==========================================================
 
   if (isError) {
-    const statusCode = error?.response?.status;
+    const status = error?.response?.status;
 
-    const errorMessage =
+    let message =
       error?.response?.data?.message ||
       error?.message ||
       "Something went wrong while loading products.";
 
+    if (status === 404) {
+      message = "Products API route was not found.";
+    }
+
+    if (error?.code === "ECONNABORTED") {
+      message = "The server request timed out. Please try again.";
+    }
+
     return (
       <section className="mx-auto flex w-full max-w-7xl items-center justify-center px-4 py-16 sm:px-6 lg:px-8">
-        <div className="flex max-w-lg flex-col items-center text-center">
+        <div className="max-w-xl text-center">
           <div className="text-5xl">⚠️</div>
 
           <h2 className="mt-4 text-2xl font-bold">Failed to load products</h2>
 
-          <p className="mt-2 text-sm text-base-content/60">{errorMessage}</p>
+          <p className="mt-2 text-sm leading-6 text-base-content/60">
+            {message}
+          </p>
 
-          {statusCode && (
+          {status && (
             <p className="mt-2 text-xs text-base-content/40">
-              Server status: {statusCode}
+              Server status: {status}
             </p>
           )}
-
-          <p className="mt-3 break-all text-xs text-base-content/40">
-            API: {API_URL}/products
-          </p>
 
           <button
             type="button"
             onClick={() => refetch()}
             disabled={isFetching}
-            className="mt-6 flex h-11 items-center gap-2 rounded-xl bg-warning px-6 font-semibold text-warning-content transition hover:bg-warning/90 disabled:cursor-not-allowed disabled:opacity-60"
+            className="mt-6 flex h-11 mx-auto items-center gap-2 rounded-xl bg-warning px-6 font-semibold text-warning-content transition hover:bg-warning/90 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isFetching ? (
               <>
@@ -609,13 +639,13 @@ const ProductCard = () => {
   }
 
   // ==========================================================
-  // EMPTY UI
+  // EMPTY
   // ==========================================================
 
   if (products.length === 0) {
     return (
       <section className="mx-auto flex w-full max-w-7xl items-center justify-center px-4 py-16 sm:px-6 lg:px-8">
-        <div className="flex flex-col items-center text-center">
+        <div className="text-center">
           <div className="text-5xl">🍪</div>
 
           <h2 className="mt-4 text-2xl font-bold">No Products Found</h2>
@@ -629,14 +659,12 @@ const ProductCard = () => {
   }
 
   // ==========================================================
-  // PRODUCT LIST
+  // MAIN UI
   // ==========================================================
 
   return (
     <section className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
-      {/* ======================================================
-          HEADER
-      ====================================================== */}
+      {/* HEADER */}
 
       <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
@@ -647,7 +675,7 @@ const ProductCard = () => {
           </p>
         </div>
 
-        {isFetching && !isLoading && (
+        {isFetching && (
           <div className="flex items-center gap-2 text-sm text-base-content/60">
             <FaSpinner className="animate-spin text-warning" />
             Updating...
@@ -655,50 +683,37 @@ const ProductCard = () => {
         )}
       </div>
 
-      {/* ======================================================
-          PRODUCT GRID
-      ====================================================== */}
+      {/* PRODUCT GRID */}
 
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
         {products.map((product) => {
-          const productId = String(product?._id || "").trim();
+          const productId = getProductId(product);
 
           if (!productId) {
             return null;
           }
 
-          // ----------------------------------------------------
-          // PRODUCT VALUES
-          // ----------------------------------------------------
+          const price = getPrice(product?.price);
 
-          const price = Math.max(safeNumber(product?.price), 0);
-
-          const discount = Math.min(
-            Math.max(safeNumber(product?.discount), 0),
-            100,
-          );
+          const discount = getDiscount(product?.discount);
 
           const finalPrice = getFinalPrice(price, discount);
 
-          const stock = Math.max(safeNumber(product?.stock), 0);
+          const stock = getStock(product?.stock);
 
-          const rating = Math.min(Math.max(safeNumber(product?.rating), 0), 5);
+          const rating = getRating(product?.rating);
 
-          const reviews = Math.max(safeNumber(product?.reviews), 0);
+          const reviews = getReviews(product?.reviews);
 
-          const imageUrl = normalizeText(product?.image, "");
+          const image = getText(product?.image);
 
-          const productName = normalizeText(product?.name, "Unnamed Product");
+          const name = getText(product?.name, "Unnamed Product");
 
-          const brand = normalizeText(product?.brand, "No Brand");
+          const brand = getText(product?.brand, "No Brand");
 
-          const category = normalizeText(product?.category, "General");
+          const category = getText(product?.category, "General");
 
           const isAdding = addingProductId === productId;
-
-          // ----------------------------------------------------
-          // CARD
-          // ----------------------------------------------------
 
           return (
             <article
@@ -706,15 +721,13 @@ const ProductCard = () => {
               className="product-card group cursor-pointer overflow-hidden rounded-2xl border border-base-300 bg-base-100 shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-xl"
               onClick={() => openProductDetails(productId)}
             >
-              {/* ==================================================
-                  IMAGE
-              ================================================== */}
+              {/* IMAGE */}
 
               <div className="relative h-56 overflow-hidden bg-base-200">
-                {imageUrl ? (
+                {image ? (
                   <img
-                    src={imageUrl}
-                    alt={productName}
+                    src={image}
+                    alt={name}
                     loading="lazy"
                     decoding="async"
                     className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
@@ -723,20 +736,16 @@ const ProductCard = () => {
                     }}
                   />
                 ) : (
-                  <div className="flex h-full w-full items-center justify-center text-sm text-base-content/40">
+                  <div className="flex h-full items-center justify-center text-sm text-base-content/40">
                     No Image
                   </div>
                 )}
-
-                {/* DISCOUNT */}
 
                 {discount > 0 && (
                   <span className="absolute left-3 top-3 rounded-full bg-error px-3 py-1 text-xs font-bold text-error-content shadow">
                     -{discount}%
                   </span>
                 )}
-
-                {/* HOT */}
 
                 {discount >= 15 && (
                   <span className="absolute right-3 top-3 rounded-full bg-warning px-3 py-1 text-xs font-bold text-warning-content shadow">
@@ -745,9 +754,7 @@ const ProductCard = () => {
                 )}
               </div>
 
-              {/* ==================================================
-                  CONTENT
-              ================================================== */}
+              {/* CONTENT */}
 
               <div className="p-4">
                 {/* BRAND */}
@@ -759,7 +766,7 @@ const ProductCard = () => {
                 {/* NAME */}
 
                 <h3 className="mt-3 min-h-[48px] line-clamp-2 font-bold">
-                  {productName}
+                  {name}
                 </h3>
 
                 {/* CATEGORY */}
@@ -814,9 +821,7 @@ const ProductCard = () => {
                   )}
                 </div>
 
-                {/* ==================================================
-                    BUTTONS
-                ================================================== */}
+                {/* ACTIONS */}
 
                 <div className="mt-5 grid grid-cols-2 gap-3">
                   {/* DETAILS */}
@@ -864,9 +869,7 @@ const ProductCard = () => {
         })}
       </div>
 
-      {/* ======================================================
-          PAGINATION
-      ====================================================== */}
+      {/* PAGINATION */}
 
       {totalPages > 1 && (
         <div className="mt-12 flex flex-wrap items-center justify-center gap-3">
@@ -882,7 +885,7 @@ const ProductCard = () => {
             Previous
           </button>
 
-          {/* PAGE NUMBERS */}
+          {/* PAGES */}
 
           {paginationPages.map((page) => (
             <button
@@ -914,11 +917,9 @@ const ProductCard = () => {
         </div>
       )}
 
-      {/* ======================================================
-          FETCHING INDICATOR
-      ====================================================== */}
+      {/* FETCHING */}
 
-      {isFetching && !isLoading && (
+      {isFetching && (
         <div className="mt-6 flex justify-center">
           <div className="flex items-center gap-3 rounded-full border border-base-300 bg-base-100 px-5 py-3 text-sm text-base-content/60 shadow-sm">
             <FaSpinner className="animate-spin text-warning" />

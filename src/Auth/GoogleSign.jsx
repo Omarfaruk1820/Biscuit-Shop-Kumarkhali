@@ -4,15 +4,36 @@ import { FcGoogle } from "react-icons/fc";
 import { AuthContext } from "./AuthProvider";
 import { useToast } from "../context/ToastProvider";
 
-const GoogleSignIn = () => {
+// ============================================================
+// GOOGLE SIGN IN
+// ============================================================
+
+const GoogleSign = () => {
+  // ==========================================================
+  // AUTH CONTEXT
+  // ==========================================================
+
   const { signInGoogle, loading: authLoading } = useContext(AuthContext);
+
+  // ==========================================================
+  // TOAST
+  // ==========================================================
+
   const { addToast } = useToast();
+
+  // ==========================================================
+  // LOCAL STATE
+  // ==========================================================
 
   const [loading, setLoading] = useState(false);
 
   const isLoading = loading || authLoading;
 
-  const handleGoogleLogin = async () => {
+  // ==========================================================
+  // GOOGLE SIGN IN
+  // ==========================================================
+
+  const handleGoogleSignIn = async () => {
     if (isLoading) {
       return;
     }
@@ -20,47 +41,84 @@ const GoogleSignIn = () => {
     setLoading(true);
 
     try {
-      // Firebase Google authentication.
+      // ======================================================
+      // AUTH PROVIDER HANDLES THE COMPLETE FLOW
+      // ======================================================
       //
-      // AuthProvider's onAuthStateChanged() will automatically:
-      //
+      // Google Popup
+      //      ↓
       // Firebase User
       //      ↓
-      // Save / sync user to MongoDB
+      // Firebase ID Token
       //      ↓
-      // Create application JWT
+      // POST /users
+      //      ↓
+      // POST /auth/jwt
+      //      ↓
+      // HTTP-only Cookie
       //      ↓
       // GET /auth/me
       //      ↓
-      // Set application user
+      // AuthProvider user state
       //
-      // Therefore, this component does NOT:
-      // - save the user to MongoDB
-      // - create JWT
-      // - set user
-      // - navigate
-      await signInGoogle();
+      // signInGoogle() returns the server user.
+      // ======================================================
 
-      addToast("Google sign-in successful!", "success");
+      const serverUser = await signInGoogle();
+
+      if (!serverUser) {
+        throw new Error("Google sign-in could not be completed.");
+      }
+
+      // ======================================================
+      // SUCCESS
+      // ======================================================
+
+      addToast("Google sign-in successful! Welcome back.", "success");
     } catch (error) {
-      console.error("GOOGLE SIGN-IN ERROR:", error);
+      // ======================================================
+      // DEBUG
+      // ======================================================
 
-      // User closed the popup.
+      console.error(
+        "GOOGLE SIGN-IN ERROR:",
+        error?.response?.data || error?.message || error,
+      );
+
+      // ======================================================
+      // USER CLOSED GOOGLE POPUP
+      // ======================================================
+
       if (error?.code === "auth/popup-closed-by-user") {
         return;
       }
 
+      if (error?.code === "auth/cancelled-popup-request") {
+        return;
+      }
+
+      // ======================================================
+      // ERROR MESSAGE
+      // ======================================================
+
       let message = "Google sign-in failed. Please try again.";
 
       switch (error?.code) {
+        // ----------------------------------------------------
+        // FIREBASE
+        // ----------------------------------------------------
+
         case "auth/popup-blocked":
           message =
             "Google sign-in popup was blocked. Please allow popups for this site.";
           break;
 
+        case "auth/cancelled-popup-request":
+          message = "Another Google sign-in request is already in progress.";
+          break;
+
         case "auth/network-request-failed":
-          message =
-            "Network error. Please check your internet connection and try again.";
+          message = "Network error. Please check your internet connection.";
           break;
 
         case "auth/too-many-requests":
@@ -72,26 +130,34 @@ const GoogleSignIn = () => {
             "This email is already registered with another sign-in method.";
           break;
 
-        case "auth/cancelled-popup-request":
-          message = "Another Google sign-in request is already in progress.";
-          break;
-
         case "auth/operation-not-allowed":
-          message =
-            "Google sign-in is currently disabled. Please contact support.";
+          message = "Google sign-in is currently disabled.";
           break;
 
         case "auth/user-disabled":
           message = "This account has been disabled.";
           break;
 
+        case "auth/unauthorized-domain":
+          message = "This domain is not authorized for Google sign-in.";
+          break;
+
+        case "auth/invalid-credential":
+          message =
+            "Google authentication could not be verified. Please try again.";
+          break;
+
+        // ----------------------------------------------------
+        // CUSTOM AUTH PROVIDER ERRORS
+        // ----------------------------------------------------
+
         default:
-          if (error?.response?.data?.message) {
-            message = error.response.data.message;
-          } else if (error?.message) {
-            message = error.message;
-          }
+          message = error?.response?.data?.message || error?.message || message;
       }
+
+      // ======================================================
+      // SHOW ERROR
+      // ======================================================
 
       addToast(message, "error");
     } finally {
@@ -99,13 +165,18 @@ const GoogleSignIn = () => {
     }
   };
 
+  // ==========================================================
+  // UI
+  // ==========================================================
+
   return (
     <button
       type="button"
-      onClick={handleGoogleLogin}
+      onClick={handleGoogleSignIn}
       disabled={isLoading}
       className="btn btn-outline w-full gap-3"
       aria-busy={isLoading}
+      aria-label="Continue with Google"
     >
       {isLoading ? (
         <>
@@ -113,16 +184,18 @@ const GoogleSignIn = () => {
             className="loading loading-spinner loading-sm"
             aria-hidden="true"
           />
-          Signing in...
+
+          <span>Signing in...</span>
         </>
       ) : (
         <>
           <FcGoogle size={22} aria-hidden="true" />
-          Continue with Google
+
+          <span>Continue with Google</span>
         </>
       )}
     </button>
   );
 };
 
-export default GoogleSignIn;
+export default GoogleSign;

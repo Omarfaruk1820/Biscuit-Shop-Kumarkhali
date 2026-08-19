@@ -1,7 +1,10 @@
 import { useContext, useEffect, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
-import { useForm } from "react-hook-form";
+
 import { sendPasswordResetEmail } from "firebase/auth";
+
+import { Link, useLocation, useNavigate } from "react-router-dom";
+
+import { useForm } from "react-hook-form";
 
 import {
   FaEnvelope,
@@ -16,41 +19,49 @@ import { AuthContext } from "./AuthProvider";
 import { useToast } from "../context/ToastProvider";
 import GoogleSignIn from "./GoogleSign";
 
+// ============================================================
+// CONSTANTS
+// ============================================================
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const REMEMBER_EMAIL_KEY = "remember-email";
+
+// ============================================================
+// LOGIN
+// ============================================================
+
 const Login = () => {
-  // ============================================================
-  // AUTH CONTEXT
-  // ============================================================
+  // ==========================================================
+  // AUTH
+  // ==========================================================
 
-  const { loginUser, user, loading: authLoading } = useContext(AuthContext);
+  const { user, loading: authLoading, loginUser } = useContext(AuthContext);
 
-  // ============================================================
+  // ==========================================================
   // TOAST
-  // ============================================================
+  // ==========================================================
 
   const { addToast } = useToast();
 
-  // ============================================================
+  // ==========================================================
   // ROUTER
-  // ============================================================
+  // ==========================================================
 
   const navigate = useNavigate();
   const location = useLocation();
 
-  const from = location.state?.from?.pathname || "/";
-
-  // ============================================================
+  // ==========================================================
   // STATE
-  // ============================================================
+  // ==========================================================
 
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
 
-  const isSubmitting = loading || authLoading;
-
-  // ============================================================
+  // ==========================================================
   // FORM
-  // ============================================================
+  // ==========================================================
 
   const {
     register,
@@ -69,72 +80,77 @@ const Login = () => {
     },
   });
 
-  // ============================================================
+  // ==========================================================
+  // EMAIL
+  // ==========================================================
+
+  const emailValue = watch("email");
+
+  // ==========================================================
+  // SUBMITTING
+  // ==========================================================
+
+  const isSubmitting = loading || authLoading;
+
+  // ==========================================================
   // LOAD REMEMBERED EMAIL
-  // ============================================================
+  // ==========================================================
 
   useEffect(() => {
     try {
-      const rememberedEmail = localStorage.getItem("remember-email");
+      const rememberedEmail = localStorage.getItem(REMEMBER_EMAIL_KEY);
 
-      if (rememberedEmail) {
-        setValue("email", rememberedEmail);
-        setRememberMe(true);
+      if (!rememberedEmail) {
+        return;
       }
+
+      setValue("email", rememberedEmail);
+      setRememberMe(true);
     } catch (error) {
-      console.error("LOAD REMEMBERED EMAIL ERROR:", error);
+      console.error("LOAD REMEMBERED EMAIL ERROR:", error?.message || error);
     }
   }, [setValue]);
 
-  // ============================================================
-  // REDIRECT AFTER AUTHENTICATION
-  //
-  // Login
-  //   ↓
-  // Firebase
-  //   ↓
-  // AuthProvider
-  //   ↓
-  // MongoDB
-  //   ↓
-  // JWT Cookie
-  //   ↓
-  // /auth/me
-  //   ↓
-  // user
-  //   ↓
-  // redirect
-  // ============================================================
+  // ==========================================================
+  // REDIRECT AFTER LOGIN
+  // ==========================================================
 
   useEffect(() => {
-    if (authLoading) {
+    if (authLoading || !user) {
       return;
     }
 
-    if (!user) {
-      return;
+    const from = location.state?.from;
+
+    let destination = "/";
+
+    if (typeof from === "string") {
+      destination = from;
+    } else if (from?.pathname) {
+      destination =
+        `${from.pathname}` + `${from.search || ""}` + `${from.hash || ""}`;
     }
 
-    navigate(from, {
+    navigate(destination, {
       replace: true,
     });
-  }, [user, authLoading, navigate, from]);
+  }, [user, authLoading, location.state, navigate]);
 
-  // ============================================================
+  // ==========================================================
   // LOGIN SUBMIT
-  // ============================================================
+  // ==========================================================
 
   const onSubmit = async (formData) => {
-    if (loading || authLoading) {
+    if (isSubmitting) {
       return;
     }
 
     setLoading(true);
 
     try {
-      // --------------------------------------------------------
-      // NORMALIZE INPUT
-      // --------------------------------------------------------
+      // ------------------------------------------------------
+      // CLEAN INPUT
+      // ------------------------------------------------------
 
       const email = String(formData.email || "")
         .trim()
@@ -142,75 +158,99 @@ const Login = () => {
 
       const password = String(formData.password || "");
 
-      // --------------------------------------------------------
+      // ------------------------------------------------------
       // EXTRA VALIDATION
-      // --------------------------------------------------------
+      // ------------------------------------------------------
 
       if (!email) {
         throw new Error("Email is required.");
+      }
+
+      if (!EMAIL_REGEX.test(email)) {
+        throw new Error("Please enter a valid email address.");
       }
 
       if (!password) {
         throw new Error("Password is required.");
       }
 
-      // --------------------------------------------------------
-      // FIREBASE LOGIN
-      //
-      // AuthProvider will automatically handle:
-      //
-      // Firebase user
-      //      ↓
-      // /users
-      //      ↓
-      // /auth/jwt
-      //      ↓
-      // /auth/me
-      //      ↓
-      // application user
-      // --------------------------------------------------------
-
-      await loginUser(email, password);
-
-      // --------------------------------------------------------
+      // ------------------------------------------------------
       // REMEMBER EMAIL
-      // --------------------------------------------------------
+      // ------------------------------------------------------
 
       try {
         if (rememberMe) {
-          localStorage.setItem("remember-email", email);
+          localStorage.setItem(REMEMBER_EMAIL_KEY, email);
         } else {
-          localStorage.removeItem("remember-email");
+          localStorage.removeItem(REMEMBER_EMAIL_KEY);
         }
       } catch (storageError) {
-        console.error("REMEMBER EMAIL ERROR:", storageError);
+        console.error(
+          "REMEMBER EMAIL ERROR:",
+          storageError?.message || storageError,
+        );
       }
 
-      // --------------------------------------------------------
-      // RESET PASSWORD FIELD
-      // --------------------------------------------------------
+      // ------------------------------------------------------
+      // LOGIN
+      // ------------------------------------------------------
+      //
+      // AuthProvider handles:
+      //
+      // Firebase login
+      //       ↓
+      // Email verification
+      //       ↓
+      // POST /users
+      //       ↓
+      // POST /auth/jwt
+      //       ↓
+      // GET /auth/me
+      //       ↓
+      // setUser()
+      //
+      // Therefore Login.jsx does NOT repeat those operations.
+      //
+      // ------------------------------------------------------
+
+      const serverUser = await loginUser(email, password);
+
+      if (!serverUser) {
+        throw new Error("Login could not be completed.");
+      }
+
+      // ------------------------------------------------------
+      // CLEAR PASSWORD
+      // ------------------------------------------------------
 
       reset({
         email: rememberMe ? email : "",
         password: "",
       });
 
-      // --------------------------------------------------------
-      // SUCCESS MESSAGE
-      // --------------------------------------------------------
-
-      addToast("Login successful! Welcome back.", "success");
-
-      // --------------------------------------------------------
-      // DO NOT NAVIGATE HERE
+      // ------------------------------------------------------
+      // SUCCESS
+      // ------------------------------------------------------
+      //
+      // Do NOT navigate here.
       //
       // AuthProvider updates `user`.
-      // The useEffect above handles navigation.
-      // --------------------------------------------------------
-    } catch (error) {
-      console.error("LOGIN ERROR:", error);
+      // The redirect useEffect handles navigation.
+      //
+      // ------------------------------------------------------
 
-      let message = "Unable to login.";
+      addToast("Login successful! Welcome back.", "success");
+    } catch (error) {
+      console.error(
+        "LOGIN ERROR:",
+        error?.response?.data || error?.message || error,
+      );
+
+      // ------------------------------------------------------
+      // ERROR MESSAGE
+      // ------------------------------------------------------
+
+      let message = "Unable to login. Please try again.";
 
       switch (error?.code) {
         case "auth/user-not-found":
@@ -222,6 +262,10 @@ const Login = () => {
           break;
 
         case "auth/invalid-credential":
+          message = "Incorrect email or password.";
+          break;
+
+        case "auth/invalid-login-credentials":
           message = "Incorrect email or password.";
           break;
 
@@ -245,11 +289,20 @@ const Login = () => {
           message = "Email and password login is currently disabled.";
           break;
 
+        case "auth/email-not-verified":
+          message = "Please verify your email address before logging in.";
+          break;
+
+        case "auth/user-token-expired":
+          message = "Your Firebase session has expired. Please login again.";
+          break;
+
+        case "auth/requires-recent-login":
+          message = "Please login again to continue.";
+          break;
+
         default:
-          message =
-            error?.response?.data?.message ||
-            error?.message ||
-            "Unable to login.";
+          message = error?.response?.data?.message || error?.message || message;
       }
 
       addToast(message, "error");
@@ -258,35 +311,43 @@ const Login = () => {
     }
   };
 
-  // ============================================================
+  // ==========================================================
   // FORGOT PASSWORD
-  // ============================================================
+  // ==========================================================
 
   const handleForgotPassword = async () => {
     if (isSubmitting) {
       return;
     }
 
-    const email = String(watch("email") || "")
+    const email = String(emailValue || "")
       .trim()
       .toLowerCase();
 
+    // --------------------------------------------------------
+    // EMAIL REQUIRED
+    // --------------------------------------------------------
+
     if (!email) {
       addToast("Please enter your email address first.", "warning");
+
       return;
     }
 
-    // Basic email validation
-    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    // --------------------------------------------------------
+    // EMAIL VALIDATION
+    // --------------------------------------------------------
 
-    if (!emailPattern.test(email)) {
+    if (!EMAIL_REGEX.test(email)) {
       addToast("Please enter a valid email address.", "warning");
+
       return;
     }
 
     try {
       await sendPasswordResetEmail(auth, email, {
         url: `${window.location.origin}/login`,
+        handleCodeInApp: false,
       });
 
       addToast(
@@ -294,7 +355,7 @@ const Login = () => {
         "success",
       );
     } catch (error) {
-      console.error("RESET PASSWORD ERROR:", error);
+      console.error("PASSWORD RESET ERROR:", error?.message || error);
 
       let message = "Unable to send password reset email.";
 
@@ -307,6 +368,10 @@ const Login = () => {
           message = "Please enter a valid email address.";
           break;
 
+        case "auth/missing-email":
+          message = "Please enter your email address.";
+          break;
+
         case "auth/network-request-failed":
           message = "Network error. Please check your internet connection.";
           break;
@@ -315,33 +380,38 @@ const Login = () => {
           message = "Too many requests. Please try again later.";
           break;
 
-        case "auth/missing-email":
-          message = "Please enter your email address.";
+        case "auth/unauthorized-continue-uri":
+          message =
+            "The password reset redirect URL is not authorized in Firebase.";
+          break;
+
+        case "auth/operation-not-allowed":
+          message = "Password reset is currently unavailable.";
           break;
 
         default:
-          message = error?.message || "Unable to send password reset email.";
+          message = error?.response?.data?.message || error?.message || message;
       }
 
       addToast(message, "error");
     }
   };
 
-  // ============================================================
+  // ==========================================================
   // UI
-  // ============================================================
+  // ==========================================================
 
   return (
     <div className="min-h-screen bg-base-200 px-4 py-10">
       <div className="mx-auto w-full max-w-md">
-        {/* ======================================================
+        {/* ==================================================
             LOGIN CARD
-        ====================================================== */}
+        ================================================== */}
 
         <div className="rounded-3xl border border-base-300 bg-base-100 p-6 shadow-xl sm:p-8">
-          {/* ====================================================
+          {/* ==================================================
               HEADER
-          ==================================================== */}
+          ================================================== */}
 
           <div className="text-center">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-warning/10">
@@ -355,18 +425,18 @@ const Login = () => {
             </p>
           </div>
 
-          {/* ====================================================
+          {/* ==================================================
               LOGIN FORM
-          ==================================================== */}
+          ================================================== */}
 
           <form
             onSubmit={handleSubmit(onSubmit)}
             noValidate
             className="mt-8 space-y-5"
           >
-            {/* ==================================================
+            {/* =================================================
                 EMAIL
-            ================================================== */}
+            ================================================= */}
 
             <div>
               <label htmlFor="email" className="label">
@@ -392,7 +462,7 @@ const Login = () => {
                     required: "Email is required.",
 
                     pattern: {
-                      value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+                      value: EMAIL_REGEX,
                       message: "Please enter a valid email address.",
                     },
 
@@ -408,9 +478,9 @@ const Login = () => {
               )}
             </div>
 
-            {/* ==================================================
+            {/* =================================================
                 PASSWORD
-            ================================================== */}
+            ================================================= */}
 
             <div>
               <label htmlFor="password" className="label">
@@ -468,9 +538,9 @@ const Login = () => {
               )}
             </div>
 
-            {/* ==================================================
-                REMEMBER ME + FORGOT PASSWORD
-            ================================================== */}
+            {/* =================================================
+                REMEMBER + FORGOT
+            ================================================= */}
 
             <div className="flex items-center justify-between gap-4 text-sm">
               <label className="flex cursor-pointer items-center gap-2">
@@ -495,9 +565,9 @@ const Login = () => {
               </button>
             </div>
 
-            {/* ==================================================
+            {/* =================================================
                 LOGIN BUTTON
-            ================================================== */}
+            ================================================= */}
 
             <button
               type="submit"
@@ -518,21 +588,17 @@ const Login = () => {
             </button>
           </form>
 
-          {/* ====================================================
-              DIVIDER
-          ==================================================== */}
+          {/* ==================================================
+              GOOGLE LOGIN
+          ================================================== */}
 
           <div className="divider my-7">OR</div>
 
-          {/* ====================================================
-              GOOGLE LOGIN
-          ==================================================== */}
-
           <GoogleSignIn />
 
-          {/* ====================================================
-              REGISTER LINK
-          ==================================================== */}
+          {/* ==================================================
+              REGISTER
+          ================================================== */}
 
           <div className="mt-8 text-center">
             <p className="text-sm text-base-content/70">
@@ -550,9 +616,9 @@ const Login = () => {
           </div>
         </div>
 
-        {/* ======================================================
+        {/* ==================================================
             TERMS
-        ====================================================== */}
+        ================================================== */}
 
         <div className="mt-6 text-center text-xs text-base-content/60">
           By signing in, you agree to our{" "}
