@@ -25,11 +25,11 @@ import GoogleSign from "./GoogleSign";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const MIN_NAME_LENGTH = 3;
-const MAX_NAME_LENGTH = 50;
+const NAME_MIN_LENGTH = 3;
+const NAME_MAX_LENGTH = 50;
 
-const MIN_PASSWORD_LENGTH = 6;
-const MAX_PASSWORD_LENGTH = 50;
+const PASSWORD_MIN_LENGTH = 6;
+const PASSWORD_MAX_LENGTH = 50;
 
 // ============================================================
 // REGISTER
@@ -37,7 +37,7 @@ const MAX_PASSWORD_LENGTH = 50;
 
 const Register = () => {
   // ==========================================================
-  // AUTH CONTEXT
+  // AUTH
   // ==========================================================
 
   const { createUser, loading: authLoading } = useContext(AuthContext);
@@ -60,9 +60,7 @@ const Register = () => {
   // ==========================================================
 
   const [loading, setLoading] = useState(false);
-
   const [showPassword, setShowPassword] = useState(false);
-
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   // ==========================================================
@@ -95,7 +93,7 @@ const Register = () => {
   const password = watch("password");
 
   // ==========================================================
-  // SUBMITTING
+  // SUBMIT STATE
   // ==========================================================
 
   const isSubmitting = loading || authLoading;
@@ -107,21 +105,9 @@ const Register = () => {
   const getRedirectPath = () => {
     const from = location.state?.from;
 
-    // Example:
-    // state={{ from: "/checkout" }}
-
     if (typeof from === "string" && from.startsWith("/")) {
       return from;
     }
-
-    // Example:
-    // state={{
-    //   from: {
-    //     pathname: "/checkout",
-    //     search: "?x=1",
-    //     hash: "#top"
-    //   }
-    // }}
 
     if (from?.pathname) {
       return `${from.pathname}` + `${from.search || ""}` + `${from.hash || ""}`;
@@ -162,12 +148,12 @@ const Register = () => {
         throw new Error("Full name is required.");
       }
 
-      if (name.length < MIN_NAME_LENGTH) {
-        throw new Error(`Name must be at least ${MIN_NAME_LENGTH} characters.`);
+      if (name.length < NAME_MIN_LENGTH) {
+        throw new Error(`Name must be at least ${NAME_MIN_LENGTH} characters.`);
       }
 
-      if (name.length > MAX_NAME_LENGTH) {
-        throw new Error(`Name cannot exceed ${MAX_NAME_LENGTH} characters.`);
+      if (name.length > NAME_MAX_LENGTH) {
+        throw new Error(`Name cannot exceed ${NAME_MAX_LENGTH} characters.`);
       }
 
       if (!email) {
@@ -182,15 +168,15 @@ const Register = () => {
         throw new Error("Password is required.");
       }
 
-      if (passwordValue.length < MIN_PASSWORD_LENGTH) {
+      if (passwordValue.length < PASSWORD_MIN_LENGTH) {
         throw new Error(
-          `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`,
+          `Password must be at least ${PASSWORD_MIN_LENGTH} characters.`,
         );
       }
 
-      if (passwordValue.length > MAX_PASSWORD_LENGTH) {
+      if (passwordValue.length > PASSWORD_MAX_LENGTH) {
         throw new Error(
-          `Password cannot exceed ${MAX_PASSWORD_LENGTH} characters.`,
+          `Password cannot exceed ${PASSWORD_MAX_LENGTH} characters.`,
         );
       }
 
@@ -199,23 +185,25 @@ const Register = () => {
       //
       // AuthProvider handles:
       //
-      // createUserWithEmailAndPassword()
+      // Firebase registration
       //        ↓
-      // updateProfile()
+      // Firebase profile
       //        ↓
       // POST /auth/register
       //        ↓
-      // sendEmailVerification()
+      // POST /auth/jwt
       //        ↓
-      // signOut()
+      // HTTP-only JWT cookie
+      //        ↓
+      // setUser()
       //
-      // No JWT is created during registration.
+      // Firebase user remains signed in.
       // ======================================================
 
       const result = await createUser(email, passwordValue, name);
 
       // ======================================================
-      // VALIDATE RESULT
+      // CHECK RESULT
       // ======================================================
 
       if (!result?.success) {
@@ -238,29 +226,22 @@ const Register = () => {
       // ======================================================
 
       addToast(
-        result?.message ||
-          "Registration successful! Please verify your email before logging in.",
+        result?.message || "Registration successful! Welcome to our store.",
         "success",
       );
 
       // ======================================================
       // REDIRECT
+      //
+      // Register
+      //    ↓
+      // Automatically Logged In
+      //    ↓
+      // Home
       // ======================================================
 
-      const redirectPath = getRedirectPath();
-
-      navigate("/login", {
+      navigate(getRedirectPath(), {
         replace: true,
-
-        state: {
-          from: {
-            pathname: redirectPath,
-          },
-
-          registrationSuccess: true,
-
-          email,
-        },
       });
     } catch (error) {
       // ======================================================
@@ -321,11 +302,44 @@ const Register = () => {
             "Firebase configuration is invalid. Please contact support.";
           break;
 
-        default:
-          // --------------------------------------------------
-          // BACKEND ERROR
-          // --------------------------------------------------
+        // ====================================================
+        // BACKEND ERRORS
+        // ====================================================
 
+        case "auth/firebase-authentication-failed":
+          message = "Firebase authentication failed. Please try again.";
+          break;
+
+        case "auth/firebase-uid-missing":
+          message = "Firebase account information is incomplete.";
+          break;
+
+        case "auth/firebase-email-missing":
+          message = "Firebase account email is missing.";
+          break;
+
+        case "user/email-conflict":
+          message = "This Firebase account is linked to another email.";
+          break;
+
+        case "user/uid-conflict":
+          message = "This email is already linked to another account.";
+          break;
+
+        case "user/duplicate":
+          message = "An account with this information already exists.";
+          break;
+
+        case "user/create-failed":
+          message = "Unable to create your account. Please try again.";
+          break;
+
+        case "auth/session-failed":
+          message =
+            "Your account was created, but the login session could not be created. Please try logging in.";
+          break;
+
+        default:
           message = error?.response?.data?.message || error?.message || message;
       }
 
@@ -371,7 +385,7 @@ const Register = () => {
           </div>
 
           {/* ==================================================
-              REGISTER FORM
+              FORM
           ================================================== */}
 
           <form
@@ -407,17 +421,17 @@ const Register = () => {
                     required: "Full name is required.",
 
                     minLength: {
-                      value: MIN_NAME_LENGTH,
-                      message: `Name must be at least ${MIN_NAME_LENGTH} characters.`,
+                      value: NAME_MIN_LENGTH,
+                      message: `Name must be at least ${NAME_MIN_LENGTH} characters.`,
                     },
 
                     maxLength: {
-                      value: MAX_NAME_LENGTH,
-                      message: `Name cannot exceed ${MAX_NAME_LENGTH} characters.`,
+                      value: NAME_MAX_LENGTH,
+                      message: `Name cannot exceed ${NAME_MAX_LENGTH} characters.`,
                     },
 
                     validate: (value) =>
-                      String(value).trim().length >= MIN_NAME_LENGTH ||
+                      String(value).trim().length >= NAME_MIN_LENGTH ||
                       "Please enter a valid name.",
                   })}
                 />
@@ -502,13 +516,13 @@ const Register = () => {
                     required: "Password is required.",
 
                     minLength: {
-                      value: MIN_PASSWORD_LENGTH,
-                      message: `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`,
+                      value: PASSWORD_MIN_LENGTH,
+                      message: `Password must be at least ${PASSWORD_MIN_LENGTH} characters.`,
                     },
 
                     maxLength: {
-                      value: MAX_PASSWORD_LENGTH,
-                      message: `Password cannot exceed ${MAX_PASSWORD_LENGTH} characters.`,
+                      value: PASSWORD_MAX_LENGTH,
+                      message: `Password cannot exceed ${PASSWORD_MAX_LENGTH} characters.`,
                     },
 
                     pattern: {
