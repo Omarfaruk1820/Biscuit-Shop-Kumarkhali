@@ -1,4 +1,5 @@
 import { useContext, useState } from "react";
+
 import { FcGoogle } from "react-icons/fc";
 
 import { AuthContext } from "./AuthProvider";
@@ -13,7 +14,7 @@ const GoogleSign = () => {
   // AUTH CONTEXT
   // ==========================================================
 
-  const { signInGoogle, loading: authLoading } = useContext(AuthContext);
+  const { signInWithGoogle, loading: authLoading } = useContext(AuthContext);
 
   // ==========================================================
   // TOAST
@@ -41,13 +42,13 @@ const GoogleSign = () => {
     setLoading(true);
 
     try {
-      // ======================================================
-      // AUTH PROVIDER HANDLES THE COMPLETE FLOW
-      // ======================================================
+      // ------------------------------------------------------
+      // COMPLETE GOOGLE AUTH FLOW
+      // ------------------------------------------------------
       //
       // Google Popup
       //      ↓
-      // Firebase User
+      // Firebase Authentication
       //      ↓
       // Firebase ID Token
       //      ↓
@@ -59,62 +60,67 @@ const GoogleSign = () => {
       //      ↓
       // GET /auth/me
       //      ↓
-      // AuthProvider user state
+      // AuthContext user
       //
-      // signInGoogle() returns the server user.
-      // ======================================================
+      // ------------------------------------------------------
 
-      const serverUser = await signInGoogle();
+      const result = await signInWithGoogle();
 
-      if (!serverUser) {
-        throw new Error("Google sign-in could not be completed.");
+      // ------------------------------------------------------
+      // VALIDATE RESULT
+      // ------------------------------------------------------
+
+      if (!result?.success || !result?.user) {
+        throw new Error(
+          result?.message || "Google sign-in could not be completed.",
+        );
       }
 
-      // ======================================================
+      // ------------------------------------------------------
       // SUCCESS
-      // ======================================================
+      // ------------------------------------------------------
 
-      addToast("Google sign-in successful! Welcome back.", "success");
+      addToast(result.message || "Google sign-in successful!", "success");
     } catch (error) {
-      // ======================================================
+      // ------------------------------------------------------
       // DEBUG
-      // ======================================================
+      // ------------------------------------------------------
 
       console.error(
         "GOOGLE SIGN-IN ERROR:",
         error?.response?.data || error?.message || error,
       );
 
-      // ======================================================
-      // USER CLOSED GOOGLE POPUP
-      // ======================================================
+      // ------------------------------------------------------
+      // USER CLOSED POPUP
+      // ------------------------------------------------------
 
       if (error?.code === "auth/popup-closed-by-user") {
         return;
       }
 
+      // ------------------------------------------------------
+      // DUPLICATE POPUP REQUEST
+      // ------------------------------------------------------
+
       if (error?.code === "auth/cancelled-popup-request") {
         return;
       }
 
-      // ======================================================
-      // ERROR MESSAGE
-      // ======================================================
+      // ------------------------------------------------------
+      // DEFAULT MESSAGE
+      // ------------------------------------------------------
 
       let message = "Google sign-in failed. Please try again.";
 
-      switch (error?.code) {
-        // ----------------------------------------------------
-        // FIREBASE
-        // ----------------------------------------------------
+      // ------------------------------------------------------
+      // FIREBASE ERRORS
+      // ------------------------------------------------------
 
+      switch (error?.code) {
         case "auth/popup-blocked":
           message =
             "Google sign-in popup was blocked. Please allow popups for this site.";
-          break;
-
-        case "auth/cancelled-popup-request":
-          message = "Another Google sign-in request is already in progress.";
           break;
 
         case "auth/network-request-failed":
@@ -147,17 +153,26 @@ const GoogleSign = () => {
             "Google authentication could not be verified. Please try again.";
           break;
 
+        case "auth/invalid-api-key":
+          message =
+            "Firebase configuration is invalid. Please check your Firebase configuration.";
+          break;
+
+        case "auth/internal-error":
+          message = "Firebase encountered an internal error. Please try again.";
+          break;
+
         // ----------------------------------------------------
-        // CUSTOM AUTH PROVIDER ERRORS
+        // BACKEND ERROR
         // ----------------------------------------------------
 
         default:
           message = error?.response?.data?.message || error?.message || message;
       }
 
-      // ======================================================
-      // SHOW ERROR
-      // ======================================================
+      // ------------------------------------------------------
+      // ERROR TOAST
+      // ------------------------------------------------------
 
       addToast(message, "error");
     } finally {
@@ -174,9 +189,9 @@ const GoogleSign = () => {
       type="button"
       onClick={handleGoogleSignIn}
       disabled={isLoading}
-      className="btn btn-outline w-full gap-3"
       aria-busy={isLoading}
       aria-label="Continue with Google"
+      className="btn btn-outline w-full gap-3"
     >
       {isLoading ? (
         <>

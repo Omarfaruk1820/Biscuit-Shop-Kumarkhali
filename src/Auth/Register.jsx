@@ -17,7 +17,19 @@ import { AuthContext } from "./AuthProvider";
 
 import { useToast } from "../context/ToastProvider";
 
-import GoogleSignIn from "./GoogleSign";
+import GoogleSign from "./GoogleSign";
+
+// ============================================================
+// CONSTANTS
+// ============================================================
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const MIN_NAME_LENGTH = 3;
+const MAX_NAME_LENGTH = 50;
+
+const MIN_PASSWORD_LENGTH = 6;
+const MAX_PASSWORD_LENGTH = 50;
 
 // ============================================================
 // REGISTER
@@ -25,7 +37,7 @@ import GoogleSignIn from "./GoogleSign";
 
 const Register = () => {
   // ==========================================================
-  // AUTH
+  // AUTH CONTEXT
   // ==========================================================
 
   const { createUser, loading: authLoading } = useContext(AuthContext);
@@ -89,6 +101,36 @@ const Register = () => {
   const isSubmitting = loading || authLoading;
 
   // ==========================================================
+  // REDIRECT PATH
+  // ==========================================================
+
+  const getRedirectPath = () => {
+    const from = location.state?.from;
+
+    // Example:
+    // state={{ from: "/checkout" }}
+
+    if (typeof from === "string" && from.startsWith("/")) {
+      return from;
+    }
+
+    // Example:
+    // state={{
+    //   from: {
+    //     pathname: "/checkout",
+    //     search: "?x=1",
+    //     hash: "#top"
+    //   }
+    // }}
+
+    if (from?.pathname) {
+      return `${from.pathname}` + `${from.search || ""}` + `${from.hash || ""}`;
+    }
+
+    return "/";
+  };
+
+  // ==========================================================
   // SUBMIT
   // ==========================================================
 
@@ -101,7 +143,7 @@ const Register = () => {
 
     try {
       // ======================================================
-      // CLEAN FORM DATA
+      // CLEAN INPUT
       // ======================================================
 
       const name = String(formData.name || "").trim();
@@ -120,20 +162,36 @@ const Register = () => {
         throw new Error("Full name is required.");
       }
 
-      if (name.length < 3) {
-        throw new Error("Name must be at least 3 characters.");
+      if (name.length < MIN_NAME_LENGTH) {
+        throw new Error(`Name must be at least ${MIN_NAME_LENGTH} characters.`);
       }
 
-      if (name.length > 50) {
-        throw new Error("Name cannot exceed 50 characters.");
+      if (name.length > MAX_NAME_LENGTH) {
+        throw new Error(`Name cannot exceed ${MAX_NAME_LENGTH} characters.`);
       }
 
       if (!email) {
         throw new Error("Email is required.");
       }
 
+      if (!EMAIL_REGEX.test(email)) {
+        throw new Error("Please enter a valid email address.");
+      }
+
       if (!passwordValue) {
         throw new Error("Password is required.");
+      }
+
+      if (passwordValue.length < MIN_PASSWORD_LENGTH) {
+        throw new Error(
+          `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`,
+        );
+      }
+
+      if (passwordValue.length > MAX_PASSWORD_LENGTH) {
+        throw new Error(
+          `Password cannot exceed ${MAX_PASSWORD_LENGTH} characters.`,
+        );
       }
 
       // ======================================================
@@ -145,14 +203,26 @@ const Register = () => {
       //        ↓
       // updateProfile()
       //        ↓
-      // POST /users
+      // POST /auth/register
       //        ↓
       // sendEmailVerification()
+      //        ↓
+      // signOut()
       //
-      // It does NOT create /auth/jwt.
+      // No JWT is created during registration.
       // ======================================================
 
-      await createUser(email, passwordValue, name);
+      const result = await createUser(email, passwordValue, name);
+
+      // ======================================================
+      // VALIDATE RESULT
+      // ======================================================
+
+      if (!result?.success) {
+        throw new Error(
+          result?.message || "Registration could not be completed.",
+        );
+      }
 
       // ======================================================
       // RESET FORM
@@ -168,28 +238,23 @@ const Register = () => {
       // ======================================================
 
       addToast(
-        "Registration successful! Please verify your email before logging in.",
+        result?.message ||
+          "Registration successful! Please verify your email before logging in.",
         "success",
       );
 
       // ======================================================
-      // LOGIN REDIRECT
-      //
-      // IMPORTANT:
-      //
-      // We do NOT redirect to home.
-      //
-      // User must verify email and then login.
+      // REDIRECT
       // ======================================================
 
-      const fromPath = location.state?.from?.pathname || "/";
+      const redirectPath = getRedirectPath();
 
       navigate("/login", {
         replace: true,
 
         state: {
           from: {
-            pathname: fromPath,
+            pathname: redirectPath,
           },
 
           registrationSuccess: true,
@@ -199,7 +264,7 @@ const Register = () => {
       });
     } catch (error) {
       // ======================================================
-      // ERROR LOG
+      // DEBUG
       // ======================================================
 
       console.error(
@@ -208,7 +273,7 @@ const Register = () => {
       );
 
       // ======================================================
-      // ERROR MESSAGE
+      // DEFAULT ERROR
       // ======================================================
 
       let message = "Registration failed. Please try again.";
@@ -251,11 +316,16 @@ const Register = () => {
             "Authentication quota has been exceeded. Please try again later.";
           break;
 
-        // ====================================================
-        // BACKEND ERRORS
-        // ====================================================
+        case "auth/invalid-api-key":
+          message =
+            "Firebase configuration is invalid. Please contact support.";
+          break;
 
         default:
+          // --------------------------------------------------
+          // BACKEND ERROR
+          // --------------------------------------------------
+
           message = error?.response?.data?.message || error?.message || message;
       }
 
@@ -287,7 +357,10 @@ const Register = () => {
 
           <div className="text-center">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-warning/10">
-              <FaUserPlus className="text-3xl text-warning" />
+              <FaUserPlus
+                className="text-3xl text-warning"
+                aria-hidden="true"
+              />
             </div>
 
             <h1 className="text-3xl font-bold">Create Account</h1>
@@ -298,7 +371,7 @@ const Register = () => {
           </div>
 
           {/* ==================================================
-              FORM
+              REGISTER FORM
           ================================================== */}
 
           <form
@@ -306,21 +379,21 @@ const Register = () => {
             noValidate
             className="mt-8 space-y-5"
           >
-            {/* ==================================================
+            {/* =================================================
                 NAME
-            ================================================== */}
+            ================================================= */}
 
             <div>
               <label htmlFor="name" className="label">
                 <span className="label-text font-semibold">Full Name</span>
               </label>
 
-              <label
+              <div
                 className={`input input-bordered flex items-center gap-3 ${
                   errors.name ? "input-error" : ""
                 }`}
               >
-                <FaUser className="text-base-content/50" />
+                <FaUser className="text-base-content/50" aria-hidden="true" />
 
                 <input
                   id="name"
@@ -334,42 +407,45 @@ const Register = () => {
                     required: "Full name is required.",
 
                     minLength: {
-                      value: 3,
-                      message: "Name must be at least 3 characters.",
+                      value: MIN_NAME_LENGTH,
+                      message: `Name must be at least ${MIN_NAME_LENGTH} characters.`,
                     },
 
                     maxLength: {
-                      value: 50,
-                      message: "Name cannot exceed 50 characters.",
+                      value: MAX_NAME_LENGTH,
+                      message: `Name cannot exceed ${MAX_NAME_LENGTH} characters.`,
                     },
 
                     validate: (value) =>
-                      String(value).trim().length >= 3 ||
+                      String(value).trim().length >= MIN_NAME_LENGTH ||
                       "Please enter a valid name.",
                   })}
                 />
-              </label>
+              </div>
 
               {errors.name && (
                 <p className="mt-2 text-sm text-error">{errors.name.message}</p>
               )}
             </div>
 
-            {/* ==================================================
+            {/* =================================================
                 EMAIL
-            ================================================== */}
+            ================================================= */}
 
             <div>
               <label htmlFor="email" className="label">
                 <span className="label-text font-semibold">Email Address</span>
               </label>
 
-              <label
+              <div
                 className={`input input-bordered flex items-center gap-3 ${
                   errors.email ? "input-error" : ""
                 }`}
               >
-                <FaEnvelope className="text-base-content/50" />
+                <FaEnvelope
+                  className="text-base-content/50"
+                  aria-hidden="true"
+                />
 
                 <input
                   id="email"
@@ -383,14 +459,14 @@ const Register = () => {
                     required: "Email is required.",
 
                     pattern: {
-                      value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+                      value: EMAIL_REGEX,
                       message: "Please enter a valid email address.",
                     },
 
                     setValueAs: (value) => String(value).trim().toLowerCase(),
                   })}
                 />
-              </label>
+              </div>
 
               {errors.email && (
                 <p className="mt-2 text-sm text-error">
@@ -399,21 +475,21 @@ const Register = () => {
               )}
             </div>
 
-            {/* ==================================================
+            {/* =================================================
                 PASSWORD
-            ================================================== */}
+            ================================================= */}
 
             <div>
               <label htmlFor="password" className="label">
                 <span className="label-text font-semibold">Password</span>
               </label>
 
-              <label
+              <div
                 className={`input input-bordered flex items-center gap-3 ${
                   errors.password ? "input-error" : ""
                 }`}
               >
-                <FaLock className="text-base-content/50" />
+                <FaLock className="text-base-content/50" aria-hidden="true" />
 
                 <input
                   id="password"
@@ -426,13 +502,13 @@ const Register = () => {
                     required: "Password is required.",
 
                     minLength: {
-                      value: 6,
-                      message: "Password must be at least 6 characters.",
+                      value: MIN_PASSWORD_LENGTH,
+                      message: `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`,
                     },
 
                     maxLength: {
-                      value: 50,
-                      message: "Password cannot exceed 50 characters.",
+                      value: MAX_PASSWORD_LENGTH,
+                      message: `Password cannot exceed ${MAX_PASSWORD_LENGTH} characters.`,
                     },
 
                     pattern: {
@@ -446,7 +522,7 @@ const Register = () => {
                   type="button"
                   disabled={isSubmitting}
                   onClick={() => setShowPassword((previous) => !previous)}
-                  className="text-base-content/60 transition hover:text-warning"
+                  className="text-base-content/60 transition hover:text-warning disabled:cursor-not-allowed disabled:opacity-50"
                   aria-label={showPassword ? "Hide password" : "Show password"}
                 >
                   {showPassword ? (
@@ -455,7 +531,7 @@ const Register = () => {
                     <FaEye size={18} />
                   )}
                 </button>
-              </label>
+              </div>
 
               {errors.password && (
                 <p className="mt-2 text-sm text-error">
@@ -464,9 +540,9 @@ const Register = () => {
               )}
             </div>
 
-            {/* ==================================================
+            {/* =================================================
                 CONFIRM PASSWORD
-            ================================================== */}
+            ================================================= */}
 
             <div>
               <label htmlFor="confirmPassword" className="label">
@@ -475,12 +551,12 @@ const Register = () => {
                 </span>
               </label>
 
-              <label
+              <div
                 className={`input input-bordered flex items-center gap-3 ${
                   errors.confirmPassword ? "input-error" : ""
                 }`}
               >
-                <FaLock className="text-base-content/50" />
+                <FaLock className="text-base-content/50" aria-hidden="true" />
 
                 <input
                   id="confirmPassword"
@@ -503,7 +579,7 @@ const Register = () => {
                   onClick={() =>
                     setShowConfirmPassword((previous) => !previous)
                   }
-                  className="text-base-content/60 transition hover:text-warning"
+                  className="text-base-content/60 transition hover:text-warning disabled:cursor-not-allowed disabled:opacity-50"
                   aria-label={
                     showConfirmPassword ? "Hide password" : "Show password"
                   }
@@ -514,7 +590,7 @@ const Register = () => {
                     <FaEye size={18} />
                   )}
                 </button>
-              </label>
+              </div>
 
               {errors.confirmPassword && (
                 <p className="mt-2 text-sm text-error">
@@ -523,9 +599,9 @@ const Register = () => {
               )}
             </div>
 
-            {/* ==================================================
+            {/* =================================================
                 TERMS
-            ================================================== */}
+            ================================================= */}
 
             <div>
               <label className="flex cursor-pointer items-start gap-3">
@@ -561,20 +637,28 @@ const Register = () => {
               )}
             </div>
 
-            {/* ==================================================
+            {/* =================================================
                 SUBMIT
-            ================================================== */}
+            ================================================= */}
 
             <button
               type="submit"
               disabled={isSubmitting}
               className="btn btn-warning w-full"
             >
-              {isSubmitting && (
-                <span className="loading loading-spinner loading-sm" />
-              )}
+              {isSubmitting ? (
+                <>
+                  <span className="loading loading-spinner loading-sm" />
 
-              {isSubmitting ? "Creating Account..." : "Create Account"}
+                  <span>Creating Account...</span>
+                </>
+              ) : (
+                <>
+                  <FaUserPlus aria-hidden="true" />
+
+                  <span>Create Account</span>
+                </>
+              )}
             </button>
           </form>
 
@@ -584,7 +668,7 @@ const Register = () => {
 
           <div className="divider my-7">OR</div>
 
-          <GoogleSignIn />
+          <GoogleSign />
 
           {/* ==================================================
               LOGIN

@@ -17,13 +17,16 @@ import {
 import { auth } from "./firebase.config";
 import { AuthContext } from "./AuthProvider";
 import { useToast } from "../context/ToastProvider";
-import GoogleSignIn from "./GoogleSign";
+import GoogleSign from "./GoogleSign";
 
 // ============================================================
 // CONSTANTS
 // ============================================================
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const MIN_PASSWORD_LENGTH = 6;
+const MAX_PASSWORD_LENGTH = 50;
 
 const REMEMBER_EMAIL_KEY = "remember-email";
 
@@ -33,7 +36,7 @@ const REMEMBER_EMAIL_KEY = "remember-email";
 
 const Login = () => {
   // ==========================================================
-  // AUTH
+  // AUTH CONTEXT
   // ==========================================================
 
   const { user, loading: authLoading, loginUser } = useContext(AuthContext);
@@ -52,7 +55,7 @@ const Login = () => {
   const location = useLocation();
 
   // ==========================================================
-  // STATE
+  // LOCAL STATE
   // ==========================================================
 
   const [loading, setLoading] = useState(false);
@@ -93,7 +96,7 @@ const Login = () => {
   const isSubmitting = loading || authLoading;
 
   // ==========================================================
-  // REMEMBER EMAIL
+  // LOAD REMEMBERED EMAIL
   // ==========================================================
 
   useEffect(() => {
@@ -112,16 +115,37 @@ const Login = () => {
   }, [setValue]);
 
   // ==========================================================
-  // REDIRECT AFTER LOGIN
+  // GET REDIRECT PATH
   // ==========================================================
-  //
-  // IMPORTANT:
-  //
-  // Login.jsx does NOT navigate immediately after loginUser().
-  //
-  // AuthProvider updates `user`.
-  // Once `user` exists, this effect redirects the user.
-  //
+
+  const getRedirectPath = () => {
+    const from = location.state?.from;
+
+    // --------------------------------------------
+    // String path
+    // --------------------------------------------
+
+    if (typeof from === "string" && from.startsWith("/")) {
+      return from;
+    }
+
+    // --------------------------------------------
+    // Location object
+    // --------------------------------------------
+
+    if (from?.pathname) {
+      return `${from.pathname}` + `${from.search || ""}` + `${from.hash || ""}`;
+    }
+
+    // --------------------------------------------
+    // Default
+    // --------------------------------------------
+
+    return "/";
+  };
+
+  // ==========================================================
+  // REDIRECT AFTER AUTHENTICATION
   // ==========================================================
 
   useEffect(() => {
@@ -129,16 +153,7 @@ const Login = () => {
       return;
     }
 
-    const from = location.state?.from;
-
-    let destination = "/";
-
-    if (typeof from === "string") {
-      destination = from;
-    } else if (from?.pathname) {
-      destination =
-        `${from.pathname}` + `${from.search || ""}` + `${from.hash || ""}`;
-    }
+    const destination = getRedirectPath();
 
     navigate(destination, {
       replace: true,
@@ -158,7 +173,7 @@ const Login = () => {
 
     try {
       // ======================================================
-      // CLEAN INPUT
+      // NORMALIZE INPUT
       // ======================================================
 
       const email = String(formData.email || "")
@@ -181,6 +196,18 @@ const Login = () => {
 
       if (!password) {
         throw new Error("Password is required.");
+      }
+
+      if (password.length < MIN_PASSWORD_LENGTH) {
+        throw new Error(
+          `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`,
+        );
+      }
+
+      if (password.length > MAX_PASSWORD_LENGTH) {
+        throw new Error(
+          `Password cannot exceed ${MAX_PASSWORD_LENGTH} characters.`,
+        );
       }
 
       // ======================================================
@@ -206,30 +233,32 @@ const Login = () => {
       //
       // AuthProvider handles:
       //
-      // Firebase signInWithEmailAndPassword()
-      //              ↓
-      // Firebase email verification check
-      //              ↓
-      // POST /users
-      //              ↓
+      // signInWithEmailAndPassword()
+      //          ↓
+      // Firebase authentication
+      //          ↓
+      // Firebase ID token
+      //          ↓
       // POST /auth/jwt
-      //              ↓
+      //          ↓
+      // HTTP-only application cookie
+      //          ↓
       // GET /auth/me
-      //              ↓
-      // setUser()
+      //          ↓
+      // AuthContext user
       //
-      // Login.jsx should NOT duplicate these operations.
+      // Login.jsx does NOT call these endpoints directly.
       //
       // ======================================================
 
-      const serverUser = await loginUser(email, password);
+      const authenticatedUser = await loginUser(email, password);
 
-      if (!serverUser) {
+      if (!authenticatedUser) {
         throw new Error("Login could not be completed.");
       }
 
       // ======================================================
-      // CLEAR PASSWORD
+      // CLEAR PASSWORD FIELD
       // ======================================================
 
       reset({
@@ -237,8 +266,10 @@ const Login = () => {
         password: "",
       });
 
+      setShowPassword(false);
+
       // ======================================================
-      // SUCCESS TOAST
+      // SUCCESS
       // ======================================================
 
       addToast("Login successful! Welcome back.", "success");
@@ -247,10 +278,10 @@ const Login = () => {
       // IMPORTANT
       // ======================================================
       //
-      // Do NOT call navigate() here.
+      // Do not navigate here.
       //
       // AuthProvider updates `user`.
-      // The redirect useEffect above handles navigation.
+      // The redirect effect above handles navigation.
       //
       // ======================================================
     } catch (error) {
@@ -265,13 +296,17 @@ const Login = () => {
 
       let message = "Unable to login. Please try again.";
 
+      // ======================================================
+      // FIREBASE AUTH ERRORS
+      // ======================================================
+
       switch (error?.code) {
         case "auth/user-not-found":
           message = "No account found with this email.";
           break;
 
         case "auth/wrong-password":
-          message = "Incorrect password.";
+          message = "Incorrect email or password.";
           break;
 
         case "auth/invalid-credential":
@@ -282,12 +317,12 @@ const Login = () => {
           message = "Incorrect email or password.";
           break;
 
-        case "auth/user-disabled":
-          message = "This account has been disabled.";
-          break;
-
         case "auth/invalid-email":
           message = "Please enter a valid email address.";
+          break;
+
+        case "auth/user-disabled":
+          message = "This Firebase account has been disabled.";
           break;
 
         case "auth/network-request-failed":
@@ -302,9 +337,33 @@ const Login = () => {
           message = "Email and password login is currently disabled.";
           break;
 
+        case "auth/invalid-api-key":
+          message = "Firebase configuration is invalid.";
+          break;
+
+        // ====================================================
+        // BACKEND EMAIL VERIFICATION
+        // ====================================================
+
         case "auth/email-not-verified":
           message = "Please verify your email address before logging in.";
           break;
+
+        // ====================================================
+        // BACKEND USER ERRORS
+        // ====================================================
+
+        case "user/not-found":
+          message = "Your account could not be found. Please register first.";
+          break;
+
+        case "user/blocked":
+          message = "Your account has been blocked.";
+          break;
+
+        // ====================================================
+        // SESSION ERRORS
+        // ====================================================
 
         case "auth/user-token-expired":
           message = "Your Firebase session has expired. Please login again.";
@@ -366,6 +425,10 @@ const Login = () => {
         url: `${window.location.origin}/login`,
         handleCodeInApp: false,
       });
+
+      // ======================================================
+      // SUCCESS
+      // ======================================================
 
       addToast(
         "Password reset email has been sent. Please check your inbox.",
@@ -432,7 +495,10 @@ const Login = () => {
 
           <div className="text-center">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-warning/10">
-              <FaSignInAlt className="text-3xl text-warning" />
+              <FaSignInAlt
+                className="text-3xl text-warning"
+                aria-hidden="true"
+              />
             </div>
 
             <h1 className="text-3xl font-bold">Welcome Back 👋</h1>
@@ -465,7 +531,10 @@ const Login = () => {
                   errors.email ? "input-error" : ""
                 }`}
               >
-                <FaEnvelope className="text-base-content/50" />
+                <FaEnvelope
+                  className="text-base-content/50"
+                  aria-hidden="true"
+                />
 
                 <input
                   id="email"
@@ -509,7 +578,7 @@ const Login = () => {
                   errors.password ? "input-error" : ""
                 }`}
               >
-                <FaLock className="text-base-content/50" />
+                <FaLock className="text-base-content/50" aria-hidden="true" />
 
                 <input
                   id="password"
@@ -522,13 +591,13 @@ const Login = () => {
                     required: "Password is required.",
 
                     minLength: {
-                      value: 6,
-                      message: "Password must be at least 6 characters.",
+                      value: MIN_PASSWORD_LENGTH,
+                      message: `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`,
                     },
 
                     maxLength: {
-                      value: 50,
-                      message: "Password cannot exceed 50 characters.",
+                      value: MAX_PASSWORD_LENGTH,
+                      message: `Password cannot exceed ${MAX_PASSWORD_LENGTH} characters.`,
                     },
                   })}
                 />
@@ -541,9 +610,9 @@ const Login = () => {
                   aria-label={showPassword ? "Hide password" : "Show password"}
                 >
                   {showPassword ? (
-                    <FaEyeSlash size={18} />
+                    <FaEyeSlash size={18} aria-hidden="true" />
                   ) : (
-                    <FaEye size={18} />
+                    <FaEye size={18} aria-hidden="true" />
                   )}
                 </button>
               </div>
@@ -556,7 +625,7 @@ const Login = () => {
             </div>
 
             {/* =================================================
-                REMEMBER + FORGOT
+                REMEMBER + FORGOT PASSWORD
             ================================================= */}
 
             <div className="flex items-center justify-between gap-4 text-sm">
@@ -593,13 +662,18 @@ const Login = () => {
             >
               {isSubmitting ? (
                 <>
-                  <span className="loading loading-spinner loading-sm" />
-                  Signing In...
+                  <span
+                    className="loading loading-spinner loading-sm"
+                    aria-hidden="true"
+                  />
+
+                  <span>Signing In...</span>
                 </>
               ) : (
                 <>
-                  <FaSignInAlt />
-                  Login
+                  <FaSignInAlt aria-hidden="true" />
+
+                  <span>Login</span>
                 </>
               )}
             </button>
@@ -611,7 +685,7 @@ const Login = () => {
 
           <div className="divider my-7">OR</div>
 
-          <GoogleSignIn />
+          <GoogleSign />
 
           {/* ==================================================
               REGISTER
