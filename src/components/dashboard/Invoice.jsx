@@ -2,7 +2,6 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import {
   FaArrowLeft,
-  FaCalendarAlt,
   FaCheckCircle,
   FaCloudDownloadAlt,
   FaFileInvoiceDollar,
@@ -28,9 +27,9 @@ const normalizeString = (value, fallback = "") => {
     return fallback;
   }
 
-  const normalized = String(value).trim();
+  const result = String(value).trim();
 
-  return normalized || fallback;
+  return result || fallback;
 };
 
 const toNumber = (value, fallback = 0) => {
@@ -64,9 +63,9 @@ const formatDate = (value) => {
 };
 
 const formatStatus = (value, fallback = "Pending") => {
-  const normalized = normalizeString(value, fallback);
+  const status = normalizeString(value, fallback);
 
-  return normalized
+  return status
     .replace(/[_-]/g, " ")
     .replace(/\s+/g, " ")
     .replace(/\b\w/g, (character) => character.toUpperCase());
@@ -117,10 +116,8 @@ const getProductDiscount = (item) => {
 };
 
 const getProductFinalPrice = (item) => {
-  const finalPrice = item?.finalPrice;
-
-  if (finalPrice !== undefined && finalPrice !== null) {
-    return toNumber(finalPrice, getProductPrice(item));
+  if (item?.finalPrice !== undefined && item?.finalPrice !== null) {
+    return toNumber(item.finalPrice, getProductPrice(item));
   }
 
   const price = getProductPrice(item);
@@ -130,13 +127,15 @@ const getProductFinalPrice = (item) => {
 };
 
 const getProductSubtotal = (item) => {
-  const subtotal = item?.subtotal;
-
-  if (subtotal !== undefined && subtotal !== null) {
-    return toNumber(subtotal);
+  if (item?.subtotal !== undefined && item?.subtotal !== null) {
+    return toNumber(item.subtotal);
   }
 
   return getProductFinalPrice(item) * getProductQuantity(item);
+};
+
+const getApiUrl = () => {
+  return normalizeString(import.meta.env.VITE_API_URL).replace(/\/+$/, "");
 };
 
 // ============================================================
@@ -146,9 +145,14 @@ const getProductSubtotal = (item) => {
 const Invoice = () => {
   const { id } = useParams();
 
+  // ==========================================================
+  // LOAD INVOICE
+  // ==========================================================
+
   const {
     data: invoice,
     isLoading,
+    isFetching,
     isError,
     error,
     refetch,
@@ -189,6 +193,27 @@ const Invoice = () => {
   };
 
   // ==========================================================
+  // VIEW PDF
+  // ==========================================================
+
+  const handleViewPDF = () => {
+    if (!id) {
+      return;
+    }
+
+    const apiUrl = getApiUrl();
+
+    if (!apiUrl) {
+      console.error("VITE_API_URL is not configured.");
+      return;
+    }
+
+    const pdfUrl = `${apiUrl}/invoices/view/${encodeURIComponent(id)}`;
+
+    window.open(pdfUrl, "_blank", "noopener,noreferrer");
+  };
+
+  // ==========================================================
   // DOWNLOAD PDF
   // ==========================================================
 
@@ -197,33 +222,14 @@ const Invoice = () => {
       return;
     }
 
-    const apiUrl = normalizeString(import.meta.env.VITE_API_URL);
+    const apiUrl = getApiUrl();
 
     if (!apiUrl) {
+      console.error("VITE_API_URL is not configured.");
       return;
     }
 
-    const pdfUrl = `${apiUrl.replace(/\/+$/, "")}/invoices/invoice/pdf/${id}`;
-
-    window.open(pdfUrl, "_blank", "noopener,noreferrer");
-  };
-
-  // ==========================================================
-  // OPEN PDF PREVIEW
-  // ==========================================================
-
-  const handleViewPDF = () => {
-    if (!id) {
-      return;
-    }
-
-    const apiUrl = normalizeString(import.meta.env.VITE_API_URL);
-
-    if (!apiUrl) {
-      return;
-    }
-
-    const pdfUrl = `${apiUrl.replace(/\/+$/, "")}/invoices/invoice/view/${id}`;
+    const pdfUrl = `${apiUrl}/invoices/pdf/${encodeURIComponent(id)}`;
 
     window.open(pdfUrl, "_blank", "noopener,noreferrer");
   };
@@ -242,12 +248,15 @@ const Invoice = () => {
             <div className="grid gap-6 md:grid-cols-2">
               <div>
                 <div className="h-8 w-48 animate-pulse rounded bg-base-300" />
+
                 <div className="mt-4 h-4 w-72 animate-pulse rounded bg-base-300" />
+
                 <div className="mt-3 h-4 w-60 animate-pulse rounded bg-base-300" />
               </div>
 
               <div className="md:text-right">
                 <div className="ml-auto h-8 w-36 animate-pulse rounded bg-base-300" />
+
                 <div className="mt-4 ml-auto h-4 w-52 animate-pulse rounded bg-base-300" />
               </div>
             </div>
@@ -255,6 +264,7 @@ const Invoice = () => {
 
           <div className="mt-6 grid gap-6 lg:grid-cols-2">
             <div className="h-56 animate-pulse rounded-3xl bg-base-100" />
+
             <div className="h-56 animate-pulse rounded-3xl bg-base-100" />
           </div>
 
@@ -275,6 +285,10 @@ const Invoice = () => {
       error?.response?.data?.message ||
       error?.message ||
       "We could not load this invoice.";
+
+    if (statusCode === 400) {
+      errorMessage = "The invoice ID is invalid.";
+    }
 
     if (statusCode === 401) {
       errorMessage = "Your session has expired. Please sign in again.";
@@ -331,6 +345,7 @@ const Invoice = () => {
   const payment = invoice?.payment || {};
   const shipping = invoice?.shipping || {};
   const summary = invoice?.summary || {};
+
   const items = Array.isArray(invoice?.items) ? invoice.items : [];
 
   const currency = normalizeString(shop.currency, "BDT");
@@ -364,36 +379,35 @@ const Invoice = () => {
 
   const paymentStatus = formatStatus(payment.status, "Pending");
 
-  const orderStatus = formatStatus(invoice?.status, "Pending");
+  // IMPORTANT:
+  // buildInvoice stores order status inside shipping.status.
+  const orderStatus = formatStatus(shipping.status, "Pending");
 
   const shippingStatus = formatStatus(shipping.status, "Pending");
 
-  const totalItems = toNumber(
-    summary.totalItems ?? invoice.totalItems,
-    items.length,
-  );
+  const totalItems = toNumber(summary.totalItems, items.length);
 
   const totalQuantity = toNumber(
-    summary.totalQuantity ?? invoice.totalQuantity,
+    summary.totalQuantity,
     items.reduce((total, item) => total + getProductQuantity(item), 0),
   );
 
   const subtotal = toNumber(
-    summary.subtotal ?? invoice.subtotal,
+    summary.subtotal,
     items.reduce((total, item) => total + getProductSubtotal(item), 0),
   );
 
   const shippingCharge = toNumber(
-    summary.shippingCharge ?? invoice.shipping,
-    shipping.shippingCharge ?? 0,
+    summary.shippingCharge ?? shipping.shippingCharge,
+    0,
   );
 
-  const tax = toNumber(summary.tax ?? invoice.tax, 0);
+  const tax = toNumber(summary.tax, 0);
 
-  const discount = toNumber(summary.discount ?? invoice.totalDiscount, 0);
+  const discount = toNumber(summary.discount, 0);
 
   const grandTotal = toNumber(
-    summary.grandTotal ?? invoice.grandTotal,
+    summary.grandTotal,
     subtotal + shippingCharge + tax - discount,
   );
 
@@ -462,13 +476,22 @@ const Invoice = () => {
         </div>
 
         {/* ==================================================
+            FETCHING INDICATOR
+        ================================================== */}
+
+        {isFetching && !isLoading ? (
+          <div className="mb-5 flex items-center justify-center gap-2 text-sm text-base-content/50 print:hidden">
+            <FaSpinner className="animate-spin" />
+            Updating invoice...
+          </div>
+        ) : null}
+
+        {/* ==================================================
             INVOICE PAPER
         ================================================== */}
 
         <div className="overflow-hidden rounded-3xl border border-base-300 bg-base-100 shadow-sm print:rounded-none print:border-0 print:shadow-none">
-          {/* =================================================
-              COMPANY HEADER
-          ================================================= */}
+          {/* COMPANY HEADER */}
 
           <div className="border-b border-base-300 p-6 sm:p-8 lg:p-10">
             <div className="flex flex-col gap-8 md:flex-row md:items-start md:justify-between">
@@ -538,9 +561,7 @@ const Invoice = () => {
             </div>
           </div>
 
-          {/* =================================================
-              STATUS STRIP
-          ================================================= */}
+          {/* STATUS */}
 
           <div className="grid grid-cols-1 border-b border-base-300 sm:grid-cols-3">
             <div className="flex items-center gap-3 p-5 sm:border-r sm:border-base-300">
@@ -553,7 +574,7 @@ const Invoice = () => {
 
                 <span
                   className={`badge badge-sm mt-1 ${getStatusClass(
-                    invoice?.status,
+                    shipping.status,
                   )}`}
                 >
                   {orderStatus}
@@ -598,9 +619,7 @@ const Invoice = () => {
             </div>
           </div>
 
-          {/* =================================================
-              CUSTOMER + PAYMENT
-          ================================================= */}
+          {/* CUSTOMER + PAYMENT */}
 
           <div className="grid grid-cols-1 gap-6 border-b border-base-300 p-6 sm:p-8 lg:grid-cols-2 lg:p-10">
             <div className="rounded-2xl border border-base-300 p-5">
@@ -623,6 +642,7 @@ const Invoice = () => {
 
                 <p className="flex items-start gap-2">
                   <FaPhone className="mt-1 shrink-0 text-base-content/40" />
+
                   <span>{customerPhone}</span>
                 </p>
 
@@ -631,7 +651,9 @@ const Invoice = () => {
 
                   <span>
                     {customerAddress}
+
                     {customerCity ? `, ${customerCity}` : ""}
+
                     {customerZip ? ` - ${customerZip}` : ""}
                   </span>
                 </p>
@@ -687,21 +709,17 @@ const Invoice = () => {
             </div>
           </div>
 
-          {/* =================================================
-              PRODUCTS
-          ================================================= */}
+          {/* ORDER ITEMS */}
 
           <div className="border-b border-base-300 p-6 sm:p-8 lg:p-10">
-            <div className="mb-5 flex items-center justify-between gap-4">
-              <div>
-                <h2 className="text-xl font-bold sm:text-2xl">Order Items</h2>
+            <div className="mb-5">
+              <h2 className="text-xl font-bold sm:text-2xl">Order Items</h2>
 
-                <p className="mt-1 text-sm text-base-content/60">
-                  {totalItems} item{totalItems === 1 ? "" : "s"} ·{" "}
-                  {totalQuantity} unit
-                  {totalQuantity === 1 ? "" : "s"}
-                </p>
-              </div>
+              <p className="mt-1 text-sm text-base-content/60">
+                {totalItems} item
+                {totalItems === 1 ? "" : "s"} · {totalQuantity} unit
+                {totalQuantity === 1 ? "" : "s"}
+              </p>
             </div>
 
             {items.length > 0 ? (
@@ -721,10 +739,15 @@ const Invoice = () => {
                   <tbody>
                     {items.map((item, index) => {
                       const image = getProductImage(item);
+
                       const name = getProductName(item);
+
                       const quantity = getProductQuantity(item);
+
                       const unitPrice = getProductPrice(item);
+
                       const itemDiscount = getProductDiscount(item);
+
                       const itemTotal = getProductSubtotal(item);
 
                       return (
@@ -797,9 +820,7 @@ const Invoice = () => {
             )}
           </div>
 
-          {/* =================================================
-              SUMMARY
-          ================================================= */}
+          {/* SUMMARY */}
 
           <div className="grid grid-cols-1 gap-8 p-6 sm:p-8 lg:grid-cols-2 lg:p-10">
             <div>
@@ -880,9 +901,7 @@ const Invoice = () => {
             </div>
           </div>
 
-          {/* =================================================
-              FOOTER
-          ================================================= */}
+          {/* FOOTER */}
 
           <div className="border-t border-base-300 bg-base-200/40 px-6 py-6 text-center sm:px-8">
             <p className="font-semibold">{shopName}</p>
@@ -900,7 +919,7 @@ const Invoice = () => {
         </div>
 
         {/* ==================================================
-            BACK / ACTIONS
+            BOTTOM ACTIONS
         ================================================== */}
 
         <div className="mt-6 flex flex-col justify-between gap-3 sm:flex-row print:hidden">
@@ -921,6 +940,15 @@ const Invoice = () => {
 
             <button
               type="button"
+              onClick={handleViewPDF}
+              className="btn btn-outline"
+            >
+              <FaFileInvoiceDollar />
+              View PDF
+            </button>
+
+            <button
+              type="button"
               onClick={handleDownloadPDF}
               className="btn btn-primary"
             >
@@ -929,17 +957,6 @@ const Invoice = () => {
             </button>
           </div>
         </div>
-
-        {/* ==================================================
-            BACKGROUND FETCH INDICATOR
-        ================================================== */}
-
-        {isFetching && !isLoading ? (
-          <div className="mt-4 flex items-center justify-center gap-2 text-sm text-base-content/50 print:hidden">
-            <FaSpinner className="animate-spin" />
-            Updating invoice...
-          </div>
-        ) : null}
       </div>
 
       {/* ======================================================
@@ -961,12 +978,6 @@ const Invoice = () => {
             min-height: auto !important;
           }
 
-          button,
-          a {
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-          }
-
           table {
             break-inside: auto;
           }
@@ -974,6 +985,12 @@ const Invoice = () => {
           tr {
             break-inside: avoid;
             break-after: auto;
+          }
+
+          button,
+          a {
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
           }
         }
       `}</style>
