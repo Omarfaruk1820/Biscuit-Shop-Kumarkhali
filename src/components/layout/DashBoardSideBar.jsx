@@ -1,23 +1,27 @@
-import { useCallback, useContext } from "react";
+import { useCallback, useContext, useMemo } from "react";
 import { NavLink } from "react-router-dom";
 
 import {
-  FaHome,
-  FaUsers,
   FaBoxOpen,
+  FaClipboardList,
+  FaCog,
+  FaHeart,
+  FaHome,
   FaPlusCircle,
   FaShoppingBag,
-  FaUserCircle,
-  FaClipboardList,
-  FaHeart,
-  FaCog,
-  FaSignOutAlt,
   FaShoppingCart,
+  FaSignOutAlt,
+  FaUserCircle,
+  FaUsers,
 } from "react-icons/fa";
 
 import { AuthContext } from "../../Auth/AuthProvider";
 
-export const adminMenus = [
+// ============================================================
+// ADMIN MENUS
+// ============================================================
+
+const adminMenus = [
   {
     title: "Dashboard",
     path: "/dashboard/admin-dashboard",
@@ -45,11 +49,11 @@ export const adminMenus = [
   },
 ];
 
-// ======================================================
-// User Navigation
-// ======================================================
+// ============================================================
+// USER MENUS
+// ============================================================
 
-export const userMenus = [
+const userMenus = [
   {
     title: "Dashboard",
     path: "/dashboard/user-dashboard",
@@ -61,7 +65,7 @@ export const userMenus = [
     icon: FaShoppingBag,
   },
   {
-    title: "My-Cart",
+    title: "My Cart",
     path: "/dashboard/cart",
     icon: FaShoppingCart,
   },
@@ -77,11 +81,11 @@ export const userMenus = [
   },
 ];
 
-// ======================================================
-// Common Navigation
-// ======================================================
+// ============================================================
+// COMMON MENUS
+// ============================================================
 
-export const commonMenus = [
+const commonMenus = [
   {
     title: "Home",
     path: "/",
@@ -94,30 +98,39 @@ export const commonMenus = [
   },
 ];
 
-// ======================================================
-// NavLink Styles
-// ======================================================
+// ============================================================
+// STYLES
+// ============================================================
 
-const ACTIVE_CLASS =
-  "flex items-center gap-3 rounded-xl bg-primary px-4 py-3 font-semibold text-primary-content shadow transition-all duration-200";
+const activeClass =
+  "flex items-center gap-3 rounded-xl bg-primary px-4 py-3 font-semibold text-primary-content shadow-md transition-all duration-200";
 
-const NORMAL_CLASS =
-  "flex items-center gap-3 rounded-xl px-4 py-3 text-base-content hover:bg-base-200 hover:text-primary transition-all duration-200";
+const normalClass =
+  "flex items-center gap-3 rounded-xl px-4 py-3 text-base-content transition-all duration-200 hover:bg-base-200 hover:text-primary";
 
-// ======================================================
-// Dashboard Sidebar Component
-// ======================================================
+// ============================================================
+// DASHBOARD SIDEBAR
+// ============================================================
 
 const DashboardSidebar = ({ closeDrawer }) => {
-  // ======================================================
-  // Auth Context
-  // ======================================================
+  const { user, loading, signOutUser } = useContext(AuthContext);
 
-  const { user, role, loading, signOutUser } = useContext(AuthContext);
+  const role = user?.role === "admin" ? "admin" : "user";
 
-  // ======================================================
-  // Close Mobile Drawer
-  // ======================================================
+  // ==========================================================
+  // MENU DATA
+  // ==========================================================
+
+  const menus = useMemo(() => {
+    return {
+      roleMenus: role === "admin" ? adminMenus : userMenus,
+      roleTitle: role === "admin" ? "Administration" : "Customer",
+    };
+  }, [role]);
+
+  // ==========================================================
+  // CLOSE DRAWER
+  // ==========================================================
 
   const handleCloseDrawer = useCallback(() => {
     const drawer = document.getElementById("dashboard-drawer");
@@ -129,83 +142,93 @@ const DashboardSidebar = ({ closeDrawer }) => {
     closeDrawer?.();
   }, [closeDrawer]);
 
-  // ======================================================
-  // Logout
-  // ======================================================
+  // ==========================================================
+  // LOGOUT
+  // ==========================================================
 
   const handleLogout = useCallback(async () => {
     try {
       await signOutUser();
       handleCloseDrawer();
     } catch (error) {
-      console.error("Logout Error:", error);
+      console.error("Dashboard Logout Error:", error);
     }
   }, [signOutUser, handleCloseDrawer]);
 
-  // ======================================================
-  // Render Navigation Item
-  // ======================================================
+  // ==========================================================
+  // NAVIGATION ITEM
+  // ==========================================================
 
-  const renderNavItem = ({ title, path, icon: Icon }) => (
-    <li key={path}>
-      <NavLink
-        to={path}
-        onClick={handleCloseDrawer}
-        className={({ isActive }) => (isActive ? ACTIVE_CLASS : NORMAL_CLASS)}
-      >
-        <Icon className="text-lg shrink-0" />
+  const renderNavItem = useCallback(
+    ({ title, path, icon: Icon }) => {
+      return (
+        <li key={path}>
+          <NavLink
+            to={path}
+            onClick={handleCloseDrawer}
+            className={({ isActive }) => (isActive ? activeClass : normalClass)}
+          >
+            <Icon className="shrink-0 text-lg" />
 
-        <span>{title}</span>
-      </NavLink>
-    </li>
+            <span className="truncate">{title}</span>
+          </NavLink>
+        </li>
+      );
+    },
+    [handleCloseDrawer],
   );
 
-  // ======================================================
-  // Loading State
-  // ======================================================
+  // ==========================================================
+  // LOADING STATE
+  // ==========================================================
 
   if (loading) {
     return (
-      <aside className="flex w-72 items-center justify-center bg-base-100">
-        <span className="loading loading-spinner loading-lg text-primary"></span>
+      <aside className="flex h-full w-72 items-center justify-center bg-base-100">
+        <span className="loading loading-spinner loading-lg text-primary" />
       </aside>
     );
   }
 
-  // ======================================================
-  // Part 2 Starts Here...
-  // ======================================================
+  // ==========================================================
+  // SIDEBAR
+  // ==========================================================
+
   return (
     <aside className="flex h-full w-72 flex-col bg-base-100 shadow-xl">
-      {/* ====================================================== */}
-      {/* Logo Section */}
-      {/* ====================================================== */}
+      {/* ======================================================
+          BRAND
+      ====================================================== */}
 
       <div className="border-b border-base-300 px-6 py-6">
         <div className="flex items-center gap-4">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary text-2xl font-bold text-primary-content shadow-lg">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-primary text-2xl text-primary-content shadow-lg">
             📱
           </div>
 
-          <div>
-            <h2 className="text-xl font-bold text-base-content">MobileHub</h2>
+          <div className="min-w-0">
+            <h2 className="truncate text-xl font-bold text-base-content">
+              MobileHub
+            </h2>
 
-            <p className="text-sm text-base-content/60">Smart Phone Store</p>
+            <p className="truncate text-sm text-base-content/60">
+              Smart Phone Store
+            </p>
           </div>
         </div>
       </div>
 
-      {/* ====================================================== */}
-      {/* User Profile */}
-      {/* ====================================================== */}
+      {/* ======================================================
+          USER PROFILE
+      ====================================================== */}
 
       <div className="border-b border-base-300 px-6 py-5">
         <div className="flex items-center gap-4">
           {user?.photo ? (
             <img
               src={user.photo}
-              alt={user.name}
-              className="h-14 w-14 rounded-full border-2 border-primary object-cover"
+              alt={user.name || "User"}
+              className="h-14 w-14 shrink-0 rounded-full border-2 border-primary object-cover"
             />
           ) : (
             <div className="avatar placeholder">
@@ -218,12 +241,12 @@ const DashboardSidebar = ({ closeDrawer }) => {
           )}
 
           <div className="min-w-0 flex-1">
-            <h3 className="truncate text-base font-semibold">
-              {user?.name || "Guest User"}
+            <h3 className="truncate text-base font-semibold text-base-content">
+              {user?.name || "User"}
             </h3>
 
             <p className="truncate text-sm text-base-content/60">
-              {user?.email}
+              {user?.email || ""}
             </p>
 
             <div className="mt-2">
@@ -239,49 +262,35 @@ const DashboardSidebar = ({ closeDrawer }) => {
         </div>
       </div>
 
-      {/* ====================================================== */}
-      {/* Navigation */}
-      {/* ====================================================== */}
+      {/* ======================================================
+          NAVIGATION
+      ====================================================== */}
 
       <nav className="flex-1 overflow-y-auto px-4 py-6">
-        {/* ================= Admin Navigation ================= */}
+        {/* ROLE MENUS */}
 
-        {role === "admin" && (
-          <div className="mb-8">
-            <h4 className="mb-3 px-2 text-xs font-semibold uppercase tracking-widest text-base-content/50">
-              Administration
-            </h4>
+        <section className="mb-8">
+          <h4 className="mb-3 px-2 text-xs font-semibold uppercase tracking-widest text-base-content/50">
+            {menus.roleTitle}
+          </h4>
 
-            <ul className="space-y-2">{adminMenus.map(renderNavItem)}</ul>
-          </div>
-        )}
+          <ul className="space-y-2">{menus.roleMenus.map(renderNavItem)}</ul>
+        </section>
 
-        {/* ================= User Navigation ================= */}
+        {/* COMMON MENUS */}
 
-        {role === "user" && (
-          <div className="mb-8">
-            <h4 className="mb-3 px-2 text-xs font-semibold uppercase tracking-widest text-base-content/50">
-              Customer
-            </h4>
-
-            <ul className="space-y-2">{userMenus.map(renderNavItem)}</ul>
-          </div>
-        )}
-
-        {/* ================= Common Navigation ================= */}
-
-        <div>
+        <section>
           <h4 className="mb-3 px-2 text-xs font-semibold uppercase tracking-widest text-base-content/50">
             General
           </h4>
 
           <ul className="space-y-2">{commonMenus.map(renderNavItem)}</ul>
-        </div>
+        </section>
       </nav>
 
-      {/* ====================================================== */}
-      {/* Footer */}
-      {/* ====================================================== */}
+      {/* ======================================================
+          FOOTER
+      ====================================================== */}
 
       <div className="border-t border-base-300 p-5">
         <button
@@ -290,10 +299,11 @@ const DashboardSidebar = ({ closeDrawer }) => {
           className="btn btn-error w-full justify-start gap-3 rounded-xl"
         >
           <FaSignOutAlt className="text-lg" />
-          Logout
+
+          <span>Logout</span>
         </button>
 
-        <div className="divider my-5"></div>
+        <div className="divider my-5" />
 
         <div className="space-y-2 text-center">
           <p className="text-xs font-medium text-base-content/70">
@@ -312,5 +322,7 @@ const DashboardSidebar = ({ closeDrawer }) => {
     </aside>
   );
 };
+
+export { adminMenus, userMenus, commonMenus };
 
 export default DashboardSidebar;

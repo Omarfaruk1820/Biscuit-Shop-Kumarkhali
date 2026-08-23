@@ -1,72 +1,109 @@
 import { createBrowserRouter } from "react-router-dom";
-import Main from "../components/layout/Main";
-import Home from "../pages/Home";
-import NotFound from "../components/home/NotFound";
-import ProductCard from "../components/products/ProductCard";
-import ProductDetails from "../components/products/ProductDetails";
-import Checkout from "../components/products/Checkout";
 
+// ============================================================
+// LAYOUT
+// ============================================================
+
+import Main from "../components/layout/Main";
+import DashboardLayout from "../components/layout/DashboardLayout";
+
+// ============================================================
+// MAIN PAGES
+// ============================================================
+
+import Home from "../pages/Home";
 import About from "../pages/About";
+import Contact from "../pages/Contact";
+import Success from "../pages/Success";
+import NotFound from "../components/home/NotFound";
+
+// ============================================================
+// AUTH
+// ============================================================
+
 import Login from "../Auth/Login";
 import Register from "../Auth/Register";
 
-import Contact from "../pages/Contact";
+// ============================================================
+// PRODUCTS
+// ============================================================
+
+import ProductCard from "../components/products/ProductCard";
+import ProductDetails from "../components/products/ProductDetails";
+import FeaturedProdetails from "../components/home/FeaturedProdetails";
+import Checkout from "../components/products/Checkout";
+
+// ============================================================
+// CART
+// ============================================================
 
 import Cart from "../components/cart/Cart";
-import Success from "../pages/Success";
 
-import PrivateRoute from "./PrivateRoute";
-import FeaturedProdetails from "../components/home/FeaturedProdetails";
-import DashboardLayout from "../components/layout/DashboardLayout";
-
-import AdminRoute from "./AdminRoute";
+// ============================================================
+// DASHBOARD
+// ============================================================
 
 import DashboardRedirect from "../components/layout/DashboardRedirect";
-import MyOrders from "./../components/dashboard/MyOrders";
-import Wishlist from "./../components/dashboard/Wishlist";
-import ManageOrders from "./../components/dashboard/ManageOrders";
-import AddProduct from "../components/dashboard/AddProduct";
-import AdminDashboard from "./../components/dashboard/AdminDashboard";
-import AllUsers from "../components/dashboard/AllUsers";
-import UserRoute from "./UserRoute";
 import DashboardUser from "../components/dashboard/DashboardUser";
+import AdminDashboard from "../components/dashboard/AdminDashboard";
+import MyOrders from "../components/dashboard/MyOrders";
+import Wishlist from "../components/dashboard/Wishlist";
 import Profile from "../components/dashboard/Profile";
-import ManageProducts from "./../components/dashboard/ManageProducts";
 import Settings from "../components/dashboard/Settings";
 import Invoice from "../components/dashboard/Invoice";
 
+// ============================================================
+// ADMIN
+// ============================================================
+
+import AddProduct from "../components/dashboard/AddProduct";
+import ManageProducts from "../components/dashboard/ManageProducts";
+import ManageOrders from "../components/dashboard/ManageOrders";
+import AllUsers from "../components/dashboard/AllUsers";
+
+// ============================================================
+// ROUTE GUARDS
+// ============================================================
+
+import PrivateRoute from "./PrivateRoute";
+import UserRoute from "./UserRoute";
+import AdminRoute from "./AdminRoute";
+
+// ============================================================
+// ROUTER
+// ============================================================
+
 const router = createBrowserRouter([
+  // ============================================================
+  // MAIN WEBSITE
+  // ============================================================
+
   {
     path: "/",
     element: <Main />,
     errorElement: <NotFound />,
+
     children: [
+      // ========================================================
+      // HOME
+      // ========================================================
+
       {
-        path: "",
+        index: true,
         element: <Home />,
       },
 
-      // ✅ FIXED: products list page
+      // ========================================================
+      // PRODUCTS
+      // ========================================================
+
       {
-        path: "/products",
+        path: "products",
         element: <ProductCard />,
       },
-      {
-        path: "/cart",
-        element: (
-          <PrivateRoute>
-            <Cart />
-          </PrivateRoute>
-        ),
-      },
 
       {
-        path: "/FeaturedProdetails/:id",
-        element: <FeaturedProdetails></FeaturedProdetails>,
-      },
-
-      {
-        path: "/product/:id",
+        path: "product/:id",
         element: (
           <PrivateRoute>
             <ProductDetails />
@@ -75,43 +112,82 @@ const router = createBrowserRouter([
       },
 
       {
-        path: "/checkout",
+        path: "FeaturedProdetails/:id",
+        element: <FeaturedProdetails />,
+      },
+
+      // ========================================================
+      // CART
+      // ========================================================
+
+      {
+        path: "cart",
         element: (
           <PrivateRoute>
-            {" "}
+            <Cart />
+          </PrivateRoute>
+        ),
+      },
+
+      // ========================================================
+      // CHECKOUT
+      // ========================================================
+
+      {
+        path: "checkout",
+        element: (
+          <PrivateRoute>
             <Checkout />
           </PrivateRoute>
         ),
       },
 
+      // ========================================================
+      // OTHER PAGES
+      // ========================================================
+
       {
-        path: "/about",
+        path: "about",
         element: <About />,
       },
 
-      // ✅ ADD THIS (missing before)
       {
-        path: "/contact",
-        element: <Contact></Contact>,
+        path: "contact",
+        element: <Contact />,
       },
 
+      // ========================================================
+      // AUTH
+      // ========================================================
+
       {
-        path: "/login",
+        path: "login",
         element: <Login />,
       },
 
       {
-        path: "/register",
+        path: "register",
         element: <Register />,
       },
+
+      // ========================================================
+      // SUCCESS
+      // ========================================================
+
       {
-        path: "/success",
-        element: <Success></Success>,
+        path: "success",
+        element: <Success />,
       },
     ],
   },
+
+  // ============================================================
+  // DASHBOARD
+  // ============================================================
+
   {
     path: "/dashboard",
+
     element: (
       <PrivateRoute>
         <DashboardLayout />
@@ -119,18 +195,18 @@ const router = createBrowserRouter([
     ),
 
     children: [
-      // ======================================================
-      // Default Dashboard Redirect
-      // ======================================================
+      // ========================================================
+      // DASHBOARD REDIRECT
+      // ========================================================
 
       {
         index: true,
         element: <DashboardRedirect />,
       },
 
-      // ======================================================
-      // User Routes
-      // ======================================================
+      // ========================================================
+      // USER DASHBOARD
+      // ========================================================
 
       {
         path: "user-dashboard",
@@ -141,6 +217,23 @@ const router = createBrowserRouter([
         ),
       },
 
+      // ========================================================
+      // USER CART
+      // ========================================================
+
+      {
+        path: "cart",
+        element: (
+          <UserRoute>
+            <Cart />
+          </UserRoute>
+        ),
+      },
+
+      // ========================================================
+      // MY ORDERS
+      // ========================================================
+
       {
         path: "my-orders",
         element: (
@@ -149,10 +242,23 @@ const router = createBrowserRouter([
           </UserRoute>
         ),
       },
+
+      // ========================================================
+      // INVOICE
+      // ========================================================
+
       {
         path: "invoice/:id",
-        element: <Invoice />,
+        element: (
+          <UserRoute>
+            <Invoice />
+          </UserRoute>
+        ),
       },
+
+      // ========================================================
+      // WISHLIST
+      // ========================================================
 
       {
         path: "wishlist",
@@ -163,6 +269,10 @@ const router = createBrowserRouter([
         ),
       },
 
+      // ========================================================
+      // PROFILE
+      // ========================================================
+
       {
         path: "profile",
         element: (
@@ -172,9 +282,22 @@ const router = createBrowserRouter([
         ),
       },
 
-      // ======================================================
-      // Admin Routes
-      // ======================================================
+      // ========================================================
+      // SETTINGS
+      // ========================================================
+
+      {
+        path: "settings",
+        element: (
+          <PrivateRoute>
+            <Settings />
+          </PrivateRoute>
+        ),
+      },
+
+      // ========================================================
+      // ADMIN DASHBOARD
+      // ========================================================
 
       {
         path: "admin-dashboard",
@@ -185,6 +308,10 @@ const router = createBrowserRouter([
         ),
       },
 
+      // ========================================================
+      // ADD PRODUCT
+      // ========================================================
+
       {
         path: "add-product",
         element: (
@@ -193,6 +320,10 @@ const router = createBrowserRouter([
           </AdminRoute>
         ),
       },
+
+      // ========================================================
+      // MANAGE PRODUCTS
+      // ========================================================
 
       {
         path: "manage-products",
@@ -203,6 +334,10 @@ const router = createBrowserRouter([
         ),
       },
 
+      // ========================================================
+      // MANAGE ORDERS
+      // ========================================================
+
       {
         path: "manage-orders",
         element: (
@@ -212,22 +347,17 @@ const router = createBrowserRouter([
         ),
       },
 
+      // ========================================================
+      // ALL USERS
+      // ========================================================
+
       {
         path: "all-users",
         element: (
           <AdminRoute>
-            <AllUsers></AllUsers>
+            <AllUsers />
           </AdminRoute>
         ),
-      },
-
-      // ======================================================
-      // Shared Routes
-      // ======================================================
-
-      {
-        path: "settings",
-        element: <Settings />,
       },
     ],
   },

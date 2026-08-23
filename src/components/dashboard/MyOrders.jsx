@@ -1,13 +1,15 @@
-import { useContext, useState } from "react";
+import { useContext, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import axios from "axios";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
 import {
   FaBoxOpen,
   FaChevronLeft,
   FaChevronRight,
   FaExclamationTriangle,
   FaShoppingBag,
+  FaFileInvoice,
 } from "react-icons/fa";
 
 import { AuthContext } from "../../Auth/AuthProvider";
@@ -36,10 +38,6 @@ const STATUS_OPTIONS = [
   {
     value: "processing",
     label: "Processing",
-  },
-  {
-    value: "paid",
-    label: "Paid",
   },
   {
     value: "shipped",
@@ -110,8 +108,18 @@ const formatStatus = (status) => {
     .replace(/\b\w/g, (character) => character.toUpperCase());
 };
 
+const formatPaymentMethod = (paymentMethod) => {
+  if (!paymentMethod) {
+    return "N/A";
+  }
+
+  return String(paymentMethod)
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+};
+
 const getStatusBadgeClass = (status) => {
-  switch (status) {
+  switch (String(status).toLowerCase()) {
     case "pending":
       return "badge-warning";
 
@@ -135,16 +143,115 @@ const getStatusBadgeClass = (status) => {
   }
 };
 
-const getPaymentMethod = (order) => {
-  return order?.customer?.paymentMethod || order?.paymentMethod || "N/A";
+const getPaymentStatusBadgeClass = (status) => {
+  switch (String(status).toLowerCase()) {
+    case "paid":
+      return "badge-success";
+
+    case "pending":
+      return "badge-warning";
+
+    case "failed":
+      return "badge-error";
+
+    case "refunded":
+      return "badge-info";
+
+    case "unpaid":
+      return "badge-warning";
+
+    default:
+      return "badge-ghost";
+  }
 };
 
 const getOrderId = (order) => {
-  return order?._id ? String(order._id) : "";
+  if (!order?._id) {
+    return "";
+  }
+
+  return String(order._id);
 };
 
-const getProductKey = (item, index) => {
-  return item?.productId || item?.sku || item?._id || `product-${index}`;
+const getOrderNumber = (order) => {
+  if (order?.orderNumber) {
+    return String(order.orderNumber);
+  }
+
+  const orderId = getOrderId(order);
+
+  if (!orderId) {
+    return "N/A";
+  }
+
+  return `#${orderId.slice(-8).toUpperCase()}`;
+};
+
+const getItemKey = (item, index) => {
+  return (
+    item?.productId ||
+    item?.sku ||
+    item?._id ||
+    `${item?.name || "product"}-${index}`
+  );
+};
+
+const getItemPrice = (item) => {
+  const price = Number(item?.price);
+
+  return Number.isFinite(price) ? price : 0;
+};
+
+const getItemDiscount = (item) => {
+  const discount = Number(item?.discount);
+
+  return Number.isFinite(discount) ? discount : 0;
+};
+
+const getItemQuantity = (item) => {
+  const quantity = Number(item?.quantity);
+
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    return 0;
+  }
+
+  return quantity;
+};
+
+const getItemSubtotal = (item) => {
+  const subtotal = Number(item?.subtotal);
+
+  if (Number.isFinite(subtotal)) {
+    return subtotal;
+  }
+
+  const finalPrice = Number(item?.finalPrice);
+
+  if (Number.isFinite(finalPrice)) {
+    return finalPrice * getItemQuantity(item);
+  }
+
+  return getItemPrice(item) * getItemQuantity(item);
+};
+
+const getOrderTotal = (order) => {
+  const grandTotal = Number(order?.grandTotal);
+
+  if (Number.isFinite(grandTotal)) {
+    return grandTotal;
+  }
+
+  const total = Number(order?.total);
+
+  if (Number.isFinite(total)) {
+    return total;
+  }
+
+  const subtotal = Number(order?.subtotal) || 0;
+  const shipping = Number(order?.shipping) || 0;
+  const tax = Number(order?.tax) || 0;
+
+  return subtotal + shipping + tax;
 };
 
 // ============================================================
@@ -174,6 +281,10 @@ const MyOrders = () => {
     enabled: Boolean(user?.email) && !authLoading && Boolean(API_URL),
 
     queryFn: async () => {
+      if (!user?.email) {
+        throw new Error("User email is required.");
+      }
+
       const params = new URLSearchParams();
 
       params.set("page", String(page));
@@ -210,22 +321,51 @@ const MyOrders = () => {
   });
 
   // ==========================================================
-  // DATA
+  // RESPONSE DATA
   // ==========================================================
 
   const orders = Array.isArray(data?.data) ? data.data : [];
 
   const pagination = data?.pagination || {};
 
-  const totalOrders = Number(pagination.totalOrders || 0);
+  const totalOrders = Number(pagination.totalOrders ?? pagination.total ?? 0);
 
-  const totalPages = Number(pagination.totalPages || 0);
+  const calculatedTotalPages =
+    totalOrders > 0 ? Math.ceil(totalOrders / ORDERS_PER_PAGE) : 0;
+
+  const totalPages = Number(pagination.totalPages ?? calculatedTotalPages);
 
   const currentPage = Number(pagination.page || page);
 
-  const hasNextPage = Boolean(pagination.hasNextPage);
+  const hasNextPage =
+    typeof pagination.hasNextPage === "boolean"
+      ? pagination.hasNextPage
+      : currentPage < totalPages;
 
-  const hasPrevPage = Boolean(pagination.hasPrevPage);
+  const hasPrevPage =
+    typeof pagination.hasPrevPage === "boolean"
+      ? pagination.hasPrevPage
+      : currentPage > 1;
+
+  // ==========================================================
+  // PAGE SUMMARY
+  // ==========================================================
+
+  const pageSummary = useMemo(() => {
+    let totalQuantity = 0;
+    let totalValue = 0;
+
+    orders.forEach((order) => {
+      totalQuantity += Number(order?.totalQuantity || 0);
+
+      totalValue += getOrderTotal(order);
+    });
+
+    return {
+      totalQuantity,
+      totalValue,
+    };
+  }, [orders]);
 
   // ==========================================================
   // CANCEL ORDER
@@ -274,15 +414,19 @@ const MyOrders = () => {
   };
 
   const handlePreviousPage = () => {
-    if (hasPrevPage) {
-      setPage((previousPage) => previousPage - 1);
+    if (!hasPrevPage || isFetching) {
+      return;
     }
+
+    setPage((previousPage) => Math.max(previousPage - 1, 1));
   };
 
   const handleNextPage = () => {
-    if (hasNextPage) {
-      setPage((previousPage) => previousPage + 1);
+    if (!hasNextPage || isFetching) {
+      return;
     }
+
+    setPage((previousPage) => previousPage + 1);
   };
 
   const handleCancel = (orderId) => {
@@ -307,18 +451,18 @@ const MyOrders = () => {
 
   if (authLoading) {
     return (
-      <section className="max-w-7xl mx-auto px-4 py-10">
+      <section className="mx-auto max-w-7xl px-4 py-10">
         <div className="space-y-6">
           {[1, 2, 3].map((item) => (
             <div
               key={item}
-              className="border border-base-300 rounded-2xl p-6 animate-pulse"
+              className="animate-pulse rounded-2xl border border-base-300 p-6"
             >
-              <div className="h-6 bg-base-300 rounded w-48 mb-4" />
+              <div className="mb-4 h-6 w-48 rounded bg-base-300" />
 
-              <div className="h-4 bg-base-300 rounded w-full mb-3" />
+              <div className="mb-3 h-4 w-full rounded bg-base-300" />
 
-              <div className="h-4 bg-base-300 rounded w-2/3" />
+              <div className="h-4 w-2/3 rounded bg-base-300" />
             </div>
           ))}
         </div>
@@ -332,13 +476,13 @@ const MyOrders = () => {
 
   if (!user) {
     return (
-      <section className="max-w-3xl mx-auto px-4 py-20">
-        <div className="bg-base-100 border border-base-300 rounded-2xl shadow-sm p-10 text-center">
-          <FaExclamationTriangle className="mx-auto text-6xl text-warning mb-5" />
+      <section className="mx-auto max-w-3xl px-4 py-20">
+        <div className="rounded-2xl border border-base-300 bg-base-100 p-10 text-center shadow-sm">
+          <FaExclamationTriangle className="mx-auto mb-5 text-6xl text-warning" />
 
-          <h2 className="text-3xl font-bold mb-3">Please Login</h2>
+          <h2 className="mb-3 text-3xl font-bold">Please Login</h2>
 
-          <p className="text-gray-500 mb-8">
+          <p className="mb-8 text-gray-500">
             You need to log in to view your orders.
           </p>
 
@@ -356,11 +500,11 @@ const MyOrders = () => {
 
   if (!API_URL) {
     return (
-      <section className="max-w-3xl mx-auto px-4 py-20">
-        <div className="bg-base-100 border border-error rounded-2xl p-10 text-center">
-          <FaExclamationTriangle className="mx-auto text-6xl text-error mb-5" />
+      <section className="mx-auto max-w-3xl px-4 py-20">
+        <div className="rounded-2xl border border-error bg-base-100 p-10 text-center">
+          <FaExclamationTriangle className="mx-auto mb-5 text-6xl text-error" />
 
-          <h2 className="text-3xl font-bold mb-3">API Configuration Error</h2>
+          <h2 className="mb-3 text-3xl font-bold">API Configuration Error</h2>
 
           <p className="text-gray-500">VITE_API_URL is not configured.</p>
         </div>
@@ -369,23 +513,23 @@ const MyOrders = () => {
   }
 
   // ==========================================================
-  // LOADING
+  // ORDERS LOADING
   // ==========================================================
 
   if (isLoading) {
     return (
-      <section className="max-w-7xl mx-auto px-4 py-10">
+      <section className="mx-auto max-w-7xl px-4 py-10">
         <div className="mb-8">
-          <div className="h-10 bg-base-300 rounded w-56 animate-pulse" />
+          <div className="h-10 w-56 animate-pulse rounded bg-base-300" />
 
-          <div className="h-5 bg-base-300 rounded w-96 mt-3 animate-pulse" />
+          <div className="mt-3 h-5 w-96 animate-pulse rounded bg-base-300" />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-8">
-          {[1, 2, 3].map((item) => (
+        <div className="mb-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          {[1, 2, 3, 4].map((item) => (
             <div
               key={item}
-              className="h-32 bg-base-200 rounded-2xl animate-pulse"
+              className="h-32 animate-pulse rounded-2xl bg-base-200"
             />
           ))}
         </div>
@@ -394,13 +538,13 @@ const MyOrders = () => {
           {[1, 2].map((item) => (
             <div
               key={item}
-              className="border border-base-300 rounded-2xl p-6 animate-pulse"
+              className="animate-pulse rounded-2xl border border-base-300 p-6"
             >
-              <div className="h-6 bg-base-300 rounded w-56 mb-5" />
+              <div className="mb-5 h-6 w-56 rounded bg-base-300" />
 
-              <div className="h-4 bg-base-300 rounded w-full mb-3" />
+              <div className="mb-3 h-4 w-full rounded bg-base-300" />
 
-              <div className="h-4 bg-base-300 rounded w-3/4" />
+              <div className="h-4 w-3/4 rounded bg-base-300" />
             </div>
           ))}
         </div>
@@ -419,13 +563,13 @@ const MyOrders = () => {
       "Something went wrong while loading your orders.";
 
     return (
-      <section className="max-w-3xl mx-auto px-4 py-20">
-        <div className="bg-base-100 border border-base-300 rounded-2xl shadow-sm p-10 text-center">
-          <FaExclamationTriangle className="mx-auto text-6xl text-error mb-5" />
+      <section className="mx-auto max-w-3xl px-4 py-20">
+        <div className="rounded-2xl border border-base-300 bg-base-100 p-10 text-center shadow-sm">
+          <FaExclamationTriangle className="mx-auto mb-5 text-6xl text-error" />
 
-          <h2 className="text-3xl font-bold mb-3">Failed to Load Orders</h2>
+          <h2 className="mb-3 text-3xl font-bold">Failed to Load Orders</h2>
 
-          <p className="text-gray-500 mb-8">{errorMessage}</p>
+          <p className="mb-8 text-gray-500">{errorMessage}</p>
 
           <button
             type="button"
@@ -440,24 +584,24 @@ const MyOrders = () => {
   }
 
   // ==========================================================
-  // RENDER
+  // MAIN
   // ==========================================================
 
   return (
-    <section className="max-w-7xl mx-auto px-4 py-8">
-      {/* ====================================================== */}
-      {/* HEADER */}
-      {/* ====================================================== */}
+    <section className="mx-auto max-w-7xl px-4 py-8">
+      {/* ======================================================
+          HEADER
+      ====================================================== */}
 
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5 mb-8">
+      <div className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <div className="flex items-center gap-3">
-            <FaShoppingBag className="text-primary text-3xl" />
+            <FaShoppingBag className="text-3xl text-primary" />
 
             <h1 className="text-4xl font-bold">My Orders</h1>
           </div>
 
-          <p className="text-gray-500 mt-2">View and manage all your orders.</p>
+          <p className="mt-2 text-gray-500">View and manage all your orders.</p>
         </div>
 
         <Link to="/products" className="btn btn-outline">
@@ -465,12 +609,12 @@ const MyOrders = () => {
         </Link>
       </div>
 
-      {/* ====================================================== */}
-      {/* SUMMARY */}
-      {/* ====================================================== */}
+      {/* ======================================================
+          SUMMARY
+      ====================================================== */}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-8">
-        <div className="card bg-base-100 border border-base-300 shadow-sm">
+      <div className="mb-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="card border border-base-300 bg-base-100 shadow-sm">
           <div className="card-body">
             <p className="text-sm text-gray-500">Total Orders</p>
 
@@ -478,7 +622,7 @@ const MyOrders = () => {
           </div>
         </div>
 
-        <div className="card bg-base-100 border border-base-300 shadow-sm">
+        <div className="card border border-base-300 bg-base-100 shadow-sm">
           <div className="card-body">
             <p className="text-sm text-gray-500">Orders on This Page</p>
 
@@ -486,7 +630,15 @@ const MyOrders = () => {
           </div>
         </div>
 
-        <div className="card bg-base-100 border border-base-300 shadow-sm">
+        <div className="card border border-base-300 bg-base-100 shadow-sm">
+          <div className="card-body">
+            <p className="text-sm text-gray-500">Items on This Page</p>
+
+            <h2 className="text-3xl font-bold">{pageSummary.totalQuantity}</h2>
+          </div>
+        </div>
+
+        <div className="card border border-base-300 bg-base-100 shadow-sm">
           <div className="card-body">
             <p className="text-sm text-gray-500">Current Page</p>
 
@@ -497,16 +649,14 @@ const MyOrders = () => {
         </div>
       </div>
 
-      {/* ====================================================== */}
-      {/* FILTER + SORT */}
-      {/* ====================================================== */}
+      {/* ======================================================
+          FILTER + SORT
+      ====================================================== */}
 
-      <div className="bg-base-100 border border-base-300 rounded-2xl p-5 mb-8">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
-          {/* STATUS */}
-
+      <div className="mb-8 rounded-2xl border border-base-300 bg-base-100 p-5">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <p className="font-semibold mb-3">Filter by Status</p>
+            <p className="mb-3 font-semibold">Filter by Status</p>
 
             <div className="flex flex-wrap gap-2">
               {STATUS_OPTIONS.map((item) => (
@@ -523,8 +673,6 @@ const MyOrders = () => {
               ))}
             </div>
           </div>
-
-          {/* SORT */}
 
           <div className="form-control">
             <label htmlFor="order-sort" className="label">
@@ -547,9 +695,9 @@ const MyOrders = () => {
         </div>
       </div>
 
-      {/* ====================================================== */}
-      {/* FETCHING INDICATOR */}
-      {/* ====================================================== */}
+      {/* ======================================================
+          FETCHING
+      ====================================================== */}
 
       {isFetching && !isLoading && (
         <div className="mb-5">
@@ -557,23 +705,23 @@ const MyOrders = () => {
         </div>
       )}
 
-      {/* ====================================================== */}
-      {/* EMPTY */}
-      {/* ====================================================== */}
+      {/* ======================================================
+          EMPTY STATE
+      ====================================================== */}
 
       {orders.length === 0 ? (
-        <div className="bg-base-100 border border-base-300 rounded-2xl py-20 px-6 text-center">
-          <FaBoxOpen className="mx-auto text-7xl text-gray-300 mb-6" />
+        <div className="rounded-2xl border border-base-300 bg-base-100 px-6 py-20 text-center">
+          <FaBoxOpen className="mx-auto mb-6 text-7xl text-gray-300" />
 
-          <h2 className="text-3xl font-bold mb-3">No Orders Found</h2>
+          <h2 className="mb-3 text-3xl font-bold">No Orders Found</h2>
 
-          <p className="text-gray-500 mb-8">
+          <p className="mb-8 text-gray-500">
             {status === "all"
               ? "You haven't placed any orders yet."
-              : `You don't have any ${status} orders.`}
+              : `You don't have any ${formatStatus(status)} orders.`}
           </p>
 
-          {status !== "all" ? (
+          {status !== "all" && (
             <button
               type="button"
               onClick={() => handleStatusChange("all")}
@@ -581,7 +729,7 @@ const MyOrders = () => {
             >
               View All Orders
             </button>
-          ) : null}
+          )}
 
           <Link to="/products" className="btn btn-primary">
             Start Shopping
@@ -589,130 +737,211 @@ const MyOrders = () => {
         </div>
       ) : (
         <div className="space-y-8">
-          {/* ================================================== */}
-          {/* ORDERS */}
-          {/* ================================================== */}
+          {/* ==================================================
+              ORDERS
+          ================================================== */}
 
           {orders.map((order) => {
             const orderId = getOrderId(order);
+            const orderNumber = getOrderNumber(order);
 
-            const items = Array.isArray(order.items) ? order.items : [];
+            const items = Array.isArray(order?.items) ? order.items : [];
 
-            const orderStatus = String(order.status || "").toLowerCase();
+            const orderStatus = String(
+              order?.status || "unknown",
+            ).toLowerCase();
+
+            const paymentStatus = String(
+              order?.paymentStatus || "unpaid",
+            ).toLowerCase();
+
+            const paymentMethod =
+              order?.paymentMethod || order?.customer?.paymentMethod || "N/A";
+
+            const grandTotal = getOrderTotal(order);
 
             return (
               <article
-                key={orderId}
-                className="card bg-base-100 border border-base-300 shadow-sm rounded-2xl overflow-hidden"
+                key={orderId || orderNumber}
+                className="card overflow-hidden rounded-2xl border border-base-300 bg-base-100 shadow-sm"
               >
-                {/* ============================================== */}
-                {/* ORDER HEADER */}
-                {/* ============================================== */}
+                {/* ==========================================
+                    ORDER HEADER
+                ========================================== */}
 
                 <div className="card-body border-b border-base-300">
-                  <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+                  <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
                     <div>
-                      <h2 className="text-xl font-bold">
-                        Order #
-                        {orderId ? orderId.slice(-8).toUpperCase() : "N/A"}
+                      <p className="mb-1 text-sm text-gray-500">Order Number</p>
+
+                      <h2 className="break-all text-xl font-bold">
+                        {orderNumber}
                       </h2>
 
-                      <p className="text-sm text-gray-500 mt-1">
-                        Placed on {formatDate(order.createdAt)}
+                      <p className="mt-2 text-sm text-gray-500">
+                        Placed on {formatDate(order?.createdAt)}
                       </p>
                     </div>
 
-                    <span
-                      className={`badge badge-lg ${getStatusBadgeClass(
-                        orderStatus,
-                      )}`}
-                    >
-                      {formatStatus(orderStatus)}
-                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      <span
+                        className={`badge badge-lg ${getStatusBadgeClass(
+                          orderStatus,
+                        )}`}
+                      >
+                        {formatStatus(orderStatus)}
+                      </span>
+
+                      <span
+                        className={`badge badge-lg ${getPaymentStatusBadgeClass(
+                          paymentStatus,
+                        )}`}
+                      >
+                        Payment: {formatStatus(paymentStatus)}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
-                {/* ============================================== */}
-                {/* CUSTOMER INFORMATION */}
-                {/* ============================================== */}
+                {/* ==========================================
+                    CUSTOMER INFORMATION
+                ========================================== */}
 
-                <div className="px-6 py-6 border-b border-base-300">
-                  <h3 className="text-lg font-bold mb-5">
+                <div className="border-b border-base-300 px-6 py-6">
+                  <h3 className="mb-5 text-lg font-bold">
                     Customer Information
                   </h3>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                  <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
                     <div>
-                      <p className="text-xs text-gray-500 uppercase mb-1">
+                      <p className="mb-1 text-xs uppercase text-gray-500">
                         Name
                       </p>
 
                       <p className="font-semibold">
-                        {order.customer?.name || "N/A"}
+                        {order?.customer?.name || "N/A"}
                       </p>
                     </div>
 
                     <div>
-                      <p className="text-xs text-gray-500 uppercase mb-1">
+                      <p className="mb-1 text-xs uppercase text-gray-500">
                         Phone
                       </p>
 
                       <p className="font-semibold">
-                        {order.customer?.phone || "N/A"}
+                        {order?.customer?.phone || "N/A"}
                       </p>
                     </div>
 
                     <div>
-                      <p className="text-xs text-gray-500 uppercase mb-1">
-                        Payment
+                      <p className="mb-1 text-xs uppercase text-gray-500">
+                        Payment Method
                       </p>
 
-                      <p className="font-semibold capitalize">
-                        {String(getPaymentMethod(order)).replace(/_/g, " ")}
+                      <p className="font-semibold">
+                        {formatPaymentMethod(paymentMethod)}
                       </p>
                     </div>
 
                     <div>
-                      <p className="text-xs text-gray-500 uppercase mb-1">
+                      <p className="mb-1 text-xs uppercase text-gray-500">
                         Address
                       </p>
 
                       <p className="font-semibold">
-                        {order.customer?.address || "N/A"}
+                        {order?.customer?.address || "N/A"}
                       </p>
                     </div>
 
-                    {order.customer?.city ? (
+                    {order?.customer?.city && (
                       <div>
-                        <p className="text-xs text-gray-500 uppercase mb-1">
+                        <p className="mb-1 text-xs uppercase text-gray-500">
                           City
                         </p>
 
                         <p className="font-semibold">{order.customer.city}</p>
                       </div>
-                    ) : null}
+                    )}
 
-                    {order.customer?.zip ? (
+                    {order?.customer?.zip && (
                       <div>
-                        <p className="text-xs text-gray-500 uppercase mb-1">
+                        <p className="mb-1 text-xs uppercase text-gray-500">
                           ZIP
                         </p>
 
                         <p className="font-semibold">{order.customer.zip}</p>
                       </div>
-                    ) : null}
+                    )}
                   </div>
                 </div>
 
-                {/* ============================================== */}
-                {/* PRODUCTS */}
-                {/* ============================================== */}
+                {/* ==========================================
+                    ORDER SUMMARY
+                ========================================== */}
+
+                <div className="border-b border-base-300 px-6 py-6">
+                  <h3 className="mb-5 text-lg font-bold">Order Summary</h3>
+
+                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+                    <div>
+                      <p className="text-xs text-gray-500">Products</p>
+
+                      <p className="font-semibold">
+                        {Number(order?.totalItems || items.length)}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs text-gray-500">Quantity</p>
+
+                      <p className="font-semibold">
+                        {Number(order?.totalQuantity || 0)}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs text-gray-500">Subtotal</p>
+
+                      <p className="font-semibold">
+                        {formatCurrency(order?.subtotal)}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs text-gray-500">Discount</p>
+
+                      <p className="font-semibold text-success">
+                        -{formatCurrency(order?.totalDiscount)}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs text-gray-500">Shipping</p>
+
+                      <p className="font-semibold">
+                        {formatCurrency(order?.shipping)}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs text-gray-500">Tax</p>
+
+                      <p className="font-semibold">
+                        {formatCurrency(order?.tax)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ==========================================
+                    PRODUCTS
+                ========================================== */}
 
                 <div className="p-6">
-                  <h3 className="text-lg font-bold mb-5">Ordered Products</h3>
+                  <h3 className="mb-5 text-lg font-bold">Ordered Products</h3>
 
                   {items.length === 0 ? (
-                    <div className="border border-dashed border-base-300 rounded-xl p-8 text-center">
+                    <div className="rounded-xl border border-dashed border-base-300 p-8 text-center">
                       <p className="text-gray-500">
                         Product details are not available for this order.
                       </p>
@@ -720,24 +949,22 @@ const MyOrders = () => {
                   ) : (
                     <div className="space-y-4">
                       {items.map((item, index) => {
-                        const itemKey = getProductKey(item, index);
+                        const itemKey = getItemKey(item, index);
 
-                        const price = Number(item?.price || 0);
+                        const price = getItemPrice(item);
 
-                        const discount = Number(item?.discount || 0);
+                        const discount = getItemDiscount(item);
 
-                        const quantity = Number(item?.quantity || 0);
+                        const quantity = getItemQuantity(item);
 
-                        const subtotal = Number(
-                          item?.subtotal ?? item?.finalPrice * quantity ?? 0,
-                        );
+                        const subtotal = getItemSubtotal(item);
 
                         return (
                           <div
                             key={itemKey}
-                            className="border border-base-300 rounded-xl p-4"
+                            className="rounded-xl border border-base-300 p-4"
                           >
-                            <div className="flex flex-col md:flex-row gap-5">
+                            <div className="flex flex-col gap-5 md:flex-row">
                               {/* IMAGE */}
 
                               <div className="shrink-0">
@@ -745,30 +972,30 @@ const MyOrders = () => {
                                   <img
                                     src={item.image}
                                     alt={item?.name || "Product"}
-                                    className="w-24 h-24 rounded-xl object-cover border border-base-300"
+                                    className="h-24 w-24 rounded-xl border border-base-300 object-cover"
                                     loading="lazy"
                                   />
                                 ) : (
-                                  <div className="w-24 h-24 rounded-xl border border-base-300 bg-base-200 flex items-center justify-center">
+                                  <div className="flex h-24 w-24 items-center justify-center rounded-xl border border-base-300 bg-base-200">
                                     <FaBoxOpen className="text-3xl text-gray-400" />
                                   </div>
                                 )}
                               </div>
 
-                              {/* PRODUCT INFO */}
+                              {/* PRODUCT INFORMATION */}
 
                               <div className="flex-1">
                                 <h4 className="text-lg font-bold">
                                   {item?.name || "Unknown Product"}
                                 </h4>
 
-                                {item?.sku ? (
-                                  <p className="text-sm text-gray-500 mt-1">
+                                {item?.sku && (
+                                  <p className="mt-1 text-sm text-gray-500">
                                     SKU: {item.sku}
                                   </p>
-                                ) : null}
+                                )}
 
-                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-5">
+                                <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-4">
                                   <div>
                                     <p className="text-xs text-gray-500">
                                       Price
@@ -813,31 +1040,47 @@ const MyOrders = () => {
                     </div>
                   )}
 
-                  {/* ============================================ */}
-                  {/* TOTAL + ACTIONS */}
-                  {/* ============================================ */}
+                  {/* ========================================
+                      ORDER ACTIONS
+                  ======================================== */}
 
-                  <div className="mt-6 pt-6 border-t border-base-300">
-                    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+                  <div className="mt-6 border-t border-base-300 pt-6">
+                    <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
                       <div>
-                        <p className="text-sm text-gray-500">Total Amount</p>
+                        <p className="text-sm text-gray-500">Grand Total</p>
 
-                        <h2 className="text-3xl font-bold text-primary mt-1">
-                          {formatCurrency(order.total)}
+                        <h2 className="mt-1 text-3xl font-bold text-primary">
+                          {formatCurrency(grandTotal)}
                         </h2>
+
+                        <p className="mt-1 text-xs text-gray-500">
+                          Including shipping and tax
+                        </p>
                       </div>
 
-                      <div className="flex flex-col sm:flex-row gap-3">
-                        {orderId ? (
-                          <Link
-                            to={`/dashboard/invoice/${orderId}`}
-                            className="btn btn-success"
-                          >
-                            Invoice
-                          </Link>
-                        ) : null}
+                      <div className="flex flex-col gap-3 sm:flex-row">
+                        {/* ==================================
+                            INVOICE BUTTON
+                        ================================== */}
 
-                        {orderStatus === "pending" ? (
+                        {orderId && (
+                          <Link
+                            to={`/dashboard/invoice/${encodeURIComponent(
+                              orderId,
+                            )}`}
+                            className="btn btn-success gap-2"
+                          >
+                            <FaFileInvoice />
+
+                            <span>Invoice</span>
+                          </Link>
+                        )}
+
+                        {/* ==================================
+                            CANCEL BUTTON
+                        ================================== */}
+
+                        {orderStatus === "pending" && (
                           <button
                             type="button"
                             onClick={() => handleCancel(orderId)}
@@ -848,24 +1091,24 @@ const MyOrders = () => {
                               ? "Cancelling..."
                               : "Cancel Order"}
                           </button>
-                        ) : null}
+                        )}
                       </div>
                     </div>
 
                     {/* CANCEL ERROR */}
 
                     {cancelMutation.isError &&
-                    cancelMutation.variables === orderId ? (
-                      <div className="alert alert-error mt-5">
-                        <FaExclamationTriangle />
+                      cancelMutation.variables === orderId && (
+                        <div className="alert alert-error mt-5">
+                          <FaExclamationTriangle />
 
-                        <span>
-                          {cancelMutation.error?.response?.data?.message ||
-                            cancelMutation.error?.message ||
-                            "Failed to cancel order."}
-                        </span>
-                      </div>
-                    ) : null}
+                          <span>
+                            {cancelMutation.error?.response?.data?.message ||
+                              cancelMutation.error?.message ||
+                              "Failed to cancel order."}
+                          </span>
+                        </div>
+                      )}
                   </div>
                 </div>
               </article>
@@ -874,12 +1117,12 @@ const MyOrders = () => {
         </div>
       )}
 
-      {/* ====================================================== */}
-      {/* PAGINATION */}
-      {/* ====================================================== */}
+      {/* ======================================================
+          PAGINATION
+      ====================================================== */}
 
       {totalPages > 0 && (
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-10">
+        <div className="mt-10 flex flex-col items-center justify-between gap-4 sm:flex-row">
           <div className="text-sm text-gray-500">
             Page{" "}
             <span className="font-semibold text-base-content">
