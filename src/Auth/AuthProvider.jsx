@@ -1,3 +1,5 @@
+
+
 import {
   createContext,
   useCallback,
@@ -19,21 +21,16 @@ import {
   updateProfile,
 } from "firebase/auth";
 
-import axios from "axios";
-
 import { auth } from "./firebase.config";
 
-// ============================================================
-// AUTH CONTEXT
-// ============================================================
+import axiosPublic from "../hooks/axiosPublic";
+import axiosSecure from "../hooks/axiosSecure";
 
 export const AuthContext = createContext(null);
 
-// ============================================================
-// API CONFIG
-// ============================================================
-
 const API_URL = String(import.meta.env.VITE_API_URL || "").trim();
+
+const REQUEST_TIMEOUT = 15000;
 
 const AUTH_ENDPOINTS = {
   REGISTER: "/auth/register",
@@ -43,41 +40,15 @@ const AUTH_ENDPOINTS = {
   LOGOUT: "/auth/logout",
 };
 
-const REQUEST_TIMEOUT = 15000;
-
-// ============================================================
-// AXIOS INSTANCE
-// ============================================================
-
-const api = axios.create({
-  baseURL: API_URL,
-  withCredentials: true,
-  timeout: REQUEST_TIMEOUT,
-  headers: {
-    Accept: "application/json",
-    "Content-Type": "application/json",
-  },
-});
-
-if (!API_URL) {
-  console.warn(
-    "VITE_API_URL is not configured. Authentication API requests will fail.",
-  );
-}
-
-// ============================================================
-// GOOGLE PROVIDER
-// ============================================================
-
 const googleProvider = new GoogleAuthProvider();
 
 googleProvider.setCustomParameters({
   prompt: "select_account",
 });
 
-// ============================================================
-// HELPERS
-// ============================================================
+/* -------------------------------------------------------------------------- */
+/* HELPERS                                                                    */
+/* -------------------------------------------------------------------------- */
 
 const normalizeString = (value = "") => {
   return typeof value === "string" ? value.trim() : "";
@@ -88,7 +59,12 @@ const normalizeEmail = (value = "") => {
 };
 
 const getErrorMessage = (error, fallback = "Something went wrong.") => {
-  return error?.response?.data?.message || error?.message || fallback;
+  return (
+    error?.response?.data?.message ||
+    error?.response?.data?.error ||
+    error?.message ||
+    fallback
+  );
 };
 
 const createAuthError = (message, code = "", response = null) => {
@@ -100,42 +76,42 @@ const createAuthError = (message, code = "", response = null) => {
   return error;
 };
 
-// ============================================================
-// AUTH PROVIDER
-// ============================================================
+/* -------------------------------------------------------------------------- */
+/* AUTH PROVIDER                                                              */
+/* -------------------------------------------------------------------------- */
 
 const AuthProvider = ({ children }) => {
-  // ==========================================================
-  // STATE
-  // ==========================================================
-
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // ==========================================================
-  // REFS
-  // ==========================================================
-
+  const mountedRef = useRef(false);
   const authOperationRef = useRef(false);
-  const mountedRef = useRef(true);
-
-  // ==========================================================
-  // DERIVED DATA
-  // ==========================================================
 
   const role = user?.role || "user";
   const status = user?.status || "active";
 
-  // ==========================================================
-  // FIREBASE TOKEN
-  // ==========================================================
+  /* ------------------------------------------------------------------------ */
+  /* CONFIG CHECK                                                             */
+  /* ------------------------------------------------------------------------ */
+
+  useEffect(() => {
+    if (!API_URL) {
+      console.warn(
+        "VITE_API_URL is missing. Authentication API requests may fail.",
+      );
+    }
+  }, []);
+
+  /* ------------------------------------------------------------------------ */
+  /* FIREBASE TOKEN                                                           */
+  /* ------------------------------------------------------------------------ */
 
   const getFirebaseIdToken = useCallback(async (firebaseUser) => {
     if (!firebaseUser) {
       throw new Error("Firebase user is unavailable.");
     }
 
-    const token = await firebaseUser.getIdToken();
+    const token = await firebaseUser.getIdToken(true);
 
     if (!token) {
       throw new Error("Unable to get Firebase ID token.");
@@ -144,11 +120,11 @@ const AuthProvider = ({ children }) => {
     return token;
   }, []);
 
-  // ==========================================================
-  // FIREBASE AUTH CONFIG
-  // ==========================================================
+  /* ------------------------------------------------------------------------ */
+  /* AUTHENTICATED REQUEST CONFIG                                             */
+  /* ------------------------------------------------------------------------ */
 
-  const getFirebaseAuthConfig = useCallback(
+  const getAuthConfig = useCallback(
     async (firebaseUser) => {
       const token = await getFirebaseIdToken(firebaseUser);
 
@@ -161,10 +137,75 @@ const AuthProvider = ({ children }) => {
     [getFirebaseIdToken],
   );
 
-  // ==========================================================
-  // REGISTER / SYNC USER
-  // POST /auth/register
-  // ==========================================================
+  /* ------------------------------------------------------------------------ */
+  /* GET CURRENT DATABASE USER                                                */
+  /* ------------------------------------------------------------------------ */
+
+  const getCurrentUser = useCallback(async () => {
+    if (!API_URL) {
+      throw new Error(
+        "VITE_API_URL is missing. Please check your environment variables.",
+      );
+    }
+
+    try {
+      const response = await axiosSecure.get(AUTH_ENDPOINTS.ME);
+
+      if (!response?.data?.success || !response?.data?.user) {
+        throw createAuthError(
+          response?.data?.message || "Authenticated user could not be loaded.",
+          response?.data?.code || "",
+          response,
+        );
+      }
+
+      return response.data.user;
+    } catch (error) {
+      throw error;
+    }
+  }, []);
+
+  /* ------------------------------------------------------------------------ */
+  /* BACKEND LOGOUT                                                           */
+  /* ------------------------------------------------------------------------ */
+
+  const logoutBackendSession = useCallback(async () => {
+    try {
+      await axiosPublic.post(AUTH_ENDPOINTS.LOGOUT);
+    } catch (error) {
+      console.warn(
+        "BACKEND LOGOUT ERROR:",
+        getErrorMessage(error, "Backend logout failed."),
+      );
+    }
+  }, []);
+
+  /* ------------------------------------------------------------------------ */
+  /* COMPLETE AUTH CLEANUP                                                    */
+  /* ------------------------------------------------------------------------ */
+
+  const cleanupAuthentication = useCallback(async () => {
+    await logoutBackendSession();
+
+    try {
+      if (auth.currentUser) {
+        await signOut(auth);
+      }
+    } catch (error) {
+      console.warn(
+        "FIREBASE CLEANUP ERROR:",
+        getErrorMessage(error, "Firebase logout failed."),
+      );
+    }
+
+    if (mountedRef.current) {
+      setUser(null);
+    }
+  }, [logoutBackendSession]);
+
+  /* ------------------------------------------------------------------------ */
+  /* REGISTER USER IN DATABASE                                                */
+  /* ------------------------------------------------------------------------ */
 
   const registerUserInDatabase = useCallback(
     async (firebaseUser, additionalData = {}) => {
@@ -172,7 +213,7 @@ const AuthProvider = ({ children }) => {
         throw new Error("Firebase user is unavailable.");
       }
 
-      const config = await getFirebaseAuthConfig(firebaseUser);
+      const config = await getAuthConfig(firebaseUser);
 
       const name =
         typeof additionalData.name === "string"
@@ -185,13 +226,16 @@ const AuthProvider = ({ children }) => {
           : normalizeString(firebaseUser.photoURL);
 
       try {
-        const response = await api.post(
+        const response = await axiosPublic.post(
           AUTH_ENDPOINTS.REGISTER,
           {
             name,
             photo,
           },
-          config,
+          {
+            ...config,
+            timeout: REQUEST_TIMEOUT,
+          },
         );
 
         if (!response?.data?.success) {
@@ -205,20 +249,19 @@ const AuthProvider = ({ children }) => {
         return response.data;
       } catch (error) {
         console.error(
-          "REGISTER USER DATABASE ERROR:",
+          "REGISTER DATABASE ERROR:",
           error?.response?.data || error?.message || error,
         );
 
         throw error;
       }
     },
-    [getFirebaseAuthConfig],
+    [getAuthConfig],
   );
 
-  // ==========================================================
-  // CREATE APPLICATION SESSION
-  // POST /auth/jwt
-  // ==========================================================
+  /* ------------------------------------------------------------------------ */
+  /* CREATE BACKEND SESSION / JWT                                             */
+  /* ------------------------------------------------------------------------ */
 
   const createApplicationSession = useCallback(
     async (firebaseUser) => {
@@ -226,10 +269,17 @@ const AuthProvider = ({ children }) => {
         throw new Error("Firebase user is unavailable.");
       }
 
-      const config = await getFirebaseAuthConfig(firebaseUser);
+      const config = await getAuthConfig(firebaseUser);
 
       try {
-        const response = await api.post(AUTH_ENDPOINTS.JWT, {}, config);
+        const response = await axiosPublic.post(
+          AUTH_ENDPOINTS.JWT,
+          {},
+          {
+            ...config,
+            timeout: REQUEST_TIMEOUT,
+          },
+        );
 
         if (!response?.data?.success) {
           throw createAuthError(
@@ -249,245 +299,21 @@ const AuthProvider = ({ children }) => {
         throw error;
       }
     },
-    [getFirebaseAuthConfig],
+    [getAuthConfig],
   );
 
-  // ==========================================================
-  // GET CURRENT USER
-  // GET /auth/me
-  // ==========================================================
-
-  const getCurrentUser = useCallback(async () => {
-    try {
-      const response = await api.get(AUTH_ENDPOINTS.ME);
-
-      if (!response?.data?.success || !response?.data?.user) {
-        throw createAuthError(
-          response?.data?.message || "Authenticated user could not be loaded.",
-          response?.data?.code || "",
-          response,
-        );
-      }
-
-      return response.data.user;
-    } catch (error) {
-      throw error;
-    }
-  }, []);
-
-  // ==========================================================
-  // CLEANUP AUTHENTICATION
-  // ==========================================================
-
-  const cleanupAuthentication = useCallback(async () => {
-    // --------------------------------------------------------
-    // Clear backend JWT cookie
-    // --------------------------------------------------------
-
-    try {
-      await api.post(AUTH_ENDPOINTS.LOGOUT);
-    } catch (error) {
-      console.warn(
-        "BACKEND SESSION CLEANUP:",
-        error?.response?.data?.message || error?.message || error,
-      );
-    }
-
-    // --------------------------------------------------------
-    // Clear Firebase session
-    // --------------------------------------------------------
-
-    try {
-      await signOut(auth);
-    } catch (error) {
-      console.warn("FIREBASE SESSION CLEANUP:", error?.message || error);
-    }
-
-    if (mountedRef.current) {
-      setUser(null);
-    }
-  }, []);
-
-  // ==========================================================
-  // UPDATE USER PROFILE
-  //
-  // Firebase:
-  // updateProfile()
-  //
-  // Backend:
-  // PATCH /auth/profile
-  // ==========================================================
-
-  const updateUserProfile = useCallback(
-    async (name, photo = "") => {
-      const firebaseUser = auth.currentUser;
-
-      if (!firebaseUser) {
-        throw new Error("No authenticated Firebase user found.");
-      }
-
-      const cleanName = normalizeString(name);
-      const cleanPhoto = normalizeString(photo);
-
-      // ------------------------------------------------------
-      // Validate name
-      // ------------------------------------------------------
-
-      if (!cleanName) {
-        throw new Error("Name is required.");
-      }
-
-      if (cleanName.length < 2) {
-        throw new Error("Name must contain at least 2 characters.");
-      }
-
-      if (cleanName.length > 100) {
-        throw new Error("Name cannot exceed 100 characters.");
-      }
-
-      // ------------------------------------------------------
-      // Validate photo
-      // ------------------------------------------------------
-
-      if (cleanPhoto) {
-        try {
-          const photoUrl = new URL(cleanPhoto);
-
-          if (photoUrl.protocol !== "http:" && photoUrl.protocol !== "https:") {
-            throw new Error("Invalid photo URL.");
-          }
-        } catch {
-          throw new Error("Please provide a valid HTTP or HTTPS photo URL.");
-        }
-      }
-
-      // ------------------------------------------------------
-      // Save previous Firebase values
-      // ------------------------------------------------------
-
-      const previousName = firebaseUser.displayName || "";
-
-      const previousPhoto = firebaseUser.photoURL || "";
-
-      try {
-        // ----------------------------------------------------
-        // 1. Update Firebase
-        // ----------------------------------------------------
-
-        await updateProfile(firebaseUser, {
-          displayName: cleanName,
-          photoURL: cleanPhoto || null,
-        });
-
-        // ----------------------------------------------------
-        // 2. Reload Firebase user
-        // ----------------------------------------------------
-
-        await reload(firebaseUser);
-
-        const currentFirebaseUser = auth.currentUser;
-
-        if (!currentFirebaseUser) {
-          throw new Error("Unable to reload Firebase user.");
-        }
-
-        // ----------------------------------------------------
-        // 3. Firebase ID token
-        // ----------------------------------------------------
-
-        const config = await getFirebaseAuthConfig(currentFirebaseUser);
-
-        // ----------------------------------------------------
-        // 4. Update MongoDB
-        // ----------------------------------------------------
-
-        const response = await api.patch(
-          AUTH_ENDPOINTS.PROFILE,
-          {
-            name: cleanName,
-            photo: cleanPhoto,
-          },
-          config,
-        );
-
-        if (!response?.data?.success) {
-          throw createAuthError(
-            response?.data?.message || "Failed to update your profile.",
-            response?.data?.code || "",
-            response,
-          );
-        }
-
-        // ----------------------------------------------------
-        // 5. Resolve updated user
-        // ----------------------------------------------------
-
-        const updatedUser = response?.data?.user || (await getCurrentUser());
-
-        if (!updatedUser) {
-          throw new Error(
-            "Profile updated, but user data could not be loaded.",
-          );
-        }
-
-        // ----------------------------------------------------
-        // 6. Update React state
-        // ----------------------------------------------------
-
-        if (mountedRef.current) {
-          setUser(updatedUser);
-        }
-
-        return {
-          success: true,
-          user: updatedUser,
-          firebaseUser: currentFirebaseUser,
-          message: response?.data?.message || "Profile updated successfully.",
-        };
-      } catch (error) {
-        // ----------------------------------------------------
-        // Rollback Firebase if MongoDB update fails
-        // ----------------------------------------------------
-
-        try {
-          const currentFirebaseUser = auth.currentUser;
-
-          if (currentFirebaseUser) {
-            await updateProfile(currentFirebaseUser, {
-              displayName: previousName,
-              photoURL: previousPhoto || null,
-            });
-
-            await reload(currentFirebaseUser);
-          }
-        } catch (rollbackError) {
-          console.warn(
-            "FIREBASE PROFILE ROLLBACK FAILED:",
-            rollbackError?.message || rollbackError,
-          );
-        }
-
-        console.error(
-          "UPDATE PROFILE ERROR:",
-          error?.response?.data || error?.message || error,
-        );
-
-        throw error;
-      }
-    },
-    [getFirebaseAuthConfig, getCurrentUser],
-  );
-
-  // ==========================================================
-  // CREATE USER
-  // ==========================================================
+  /* ------------------------------------------------------------------------ */
+  /* CREATE USER                                                              */
+  /* ------------------------------------------------------------------------ */
 
   const createUser = useCallback(
     async (email, password, name, photoURL = "") => {
       const cleanEmail = normalizeEmail(email);
+
       const cleanPassword = typeof password === "string" ? password : "";
 
       const cleanName = normalizeString(name);
+
       const cleanPhoto = normalizeString(photoURL);
 
       if (!cleanEmail) {
@@ -517,9 +343,9 @@ const AuthProvider = ({ children }) => {
       authOperationRef.current = true;
 
       try {
-        // ----------------------------------------------------
-        // 1. Firebase account
-        // ----------------------------------------------------
+        /* ------------------------------------------------------------------ */
+        /* FIREBASE REGISTER                                                   */
+        /* ------------------------------------------------------------------ */
 
         const result = await createUserWithEmailAndPassword(
           auth,
@@ -533,19 +359,15 @@ const AuthProvider = ({ children }) => {
           throw new Error("Failed to create Firebase account.");
         }
 
-        // ----------------------------------------------------
-        // 2. Profile photo
-        // ----------------------------------------------------
+        /* ------------------------------------------------------------------ */
+        /* FIREBASE PROFILE                                                    */
+        /* ------------------------------------------------------------------ */
 
         const fallbackPhoto = `https://ui-avatars.com/api/?name=${encodeURIComponent(
           cleanName,
         )}&size=256`;
 
         const finalPhoto = cleanPhoto || fallbackPhoto;
-
-        // ----------------------------------------------------
-        // 3. Firebase profile
-        // ----------------------------------------------------
 
         await updateProfile(firebaseUser, {
           displayName: cleanName,
@@ -560,9 +382,9 @@ const AuthProvider = ({ children }) => {
           throw new Error("Unable to load newly created Firebase user.");
         }
 
-        // ----------------------------------------------------
-        // 4. MongoDB
-        // ----------------------------------------------------
+        /* ------------------------------------------------------------------ */
+        /* DATABASE REGISTER                                                   */
+        /* ------------------------------------------------------------------ */
 
         const registerResponse = await registerUserInDatabase(
           currentFirebaseUser,
@@ -572,16 +394,12 @@ const AuthProvider = ({ children }) => {
           },
         );
 
-        // ----------------------------------------------------
-        // 5. Application JWT
-        // ----------------------------------------------------
+        /* ------------------------------------------------------------------ */
+        /* CREATE BACKEND SESSION                                              */
+        /* ------------------------------------------------------------------ */
 
         const sessionResponse =
           await createApplicationSession(currentFirebaseUser);
-
-        // ----------------------------------------------------
-        // 6. Resolve database user
-        // ----------------------------------------------------
 
         const databaseUser =
           sessionResponse?.user ||
@@ -592,10 +410,6 @@ const AuthProvider = ({ children }) => {
           throw new Error("Unable to load your user account.");
         }
 
-        // ----------------------------------------------------
-        // 7. Account status
-        // ----------------------------------------------------
-
         if (databaseUser.status === "blocked") {
           throw new Error("Your account has been blocked.");
         }
@@ -604,9 +418,9 @@ const AuthProvider = ({ children }) => {
           throw new Error("Your account is not active.");
         }
 
-        // ----------------------------------------------------
-        // 8. Email verification
-        // ----------------------------------------------------
+        /* ------------------------------------------------------------------ */
+        /* EMAIL VERIFICATION                                                  */
+        /* ------------------------------------------------------------------ */
 
         let verificationSent = false;
 
@@ -618,14 +432,13 @@ const AuthProvider = ({ children }) => {
           } catch (verificationError) {
             console.warn(
               "EMAIL VERIFICATION ERROR:",
-              verificationError?.message || verificationError,
+              getErrorMessage(
+                verificationError,
+                "Verification email could not be sent.",
+              ),
             );
           }
         }
-
-        // ----------------------------------------------------
-        // 9. React state
-        // ----------------------------------------------------
 
         if (mountedRef.current) {
           setUser(databaseUser);
@@ -659,13 +472,14 @@ const AuthProvider = ({ children }) => {
     ],
   );
 
-  // ==========================================================
-  // EMAIL / PASSWORD LOGIN
-  // ==========================================================
+  /* ------------------------------------------------------------------------ */
+  /* LOGIN                                                                    */
+  /* ------------------------------------------------------------------------ */
 
   const loginUser = useCallback(
     async (email, password) => {
       const cleanEmail = normalizeEmail(email);
+
       const cleanPassword = typeof password === "string" ? password : "";
 
       if (!cleanEmail) {
@@ -683,9 +497,9 @@ const AuthProvider = ({ children }) => {
       authOperationRef.current = true;
 
       try {
-        // ----------------------------------------------------
-        // 1. Firebase login
-        // ----------------------------------------------------
+        /* ------------------------------------------------------------------ */
+        /* FIREBASE LOGIN                                                      */
+        /* ------------------------------------------------------------------ */
 
         const result = await signInWithEmailAndPassword(
           auth,
@@ -699,10 +513,6 @@ const AuthProvider = ({ children }) => {
           throw new Error("Login failed.");
         }
 
-        // ----------------------------------------------------
-        // 2. Reload
-        // ----------------------------------------------------
-
         await reload(firebaseUser);
 
         const currentFirebaseUser = auth.currentUser;
@@ -711,23 +521,19 @@ const AuthProvider = ({ children }) => {
           throw new Error("Authenticated Firebase user could not be loaded.");
         }
 
-        // ----------------------------------------------------
-        // 3. MongoDB synchronization
-        // ----------------------------------------------------
+        /* ------------------------------------------------------------------ */
+        /* SYNC USER                                                           */
+        /* ------------------------------------------------------------------ */
 
         const registerResponse =
           await registerUserInDatabase(currentFirebaseUser);
 
-        // ----------------------------------------------------
-        // 4. Application session
-        // ----------------------------------------------------
+        /* ------------------------------------------------------------------ */
+        /* CREATE BACKEND SESSION                                              */
+        /* ------------------------------------------------------------------ */
 
         const sessionResponse =
           await createApplicationSession(currentFirebaseUser);
-
-        // ----------------------------------------------------
-        // 5. Database user
-        // ----------------------------------------------------
 
         const databaseUser =
           sessionResponse?.user ||
@@ -738,10 +544,6 @@ const AuthProvider = ({ children }) => {
           throw new Error("Unable to load your user account.");
         }
 
-        // ----------------------------------------------------
-        // 6. Account status
-        // ----------------------------------------------------
-
         if (databaseUser.status === "blocked") {
           throw new Error("Your account has been blocked.");
         }
@@ -749,10 +551,6 @@ const AuthProvider = ({ children }) => {
         if (databaseUser.status && databaseUser.status !== "active") {
           throw new Error("Your account is not active.");
         }
-
-        // ----------------------------------------------------
-        // 7. React state
-        // ----------------------------------------------------
 
         if (mountedRef.current) {
           setUser(databaseUser);
@@ -786,9 +584,9 @@ const AuthProvider = ({ children }) => {
     ],
   );
 
-  // ==========================================================
-  // GOOGLE LOGIN
-  // ==========================================================
+  /* ------------------------------------------------------------------------ */
+  /* GOOGLE LOGIN                                                             */
+  /* ------------------------------------------------------------------------ */
 
   const signInWithGoogle = useCallback(async () => {
     if (authOperationRef.current) {
@@ -798,10 +596,6 @@ const AuthProvider = ({ children }) => {
     authOperationRef.current = true;
 
     try {
-      // ----------------------------------------------------
-      // 1. Google authentication
-      // ----------------------------------------------------
-
       const result = await signInWithPopup(auth, googleProvider);
 
       const firebaseUser = result?.user;
@@ -809,10 +603,6 @@ const AuthProvider = ({ children }) => {
       if (!firebaseUser) {
         throw new Error("Google authentication failed.");
       }
-
-      // ----------------------------------------------------
-      // 2. Reload
-      // ----------------------------------------------------
 
       await reload(firebaseUser);
 
@@ -822,9 +612,9 @@ const AuthProvider = ({ children }) => {
         throw new Error("Unable to load Google Firebase user.");
       }
 
-      // ----------------------------------------------------
-      // 3. MongoDB
-      // ----------------------------------------------------
+      /* ------------------------------------------------------------------ */
+      /* SYNC USER                                                           */
+      /* ------------------------------------------------------------------ */
 
       const registerResponse = await registerUserInDatabase(
         currentFirebaseUser,
@@ -834,16 +624,12 @@ const AuthProvider = ({ children }) => {
         },
       );
 
-      // ----------------------------------------------------
-      // 4. Application JWT
-      // ----------------------------------------------------
+      /* ------------------------------------------------------------------ */
+      /* CREATE BACKEND SESSION                                              */
+      /* ------------------------------------------------------------------ */
 
       const sessionResponse =
         await createApplicationSession(currentFirebaseUser);
-
-      // ----------------------------------------------------
-      // 5. Resolve database user
-      // ----------------------------------------------------
 
       const databaseUser =
         sessionResponse?.user ||
@@ -854,10 +640,6 @@ const AuthProvider = ({ children }) => {
         throw new Error("Unable to load Google user account.");
       }
 
-      // ----------------------------------------------------
-      // 6. Account status
-      // ----------------------------------------------------
-
       if (databaseUser.status === "blocked") {
         throw new Error("Your account has been blocked.");
       }
@@ -865,10 +647,6 @@ const AuthProvider = ({ children }) => {
       if (databaseUser.status && databaseUser.status !== "active") {
         throw new Error("Your account is not active.");
       }
-
-      // ----------------------------------------------------
-      // 7. React state
-      // ----------------------------------------------------
 
       if (mountedRef.current) {
         setUser(databaseUser);
@@ -899,9 +677,149 @@ const AuthProvider = ({ children }) => {
     cleanupAuthentication,
   ]);
 
-  // ==========================================================
-  // LOGOUT
-  // ==========================================================
+  /* ------------------------------------------------------------------------ */
+  /* UPDATE PROFILE                                                           */
+  /* ------------------------------------------------------------------------ */
+
+  const updateUserProfile = useCallback(
+    async (name, photo = "") => {
+      const firebaseUser = auth.currentUser;
+
+      if (!firebaseUser) {
+        throw new Error("No authenticated Firebase user found.");
+      }
+
+      const cleanName = normalizeString(name);
+
+      const cleanPhoto = normalizeString(photo);
+
+      if (!cleanName) {
+        throw new Error("Name is required.");
+      }
+
+      if (cleanName.length < 2) {
+        throw new Error("Name must contain at least 2 characters.");
+      }
+
+      if (cleanName.length > 100) {
+        throw new Error("Name cannot exceed 100 characters.");
+      }
+
+      if (cleanPhoto) {
+        try {
+          const photoUrl = new URL(cleanPhoto);
+
+          if (photoUrl.protocol !== "http:" && photoUrl.protocol !== "https:") {
+            throw new Error("Invalid photo URL.");
+          }
+        } catch {
+          throw new Error("Please provide a valid HTTP or HTTPS photo URL.");
+        }
+      }
+
+      const previousName = firebaseUser.displayName || "";
+
+      const previousPhoto = firebaseUser.photoURL || "";
+
+      try {
+        /* ---------------------------------------------------------------- */
+        /* UPDATE FIREBASE                                                   */
+        /* ---------------------------------------------------------------- */
+
+        await updateProfile(firebaseUser, {
+          displayName: cleanName,
+          photoURL: cleanPhoto || null,
+        });
+
+        await reload(firebaseUser);
+
+        const currentFirebaseUser = auth.currentUser;
+
+        if (!currentFirebaseUser) {
+          throw new Error("Unable to reload Firebase user.");
+        }
+
+        /* ---------------------------------------------------------------- */
+        /* UPDATE BACKEND                                                    */
+        /* ---------------------------------------------------------------- */
+
+        const config = await getAuthConfig(currentFirebaseUser);
+
+        const response = await axiosPublic.patch(
+          AUTH_ENDPOINTS.PROFILE,
+          {
+            name: cleanName,
+            photo: cleanPhoto,
+          },
+          {
+            ...config,
+            timeout: REQUEST_TIMEOUT,
+          },
+        );
+
+        if (!response?.data?.success) {
+          throw createAuthError(
+            response?.data?.message || "Failed to update your profile.",
+            response?.data?.code || "",
+            response,
+          );
+        }
+
+        const updatedUser = response?.data?.user || (await getCurrentUser());
+
+        if (!updatedUser) {
+          throw new Error(
+            "Profile updated, but user data could not be loaded.",
+          );
+        }
+
+        if (mountedRef.current) {
+          setUser(updatedUser);
+        }
+
+        return {
+          success: true,
+          user: updatedUser,
+          firebaseUser: currentFirebaseUser,
+          message: response?.data?.message || "Profile updated successfully.",
+        };
+      } catch (error) {
+        /* --------------------------------------------------------------- */
+        /* FIREBASE ROLLBACK                                                */
+        /* --------------------------------------------------------------- */
+
+        try {
+          const currentFirebaseUser = auth.currentUser;
+
+          if (currentFirebaseUser) {
+            await updateProfile(currentFirebaseUser, {
+              displayName: previousName,
+              photoURL: previousPhoto || null,
+            });
+
+            await reload(currentFirebaseUser);
+          }
+        } catch (rollbackError) {
+          console.warn(
+            "FIREBASE PROFILE ROLLBACK FAILED:",
+            getErrorMessage(rollbackError, "Rollback failed."),
+          );
+        }
+
+        console.error(
+          "UPDATE PROFILE ERROR:",
+          error?.response?.data || error?.message || error,
+        );
+
+        throw error;
+      }
+    },
+    [getAuthConfig, getCurrentUser],
+  );
+
+  /* ------------------------------------------------------------------------ */
+  /* LOGOUT                                                                   */
+  /* ------------------------------------------------------------------------ */
 
   const logOutUser = useCallback(async () => {
     if (authOperationRef.current) {
@@ -911,27 +829,17 @@ const AuthProvider = ({ children }) => {
     authOperationRef.current = true;
 
     try {
-      // ----------------------------------------------------
-      // Backend logout
-      // ----------------------------------------------------
+      await logoutBackendSession();
 
       try {
-        await api.post(AUTH_ENDPOINTS.LOGOUT);
+        if (auth.currentUser) {
+          await signOut(auth);
+        }
       } catch (error) {
         console.warn(
-          "BACKEND LOGOUT ERROR:",
-          error?.response?.data?.message || error?.message || error,
+          "FIREBASE LOGOUT ERROR:",
+          getErrorMessage(error, "Firebase logout failed."),
         );
-      }
-
-      // ----------------------------------------------------
-      // Firebase logout
-      // ----------------------------------------------------
-
-      try {
-        await signOut(auth);
-      } catch (error) {
-        console.warn("FIREBASE LOGOUT ERROR:", error?.message || error);
       }
 
       if (mountedRef.current) {
@@ -940,14 +848,13 @@ const AuthProvider = ({ children }) => {
     } finally {
       authOperationRef.current = false;
     }
-  }, []);
+  }, [logoutBackendSession]);
 
-  // Compatibility alias
   const signOutUser = logOutUser;
 
-  // ==========================================================
-  // RESEND EMAIL VERIFICATION
-  // ==========================================================
+  /* ------------------------------------------------------------------------ */
+  /* RESEND EMAIL VERIFICATION                                                */
+  /* ------------------------------------------------------------------------ */
 
   const resendEmailVerification = useCallback(async () => {
     const firebaseUser = auth.currentUser;
@@ -981,10 +888,9 @@ const AuthProvider = ({ children }) => {
     };
   }, []);
 
-  // ==========================================================
-  // REFRESH USER
-  // GET /auth/me
-  // ==========================================================
+  /* ------------------------------------------------------------------------ */
+  /* REFRESH USER                                                             */
+  /* ------------------------------------------------------------------------ */
 
   const refreshUser = useCallback(async () => {
     try {
@@ -1015,9 +921,9 @@ const AuthProvider = ({ children }) => {
     }
   }, [getCurrentUser]);
 
-  // ==========================================================
-  // CLEAR USER
-  // ==========================================================
+  /* ------------------------------------------------------------------------ */
+  /* CLEAR USER                                                               */
+  /* ------------------------------------------------------------------------ */
 
   const clearUser = useCallback(() => {
     if (mountedRef.current) {
@@ -1025,12 +931,9 @@ const AuthProvider = ({ children }) => {
     }
   }, []);
 
-  // ==========================================================
-  // AUTH STATE OBSERVER
-  //
-  // Purpose:
-  // Restore an existing backend JWT session.
-  // ==========================================================
+  /* ------------------------------------------------------------------------ */
+  /* INITIAL AUTH STATE                                                       */
+  /* ------------------------------------------------------------------------ */
 
   useEffect(() => {
     mountedRef.current = true;
@@ -1040,15 +943,14 @@ const AuthProvider = ({ children }) => {
         return;
       }
 
-      // Login/register functions handle their own state.
       if (authOperationRef.current) {
         return;
       }
 
       try {
-        // ------------------------------------------------
-        // No Firebase user
-        // ------------------------------------------------
+        /* -------------------------------------------------------------- */
+        /* NO FIREBASE USER                                                */
+        /* -------------------------------------------------------------- */
 
         if (!firebaseUser) {
           if (mountedRef.current) {
@@ -1058,13 +960,20 @@ const AuthProvider = ({ children }) => {
           return;
         }
 
-        // ------------------------------------------------
-        // Existing Firebase session
-        //
-        // Backend JWT cookie should restore the user.
-        // ------------------------------------------------
+        /* -------------------------------------------------------------- */
+        /* IMPORTANT                                                       */
+        /* -------------------------------------------------------------- */
+        /*
+         * Firebase authentication exists.
+         *
+         * We first create/refresh the backend
+         * application session using the Firebase
+         * ID token.
+         */
 
         try {
+          await createApplicationSession(firebaseUser);
+
           const databaseUser = await getCurrentUser();
 
           if (mountedRef.current && databaseUser) {
@@ -1073,9 +982,7 @@ const AuthProvider = ({ children }) => {
         } catch (error) {
           console.warn(
             "AUTH SESSION RESTORE:",
-            error?.response?.data?.message ||
-              error?.message ||
-              "No active application session.",
+            getErrorMessage(error, "Unable to restore application session."),
           );
 
           if (mountedRef.current) {
@@ -1099,34 +1006,23 @@ const AuthProvider = ({ children }) => {
       mountedRef.current = false;
       unsubscribe();
     };
-  }, [getCurrentUser]);
+  }, [createApplicationSession, getCurrentUser]);
 
-  // ==========================================================
-  // AUTH CONTEXT VALUE
-  // ==========================================================
+  /* ------------------------------------------------------------------------ */
+  /* CONTEXT VALUE                                                            */
+  /* ------------------------------------------------------------------------ */
 
   const authInfo = useMemo(
     () => ({
-      // ------------------------------------------------------
-      // State
-      // ------------------------------------------------------
-
       user,
       loading,
-
-      // ------------------------------------------------------
-      // Role / status
-      // ------------------------------------------------------
 
       role,
       status,
 
-      // ------------------------------------------------------
-      // Authentication
-      // ------------------------------------------------------
-
       createUser,
       loginUser,
+
       signInWithGoogle,
 
       logOutUser,
@@ -1135,28 +1031,12 @@ const AuthProvider = ({ children }) => {
       // Compatibility
       signInUser: loginUser,
 
-      // ------------------------------------------------------
-      // Profile
-      // ------------------------------------------------------
-
       updateUserProfile,
+
       refreshUser,
-
-      // ------------------------------------------------------
-      // Email verification
-      // ------------------------------------------------------
-
       resendEmailVerification,
 
-      // ------------------------------------------------------
-      // User
-      // ------------------------------------------------------
-
       getCurrentUser,
-
-      // ------------------------------------------------------
-      // Utility
-      // ------------------------------------------------------
 
       clearUser,
     }),
@@ -1178,17 +1058,9 @@ const AuthProvider = ({ children }) => {
     ],
   );
 
-  // ==========================================================
-  // PROVIDER
-  // ==========================================================
-
   return (
     <AuthContext.Provider value={authInfo}>{children}</AuthContext.Provider>
   );
 };
-
-// ============================================================
-// EXPORT
-// ============================================================
 
 export default AuthProvider;

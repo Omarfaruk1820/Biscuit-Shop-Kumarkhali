@@ -1,26 +1,13 @@
-
-
 import { Outlet } from "react-router-dom";
+
 import DashboardSidebar from "./DashboardSidebar";
 
 const DashboardLayout = () => {
   return (
     <div className="drawer lg:drawer-open min-h-screen bg-base-200">
-      {/* ====================================================== */}
-      {/* Drawer Toggle */}
-      {/* ====================================================== */}
-
       <input id="dashboard-drawer" type="checkbox" className="drawer-toggle" />
 
-      {/* ====================================================== */}
-      {/* Main Content */}
-      {/* ====================================================== */}
-
       <div className="drawer-content flex min-h-screen flex-col">
-        {/* ====================================================== */}
-        {/* Mobile Navbar */}
-        {/* ====================================================== */}
-
         <header className="navbar sticky top-0 z-40 border-b border-base-300 bg-base-100 shadow-sm lg:hidden">
           <div className="flex-none">
             <label
@@ -52,18 +39,12 @@ const DashboardLayout = () => {
           </div>
         </header>
 
-        {/* ====================================================== */}
-        {/* Page Content */}
-        {/* ====================================================== */}
-
         <main className="flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-screen-2xl p-4 md:p-6 lg:p-8">
             <Outlet />
           </div>
         </main>
       </div>
-
-   
 
       <div className="drawer-side z-50">
         <label

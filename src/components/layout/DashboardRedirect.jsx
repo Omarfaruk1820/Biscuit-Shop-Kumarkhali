@@ -1,26 +1,37 @@
 import { useContext } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
+
 import { AuthContext } from "../../Auth/AuthProvider";
 
 const DashboardRedirect = () => {
-  const { role, loading } = useContext(AuthContext);
+  const { user, loading } = useContext(AuthContext);
+
+  const location = useLocation();
 
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <span className="loading loading-spinner loading-lg text-primary"></span>
+        <span className="loading loading-spinner loading-lg text-primary" />
       </div>
     );
   }
 
-  if (role === "admin") {
+  // Not authenticated
+  if (!user) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  // Admin
+  if (user.role === "admin") {
     return <Navigate to="/dashboard/admin-dashboard" replace />;
   }
 
-  if (role === "user") {
+  // Normal user
+  if (user.role === "user") {
     return <Navigate to="/dashboard/user-dashboard" replace />;
   }
 
+  // Unknown role
   return <Navigate to="/" replace />;
 };
 

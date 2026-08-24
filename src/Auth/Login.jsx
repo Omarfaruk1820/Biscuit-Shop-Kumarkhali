@@ -169,12 +169,24 @@ const Login = () => {
       return;
     }
 
-    const destination = getRedirectPath();
+    if (user.role === "admin") {
+      navigate("/dashboard/admin-dashboard", {
+        replace: true,
+      });
+      return;
+    }
 
-    navigate(destination, {
+    if (user.role === "user") {
+      navigate("/dashboard/user-dashboard", {
+        replace: true,
+      });
+      return;
+    }
+
+    navigate("/", {
       replace: true,
     });
-  }, [user, authLoading, location.state, navigate]);
+  }, [user, authLoading, navigate]);
 
   // ==========================================================
   // LOGIN SUBMIT
