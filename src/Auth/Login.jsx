@@ -21,52 +21,140 @@ import { useToast } from "../context/ToastProvider";
 
 import GoogleSign from "./GoogleSign";
 
-// ============================================================
-// CONSTANTS
-// ============================================================
+// ============================================================================
+// CONFIG
+// ============================================================================
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const MIN_PASSWORD_LENGTH = 6;
-const MAX_PASSWORD_LENGTH = 50;
+const PASSWORD_MIN_LENGTH = 6;
+const PASSWORD_MAX_LENGTH = 50;
 
 const REMEMBER_EMAIL_KEY = "remember-email";
 
-// ============================================================
+// ============================================================================
+// HELPERS
+// ============================================================================
+
+const getErrorMessage = (error) => {
+  const backendMessage =
+    error?.response?.data?.message ||
+    error?.response?.data?.error ||
+    error?.response?.data?.details;
+
+  if (backendMessage) {
+    return String(backendMessage);
+  }
+
+  switch (error?.code) {
+    // Firebase authentication
+    case "auth/user-not-found":
+      return "No account found with this email.";
+
+    case "auth/wrong-password":
+    case "auth/invalid-credential":
+    case "auth/invalid-login-credentials":
+      return "Incorrect email or password.";
+
+    case "auth/invalid-email":
+      return "Please enter a valid email address.";
+
+    case "auth/user-disabled":
+      return "This Firebase account has been disabled.";
+
+    case "auth/network-request-failed":
+      return "Network error. Please check your internet connection.";
+
+    case "auth/too-many-requests":
+      return "Too many login attempts. Please try again later.";
+
+    case "auth/operation-not-allowed":
+      return "Email and password login is currently disabled.";
+
+    case "auth/invalid-api-key":
+      return "Firebase configuration is invalid.";
+
+    // Backend user/account errors
+    case "user/not-found":
+      return "Your account could not be found. Please register first.";
+
+    case "user/blocked":
+      return "Your account has been blocked.";
+
+    case "user/inactive":
+      return "Your account is currently inactive.";
+
+    case "auth/email-mismatch":
+      return "Your authentication email does not match your account.";
+
+    case "auth/uid-mismatch":
+      return "Your authentication identity does not match your account.";
+
+    case "auth/firebase-authentication-failed":
+      return "Firebase authentication failed. Please try again.";
+
+    // JWT/session errors
+    case "auth/session-failed":
+      return "Unable to create your login session. Please try again.";
+
+    case "auth/user-token-expired":
+      return "Your Firebase session has expired. Please login again.";
+
+    case "auth/requires-recent-login":
+      return "Please login again to continue.";
+
+    default:
+      return error?.message || "Unable to login. Please try again.";
+  }
+};
+
+const getRedirectPath = (location) => {
+  const from = location?.state?.from;
+
+  if (typeof from === "string" && from.startsWith("/")) {
+    return from;
+  }
+
+  if (from?.pathname?.startsWith("/")) {
+    return `${from.pathname}${from.search || ""}${from.hash || ""}`;
+  }
+
+  return null;
+};
+
+const getDashboardPath = (user) => {
+  if (user?.role === "admin") {
+    return "/dashboard/admin-dashboard";
+  }
+
+  if (user?.role === "user" || user?.role === "customer") {
+    return "/dashboard/user-dashboard";
+  }
+
+  return "/";
+};
+
+// ============================================================================
 // LOGIN COMPONENT
-// ============================================================
+// ============================================================================
 
 const Login = () => {
-  // ==========================================================
-  // AUTH CONTEXT
-  // ==========================================================
-
   const { user, loading: authLoading, loginUser } = useContext(AuthContext);
-
-  // ==========================================================
-  // TOAST
-  // ==========================================================
 
   const { addToast } = useToast();
 
-  // ==========================================================
-  // ROUTER
-  // ==========================================================
-
   const navigate = useNavigate();
   const location = useLocation();
-
-  // ==========================================================
-  // LOCAL STATE
-  // ==========================================================
 
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
 
-  // ==========================================================
+  const isSubmitting = loading || authLoading;
+
+  // ==========================================================================
   // FORM
-  // ==========================================================
+  // ==========================================================================
 
   const {
     register,
@@ -85,51 +173,11 @@ const Login = () => {
     },
   });
 
-  // ==========================================================
-  // EMAIL VALUE
-  // ==========================================================
-
   const emailValue = watch("email");
 
-  // ==========================================================
-  // SUBMIT STATE
-  // ==========================================================
-
-  const isSubmitting = loading || authLoading;
-
-  // ==========================================================
-  // REDIRECT PATH
-  // ==========================================================
-
-  const getRedirectPath = () => {
-    const from = location.state?.from;
-
-    // --------------------------------------------------------
-    // String path
-    // --------------------------------------------------------
-
-    if (typeof from === "string" && from.startsWith("/")) {
-      return from;
-    }
-
-    // --------------------------------------------------------
-    // React Router location object
-    // --------------------------------------------------------
-
-    if (from?.pathname) {
-      return `${from.pathname}` + `${from.search || ""}` + `${from.hash || ""}`;
-    }
-
-    // --------------------------------------------------------
-    // Default
-    // --------------------------------------------------------
-
-    return "/";
-  };
-
-  // ==========================================================
+  // ==========================================================================
   // LOAD REMEMBERED EMAIL
-  // ==========================================================
+  // ==========================================================================
 
   useEffect(() => {
     try {
@@ -140,57 +188,39 @@ const Login = () => {
       }
 
       setValue("email", rememberedEmail);
-
       setRememberMe(true);
     } catch (error) {
       console.error("LOAD REMEMBERED EMAIL ERROR:", error?.message || error);
     }
   }, [setValue]);
 
-  // ==========================================================
-  // REDIRECT AFTER LOGIN
-  //
-  // AuthProvider:
-  //
-  // loginUser()
-  //     ↓
-  // setUser()
-  //     ↓
-  // user
-  //     ↓
-  // this effect
-  //     ↓
-  // navigate()
-  //
-  // ==========================================================
+  // ==========================================================================
+  // REDIRECT AUTHENTICATED USER
+  // ==========================================================================
 
   useEffect(() => {
     if (authLoading || !user) {
       return;
     }
 
-    if (user.role === "admin") {
-      navigate("/dashboard/admin-dashboard", {
+    const redirectPath = getRedirectPath(location);
+
+    if (redirectPath) {
+      navigate(redirectPath, {
         replace: true,
       });
+
       return;
     }
 
-    if (user.role === "user") {
-      navigate("/dashboard/user-dashboard", {
-        replace: true,
-      });
-      return;
-    }
-
-    navigate("/", {
+    navigate(getDashboardPath(user), {
       replace: true,
     });
-  }, [user, authLoading, navigate]);
+  }, [user, authLoading, navigate, location]);
 
-  // ==========================================================
+  // ==========================================================================
   // LOGIN SUBMIT
-  // ==========================================================
+  // ==========================================================================
 
   const onSubmit = async (formData) => {
     if (isSubmitting) {
@@ -200,19 +230,15 @@ const Login = () => {
     setLoading(true);
 
     try {
-      // ======================================================
-      // NORMALIZE INPUT
-      // ======================================================
-
       const email = String(formData.email || "")
         .trim()
         .toLowerCase();
 
       const password = String(formData.password || "");
 
-      // ======================================================
+      // ----------------------------------------------------------------------
       // VALIDATION
-      // ======================================================
+      // ----------------------------------------------------------------------
 
       if (!email) {
         throw new Error("Email is required.");
@@ -226,21 +252,21 @@ const Login = () => {
         throw new Error("Password is required.");
       }
 
-      if (password.length < MIN_PASSWORD_LENGTH) {
+      if (password.length < PASSWORD_MIN_LENGTH) {
         throw new Error(
-          `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`,
+          `Password must be at least ${PASSWORD_MIN_LENGTH} characters.`,
         );
       }
 
-      if (password.length > MAX_PASSWORD_LENGTH) {
+      if (password.length > PASSWORD_MAX_LENGTH) {
         throw new Error(
-          `Password cannot exceed ${MAX_PASSWORD_LENGTH} characters.`,
+          `Password cannot exceed ${PASSWORD_MAX_LENGTH} characters.`,
         );
       }
 
-      // ======================================================
+      // ----------------------------------------------------------------------
       // REMEMBER EMAIL
-      // ======================================================
+      // ----------------------------------------------------------------------
 
       try {
         if (rememberMe) {
@@ -255,23 +281,26 @@ const Login = () => {
         );
       }
 
-      // ======================================================
-      // LOGIN
-      // ======================================================
+      // ----------------------------------------------------------------------
+      // AUTH PROVIDER
+      //
+      // AuthProvider is responsible for:
+      // - Firebase login
+      // - Firebase ID token
+      // - Backend user lookup
+      // - JWT/session creation
+      // - Application user creation
+      // ----------------------------------------------------------------------
 
       const result = await loginUser(email, password);
 
-      // ======================================================
-      // VALIDATE RESULT
-      // ======================================================
-
-      if (!result?.success || !result?.user) {
+      if (!result?.success) {
         throw new Error(result?.message || "Login could not be completed.");
       }
 
-      // ======================================================
+      // ----------------------------------------------------------------------
       // CLEAR PASSWORD
-      // ======================================================
+      // ----------------------------------------------------------------------
 
       reset({
         email: rememberMe ? email : "",
@@ -280,185 +309,54 @@ const Login = () => {
 
       setShowPassword(false);
 
-      // ======================================================
-      // SUCCESS MESSAGE
-      // ======================================================
+      // ----------------------------------------------------------------------
+      // SUCCESS
+      // ----------------------------------------------------------------------
 
       addToast(result?.message || "Login successful! Welcome back.", "success");
 
-      // ======================================================
-      // DO NOT NAVIGATE HERE
-      //
-      // AuthProvider updates `user`.
-      //
-      // The redirect useEffect handles navigation.
-      //
-      // ======================================================
+      // Navigation is intentionally handled by the authentication
+      // redirect effect above after AuthProvider updates `user`.
     } catch (error) {
       console.error(
         "LOGIN ERROR:",
         error?.response?.data || error?.message || error,
       );
 
-      // ======================================================
-      // DEFAULT ERROR
-      // ======================================================
-
-      let message = "Unable to login. Please try again.";
-
-      // ======================================================
-      // FIREBASE AUTH ERRORS
-      // ======================================================
-
-      switch (error?.code) {
-        case "auth/user-not-found":
-          message = "No account found with this email.";
-          break;
-
-        case "auth/wrong-password":
-          message = "Incorrect email or password.";
-          break;
-
-        case "auth/invalid-credential":
-          message = "Incorrect email or password.";
-          break;
-
-        case "auth/invalid-login-credentials":
-          message = "Incorrect email or password.";
-          break;
-
-        case "auth/invalid-email":
-          message = "Please enter a valid email address.";
-          break;
-
-        case "auth/user-disabled":
-          message = "This Firebase account has been disabled.";
-          break;
-
-        case "auth/network-request-failed":
-          message = "Network error. Please check your internet connection.";
-          break;
-
-        case "auth/too-many-requests":
-          message = "Too many login attempts. Please try again later.";
-          break;
-
-        case "auth/operation-not-allowed":
-          message = "Email and password login is currently disabled.";
-          break;
-
-        case "auth/invalid-api-key":
-          message = "Firebase configuration is invalid.";
-          break;
-
-        // ====================================================
-        // BACKEND USER ERRORS
-        // ====================================================
-
-        case "user/not-found":
-          message = "Your account could not be found. Please register first.";
-          break;
-
-        case "user/blocked":
-          message = "Your account has been blocked.";
-          break;
-
-        case "user/inactive":
-          message = "Your account is currently inactive.";
-          break;
-
-        case "auth/email-mismatch":
-          message = "Your authentication email does not match your account.";
-          break;
-
-        case "auth/uid-mismatch":
-          message = "Your authentication identity does not match your account.";
-          break;
-
-        case "auth/firebase-authentication-failed":
-          message = "Firebase authentication failed. Please try again.";
-          break;
-
-        // ====================================================
-        // SESSION ERRORS
-        // ====================================================
-
-        case "auth/session-failed":
-          message = "Unable to create your login session. Please try again.";
-          break;
-
-        case "auth/user-token-expired":
-          message = "Your Firebase session has expired. Please login again.";
-          break;
-
-        case "auth/requires-recent-login":
-          message = "Please login again to continue.";
-          break;
-
-        default:
-          message = error?.response?.data?.message || error?.message || message;
-      }
-
-      // ======================================================
-      // ERROR TOAST
-      // ======================================================
-
-      addToast(message, "error");
+      addToast(getErrorMessage(error), "error");
     } finally {
       setLoading(false);
     }
   };
 
-  // ==========================================================
+  // ==========================================================================
   // FORGOT PASSWORD
-  // ==========================================================
+  // ==========================================================================
 
   const handleForgotPassword = async () => {
     if (isSubmitting) {
       return;
     }
 
-    // --------------------------------------------------------
-    // NORMALIZE EMAIL
-    // --------------------------------------------------------
-
     const email = String(emailValue || "")
       .trim()
       .toLowerCase();
 
-    // --------------------------------------------------------
-    // EMAIL REQUIRED
-    // --------------------------------------------------------
-
     if (!email) {
       addToast("Please enter your email address first.", "warning");
-
       return;
     }
 
-    // --------------------------------------------------------
-    // EMAIL VALIDATION
-    // --------------------------------------------------------
-
     if (!EMAIL_REGEX.test(email)) {
       addToast("Please enter a valid email address.", "warning");
-
       return;
     }
 
     try {
-      // ------------------------------------------------------
-      // SEND PASSWORD RESET EMAIL
-      // ------------------------------------------------------
-
       await sendPasswordResetEmail(auth, email, {
         url: `${window.location.origin}/login`,
         handleCodeInApp: false,
       });
-
-      // ------------------------------------------------------
-      // SUCCESS
-      // ------------------------------------------------------
 
       addToast(
         "Password reset email has been sent. Please check your inbox.",
@@ -507,21 +405,17 @@ const Login = () => {
     }
   };
 
-  // ==========================================================
+  // ==========================================================================
   // UI
-  // ==========================================================
+  // ==========================================================================
 
   return (
     <div className="min-h-screen bg-base-200 px-4 py-10">
       <div className="mx-auto w-full max-w-md">
-        {/* ==================================================
-            LOGIN CARD
-        ================================================== */}
-
         <div className="rounded-3xl border border-base-300 bg-base-100 p-6 shadow-xl sm:p-8">
-          {/* ==================================================
+          {/* ==================================================================
               HEADER
-          ================================================== */}
+          ================================================================== */}
 
           <div className="text-center">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-warning/10">
@@ -538,18 +432,18 @@ const Login = () => {
             </p>
           </div>
 
-          {/* ==================================================
+          {/* ==================================================================
               LOGIN FORM
-          ================================================== */}
+          ================================================================== */}
 
           <form
             onSubmit={handleSubmit(onSubmit)}
             noValidate
             className="mt-8 space-y-5"
           >
-            {/* =================================================
+            {/* ------------------------------------------------------------------
                 EMAIL
-            ================================================= */}
+            ------------------------------------------------------------------ */}
 
             <div>
               <label htmlFor="email" className="label">
@@ -594,9 +488,9 @@ const Login = () => {
               )}
             </div>
 
-            {/* =================================================
+            {/* ------------------------------------------------------------------
                 PASSWORD
-            ================================================= */}
+            ------------------------------------------------------------------ */}
 
             <div>
               <label htmlFor="password" className="label">
@@ -621,13 +515,13 @@ const Login = () => {
                     required: "Password is required.",
 
                     minLength: {
-                      value: MIN_PASSWORD_LENGTH,
-                      message: `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`,
+                      value: PASSWORD_MIN_LENGTH,
+                      message: `Password must be at least ${PASSWORD_MIN_LENGTH} characters.`,
                     },
 
                     maxLength: {
-                      value: MAX_PASSWORD_LENGTH,
-                      message: `Password cannot exceed ${MAX_PASSWORD_LENGTH} characters.`,
+                      value: PASSWORD_MAX_LENGTH,
+                      message: `Password cannot exceed ${PASSWORD_MAX_LENGTH} characters.`,
                     },
                   })}
                 />
@@ -654,9 +548,9 @@ const Login = () => {
               )}
             </div>
 
-            {/* =================================================
-                REMEMBER + FORGOT PASSWORD
-            ================================================= */}
+            {/* ------------------------------------------------------------------
+                REMEMBER ME + FORGOT PASSWORD
+            ------------------------------------------------------------------ */}
 
             <div className="flex items-center justify-between gap-4 text-sm">
               <label className="flex cursor-pointer items-center gap-2">
@@ -681,9 +575,9 @@ const Login = () => {
               </button>
             </div>
 
-            {/* =================================================
+            {/* ------------------------------------------------------------------
                 LOGIN BUTTON
-            ================================================= */}
+            ------------------------------------------------------------------ */}
 
             <button
               type="submit"
@@ -709,17 +603,17 @@ const Login = () => {
             </button>
           </form>
 
-          {/* ==================================================
+          {/* ==================================================================
               GOOGLE LOGIN
-          ================================================== */}
+          ================================================================== */}
 
           <div className="divider my-7">OR</div>
 
           <GoogleSign />
 
-          {/* ==================================================
+          {/* ==================================================================
               REGISTER
-          ================================================== */}
+          ================================================================== */}
 
           <div className="mt-8 text-center">
             <p className="text-sm text-base-content/70">
@@ -737,9 +631,9 @@ const Login = () => {
           </div>
         </div>
 
-        {/* ==================================================
+        {/* ====================================================================
             TERMS
-        ================================================== */}
+        ==================================================================== */}
 
         <div className="mt-6 text-center text-xs text-base-content/60">
           By signing in, you agree to our{" "}
@@ -756,9 +650,5 @@ const Login = () => {
     </div>
   );
 };
-
-// ============================================================
-// EXPORT
-// ============================================================
 
 export default Login;

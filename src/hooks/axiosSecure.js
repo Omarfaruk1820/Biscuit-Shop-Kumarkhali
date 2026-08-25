@@ -2,7 +2,6 @@ import axios from "axios";
 import { auth } from "../Auth/firebase.config";
 
 const API_URL = String(import.meta.env.VITE_API_URL || "").trim();
-
 const REQUEST_TIMEOUT = 15000;
 
 if (!API_URL) {
@@ -11,7 +10,7 @@ if (!API_URL) {
 
 const axiosSecure = axios.create({
   baseURL: API_URL,
-  withCredentials: true,
+  withCredentials: false,
   timeout: REQUEST_TIMEOUT,
   headers: {
     "Content-Type": "application/json",
@@ -25,37 +24,38 @@ axiosSecure.interceptors.request.use(
       const firebaseUser = auth.currentUser;
 
       if (!firebaseUser) {
-        return Promise.reject(
-          new Error("No authenticated Firebase user found."),
-        );
+        throw new Error("No authenticated Firebase user found.");
       }
 
-      const token = await firebaseUser.getIdToken();
+      const token = await firebaseUser.getIdToken(false);
 
       if (!token) {
-        return Promise.reject(new Error("Unable to get Firebase ID token."));
+        throw new Error("Unable to obtain Firebase ID token.");
       }
 
       config.headers = config.headers || {};
-
       config.headers.Authorization = `Bearer ${token}`;
 
       return config;
     } catch (error) {
-      console.error("AXIOS SECURE REQUEST ERROR:", error);
+      console.error("AXIOS SECURE AUTH ERROR:", error?.message || error);
 
       return Promise.reject(error);
     }
   },
-  (error) => Promise.reject(error),
+  (error) => {
+    return Promise.reject(error);
+  },
 );
 
 axiosSecure.interceptors.response.use(
-  (response) => response,
-  async (error) => {
+  (response) => {
+    return response;
+  },
+  (error) => {
     if (!error?.response) {
       console.error(
-        "Axios Secure Network Error:",
+        "AXIOS SECURE NETWORK ERROR:",
         error?.message || "Network error.",
       );
 
@@ -70,15 +70,15 @@ axiosSecure.interceptors.response.use(
       "Request failed.";
 
     if (status === 401) {
-      console.warn("401 Unauthorized:", message);
+      console.warn("AXIOS SECURE 401:", message);
     }
 
     if (status === 403) {
-      console.warn("403 Forbidden:", message);
+      console.warn("AXIOS SECURE 403:", message);
     }
 
     if (status >= 500) {
-      console.error("Server Error:", message);
+      console.error("AXIOS SECURE SERVER ERROR:", message);
     }
 
     return Promise.reject(error);

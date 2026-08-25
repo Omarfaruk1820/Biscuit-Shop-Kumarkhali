@@ -1,6 +1,6 @@
 import { useContext, useState } from "react";
 
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import { useForm } from "react-hook-form";
 
@@ -8,20 +8,18 @@ import {
   FaEnvelope,
   FaEye,
   FaEyeSlash,
+  FaGoogle,
   FaLock,
   FaUser,
   FaUserPlus,
 } from "react-icons/fa";
 
 import { AuthContext } from "./AuthProvider";
-
 import { useToast } from "../context/ToastProvider";
 
-import GoogleSign from "./GoogleSign";
-
-// ============================================================
-// CONSTANTS
-// ============================================================
+/* ==========================================================================
+   CONFIG
+========================================================================== */
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -31,41 +29,32 @@ const NAME_MAX_LENGTH = 50;
 const PASSWORD_MIN_LENGTH = 6;
 const PASSWORD_MAX_LENGTH = 50;
 
-// ============================================================
-// REGISTER
-// ============================================================
+const STRONG_PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/;
+
+/* ==========================================================================
+   COMPONENT
+========================================================================== */
 
 const Register = () => {
-  // ==========================================================
-  // AUTH
-  // ==========================================================
-
-  const { createUser, loading: authLoading } = useContext(AuthContext);
-
-  // ==========================================================
-  // TOAST
-  // ==========================================================
+  const {
+    createUser,
+    signInWithGoogle,
+    loading: authLoading,
+  } = useContext(AuthContext);
 
   const { addToast } = useToast();
 
-  // ==========================================================
-  // ROUTER
-  // ==========================================================
-
   const navigate = useNavigate();
-  const location = useLocation();
-
-  // ==========================================================
-  // LOCAL STATE
-  // ==========================================================
 
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  // ==========================================================
-  // FORM
-  // ==========================================================
+  /* ------------------------------------------------------------------------
+     FORM
+  ------------------------------------------------------------------------ */
 
   const {
     register,
@@ -86,39 +75,100 @@ const Register = () => {
     },
   });
 
-  // ==========================================================
-  // PASSWORD
-  // ==========================================================
-
   const password = watch("password");
 
-  // ==========================================================
-  // SUBMIT STATE
-  // ==========================================================
+  const isSubmitting = loading || googleLoading || authLoading;
 
-  const isSubmitting = loading || authLoading;
+  /* ------------------------------------------------------------------------
+     ERROR MESSAGE
+  ------------------------------------------------------------------------ */
 
-  // ==========================================================
-  // REDIRECT PATH
-  // ==========================================================
+  const getErrorMessage = (error) => {
+    const backendMessage =
+      error?.response?.data?.message || error?.response?.data?.error;
 
-  const getRedirectPath = () => {
-    const from = location.state?.from;
-
-    if (typeof from === "string" && from.startsWith("/")) {
-      return from;
+    if (backendMessage) {
+      return backendMessage;
     }
 
-    if (from?.pathname) {
-      return `${from.pathname}` + `${from.search || ""}` + `${from.hash || ""}`;
-    }
+    switch (error?.code) {
+      case "auth/email-already-in-use":
+        return "This email is already registered. Please login instead.";
 
-    return "/";
+      case "auth/invalid-email":
+        return "Please enter a valid email address.";
+
+      case "auth/weak-password":
+        return "Password must be at least 6 characters.";
+
+      case "auth/network-request-failed":
+        return "Network error. Please check your internet connection.";
+
+      case "auth/too-many-requests":
+        return "Too many requests. Please try again later.";
+
+      case "auth/operation-not-allowed":
+        return "Email and password registration is currently disabled.";
+
+      case "auth/user-disabled":
+        return "This Firebase account has been disabled.";
+
+      case "auth/quota-exceeded":
+        return "Authentication quota has been exceeded. Please try again later.";
+
+      case "auth/invalid-api-key":
+        return "Firebase configuration is invalid.";
+
+      case "auth/popup-closed-by-user":
+        return "Google sign-in was cancelled.";
+
+      case "auth/cancelled-popup-request":
+        return "Google sign-in was cancelled.";
+
+      case "auth/popup-blocked":
+        return "The Google sign-in popup was blocked. Please allow popups and try again.";
+
+      case "auth/account-exists-with-different-credential":
+        return "An account already exists with this email using a different sign-in method.";
+
+      case "auth/credential-already-in-use":
+        return "This Google account is already linked to another account.";
+
+      case "auth/firebase-authentication-failed":
+        return "Firebase authentication failed. Please try again.";
+
+      case "auth/firebase-uid-missing":
+        return "Firebase account information is incomplete.";
+
+      case "auth/firebase-email-missing":
+        return "Firebase account email is missing.";
+
+      case "user/email-conflict":
+        return "This Firebase account is linked to another email.";
+
+      case "user/uid-conflict":
+        return "This Firebase account is already linked to another account.";
+
+      case "user/duplicate":
+        return "An account with this information already exists.";
+
+      case "user/create-failed":
+        return "Unable to create your account. Please try again.";
+
+      case "auth/user-token-expired":
+        return "Your authentication session expired. Please try again.";
+
+      case "auth/requires-recent-login":
+        return "Please login again to continue.";
+
+      default:
+        return error?.message || "Authentication failed. Please try again.";
+    }
   };
 
-  // ==========================================================
-  // SUBMIT
-  // ==========================================================
+  /* ------------------------------------------------------------------------
+     EMAIL/PASSWORD REGISTER
+  ------------------------------------------------------------------------ */
 
   const onSubmit = async (formData) => {
     if (isSubmitting) {
@@ -128,10 +178,6 @@ const Register = () => {
     setLoading(true);
 
     try {
-      // ======================================================
-      // CLEAN INPUT
-      // ======================================================
-
       const name = String(formData.name || "").trim();
 
       const email = String(formData.email || "")
@@ -140,9 +186,9 @@ const Register = () => {
 
       const passwordValue = String(formData.password || "");
 
-      // ======================================================
-      // EXTRA VALIDATION
-      // ======================================================
+      /* --------------------------------------------------------------------
+         EXTRA VALIDATION
+      -------------------------------------------------------------------- */
 
       if (!name) {
         throw new Error("Full name is required.");
@@ -180,31 +226,34 @@ const Register = () => {
         );
       }
 
-      // ======================================================
-      // CREATE ACCOUNT
-      //
-      // AuthProvider handles:
-      //
-      // Firebase registration
-      //        ↓
-      // Firebase profile
-      //        ↓
-      // POST /auth/register
-      //        ↓
-      // POST /auth/jwt
-      //        ↓
-      // HTTP-only JWT cookie
-      //        ↓
-      // setUser()
-      //
-      // Firebase user remains signed in.
-      // ======================================================
+      if (!STRONG_PASSWORD_REGEX.test(passwordValue)) {
+        throw new Error(
+          "Password must include uppercase, lowercase, and at least one number.",
+        );
+      }
+
+      if (passwordValue !== formData.confirmPassword) {
+        throw new Error("Passwords do not match.");
+      }
+
+      if (!formData.terms) {
+        throw new Error(
+          "You must accept the Terms & Conditions and Privacy Policy.",
+        );
+      }
+
+      /* --------------------------------------------------------------------
+         CREATE EMAIL ACCOUNT
+
+         AuthProvider handles:
+         1. Firebase registration
+         2. Firebase profile update
+         3. MongoDB user creation
+         4. Email verification
+         5. Keeping Firebase session active
+      -------------------------------------------------------------------- */
 
       const result = await createUser(email, passwordValue, name);
-
-      // ======================================================
-      // CHECK RESULT
-      // ======================================================
 
       if (!result?.success) {
         throw new Error(
@@ -212,162 +261,162 @@ const Register = () => {
         );
       }
 
-      // ======================================================
-      // RESET FORM
-      // ======================================================
+      /* --------------------------------------------------------------------
+         RESET FORM
+      -------------------------------------------------------------------- */
 
-      reset();
+      reset({
+        name: "",
+        email: "",
+        password: "",
+        confirmPassword: "",
+        terms: false,
+      });
 
       setShowPassword(false);
       setShowConfirmPassword(false);
 
-      // ======================================================
-      // SUCCESS TOAST
-      // ======================================================
+      /* --------------------------------------------------------------------
+         SUCCESS TOAST
+      -------------------------------------------------------------------- */
 
-      addToast(
-        result?.message || "Registration successful! Welcome to our store.",
-        "success",
-      );
+      const successMessage = result?.verificationSent
+        ? "Account created successfully. A verification email has been sent."
+        : "Account created successfully. Welcome!";
 
-      // ======================================================
-      // REDIRECT
-      //
-      // Register
-      //    ↓
-      // Automatically Logged In
-      //    ↓
-      // Home
-      // ======================================================
+      addToast(successMessage, "success");
 
-      navigate(getRedirectPath(), {
+      /* --------------------------------------------------------------------
+         REDIRECT HOME
+
+         The user remains authenticated.
+      -------------------------------------------------------------------- */
+
+      navigate("/", {
         replace: true,
       });
     } catch (error) {
-      // ======================================================
-      // DEBUG
-      // ======================================================
-
       console.error(
         "REGISTER ERROR:",
         error?.response?.data || error?.message || error,
       );
 
-      // ======================================================
-      // DEFAULT ERROR
-      // ======================================================
-
-      let message = "Registration failed. Please try again.";
-
-      // ======================================================
-      // FIREBASE ERRORS
-      // ======================================================
-
-      switch (error?.code) {
-        case "auth/email-already-in-use":
-          message = "This email is already registered. Please login instead.";
-          break;
-
-        case "auth/invalid-email":
-          message = "Please enter a valid email address.";
-          break;
-
-        case "auth/weak-password":
-          message = "Password must be at least 6 characters.";
-          break;
-
-        case "auth/network-request-failed":
-          message = "Network error. Please check your internet connection.";
-          break;
-
-        case "auth/too-many-requests":
-          message = "Too many requests. Please try again later.";
-          break;
-
-        case "auth/operation-not-allowed":
-          message = "Email and password registration is currently disabled.";
-          break;
-
-        case "auth/user-disabled":
-          message = "This Firebase account has been disabled.";
-          break;
-
-        case "auth/quota-exceeded":
-          message =
-            "Authentication quota has been exceeded. Please try again later.";
-          break;
-
-        case "auth/invalid-api-key":
-          message =
-            "Firebase configuration is invalid. Please contact support.";
-          break;
-
-        // ====================================================
-        // BACKEND ERRORS
-        // ====================================================
-
-        case "auth/firebase-authentication-failed":
-          message = "Firebase authentication failed. Please try again.";
-          break;
-
-        case "auth/firebase-uid-missing":
-          message = "Firebase account information is incomplete.";
-          break;
-
-        case "auth/firebase-email-missing":
-          message = "Firebase account email is missing.";
-          break;
-
-        case "user/email-conflict":
-          message = "This Firebase account is linked to another email.";
-          break;
-
-        case "user/uid-conflict":
-          message = "This email is already linked to another account.";
-          break;
-
-        case "user/duplicate":
-          message = "An account with this information already exists.";
-          break;
-
-        case "user/create-failed":
-          message = "Unable to create your account. Please try again.";
-          break;
-
-        case "auth/session-failed":
-          message =
-            "Your account was created, but the login session could not be created. Please try logging in.";
-          break;
-
-        default:
-          message = error?.response?.data?.message || error?.message || message;
-      }
-
-      // ======================================================
-      // ERROR TOAST
-      // ======================================================
-
-      addToast(message, "error");
+      addToast(getErrorMessage(error), "error");
     } finally {
       setLoading(false);
     }
   };
 
-  // ==========================================================
-  // UI
-  // ==========================================================
+  /* ------------------------------------------------------------------------
+     GOOGLE SIGN-IN / REGISTRATION
+  ------------------------------------------------------------------------ */
+
+  const handleGoogleSignIn = async () => {
+    if (isSubmitting) {
+      return;
+    }
+
+    if (!formDataTermsAccepted()) {
+      return;
+    }
+
+    setGoogleLoading(true);
+
+    try {
+      /* --------------------------------------------------------------------
+         AuthProvider handles:
+
+         1. Google popup
+         2. Firebase authentication
+         3. MongoDB user create/get
+         4. User validation
+         5. Application user state
+      -------------------------------------------------------------------- */
+
+      const result = await signInWithGoogle();
+
+      if (!result?.success) {
+        throw new Error(
+          result?.message || "Google sign-in could not be completed.",
+        );
+      }
+
+      /* --------------------------------------------------------------------
+         SUCCESS MESSAGE
+      -------------------------------------------------------------------- */
+
+      const successMessage = result?.isNewUser
+        ? "Google account created successfully. Welcome!"
+        : "Google sign-in successful. Welcome back!";
+
+      addToast(successMessage, "success");
+
+      /* --------------------------------------------------------------------
+         REDIRECT HOME
+
+         User is already authenticated.
+      -------------------------------------------------------------------- */
+
+      navigate("/", {
+        replace: true,
+      });
+    } catch (error) {
+      console.error(
+        "GOOGLE REGISTER ERROR:",
+        error?.response?.data || error?.message || error,
+      );
+
+      /*
+       * The AuthProvider already treats popup cancellation specially.
+       * We don't need to show an error toast when the user simply closes
+       * the Google popup.
+       */
+
+      const cancelled =
+        error?.code === "auth/popup-closed-by-user" ||
+        error?.code === "auth/cancelled-popup-request";
+
+      if (!cancelled) {
+        addToast(getErrorMessage(error), "error");
+      }
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
+  /* ------------------------------------------------------------------------
+     TERMS CHECK FOR GOOGLE
+
+     Google users don't need the email/password fields, but your registration
+     page still requires accepting your Terms & Conditions and Privacy Policy.
+  ------------------------------------------------------------------------ */
+
+  const formDataTermsAccepted = () => {
+    const termsCheckbox = document.getElementById("terms");
+
+    if (!termsCheckbox?.checked) {
+      addToast(
+        "Please accept the Terms & Conditions and Privacy Policy first.",
+        "error",
+      );
+
+      return false;
+    }
+
+    return true;
+  };
+
+  /* ==========================================================================
+     UI
+  ========================================================================== */
 
   return (
     <div className="min-h-screen bg-base-200 px-4 py-10">
       <div className="mx-auto w-full max-w-md">
-        {/* ==================================================
-            REGISTER CARD
-        ================================================== */}
-
         <div className="rounded-3xl border border-base-300 bg-base-100 p-6 shadow-xl sm:p-8">
-          {/* ==================================================
-              HEADER
-          ================================================== */}
+          {/* ----------------------------------------------------------------
+             HEADER
+          ---------------------------------------------------------------- */}
 
           <div className="text-center">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-warning/10">
@@ -384,18 +433,18 @@ const Register = () => {
             </p>
           </div>
 
-          {/* ==================================================
-              FORM
-          ================================================== */}
+          {/* ----------------------------------------------------------------
+             REGISTER FORM
+          ---------------------------------------------------------------- */}
 
           <form
             onSubmit={handleSubmit(onSubmit)}
             noValidate
             className="mt-8 space-y-5"
           >
-            {/* =================================================
-                NAME
-            ================================================= */}
+            {/* --------------------------------------------------------------
+               NAME
+            -------------------------------------------------------------- */}
 
             <div>
               <label htmlFor="name" className="label">
@@ -430,9 +479,14 @@ const Register = () => {
                       message: `Name cannot exceed ${NAME_MAX_LENGTH} characters.`,
                     },
 
-                    validate: (value) =>
-                      String(value).trim().length >= NAME_MIN_LENGTH ||
-                      "Please enter a valid name.",
+                    validate: (value) => {
+                      const trimmed = String(value).trim();
+
+                      return (
+                        trimmed.length >= NAME_MIN_LENGTH ||
+                        `Name must be at least ${NAME_MIN_LENGTH} characters.`
+                      );
+                    },
                   })}
                 />
               </div>
@@ -442,9 +496,9 @@ const Register = () => {
               )}
             </div>
 
-            {/* =================================================
-                EMAIL
-            ================================================= */}
+            {/* --------------------------------------------------------------
+               EMAIL
+            -------------------------------------------------------------- */}
 
             <div>
               <label htmlFor="email" className="label">
@@ -489,9 +543,9 @@ const Register = () => {
               )}
             </div>
 
-            {/* =================================================
-                PASSWORD
-            ================================================= */}
+            {/* --------------------------------------------------------------
+               PASSWORD
+            -------------------------------------------------------------- */}
 
             <div>
               <label htmlFor="password" className="label">
@@ -526,8 +580,9 @@ const Register = () => {
                     },
 
                     pattern: {
-                      value: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/,
-                      message: "Include uppercase, lowercase and one number.",
+                      value: STRONG_PASSWORD_REGEX,
+                      message:
+                        "Include uppercase, lowercase, and at least one number.",
                     },
                   })}
                 />
@@ -540,9 +595,9 @@ const Register = () => {
                   aria-label={showPassword ? "Hide password" : "Show password"}
                 >
                   {showPassword ? (
-                    <FaEyeSlash size={18} />
+                    <FaEyeSlash size={18} aria-hidden="true" />
                   ) : (
-                    <FaEye size={18} />
+                    <FaEye size={18} aria-hidden="true" />
                   )}
                 </button>
               </div>
@@ -554,9 +609,9 @@ const Register = () => {
               )}
             </div>
 
-            {/* =================================================
-                CONFIRM PASSWORD
-            ================================================= */}
+            {/* --------------------------------------------------------------
+               CONFIRM PASSWORD
+            -------------------------------------------------------------- */}
 
             <div>
               <label htmlFor="confirmPassword" className="label">
@@ -599,9 +654,9 @@ const Register = () => {
                   }
                 >
                   {showConfirmPassword ? (
-                    <FaEyeSlash size={18} />
+                    <FaEyeSlash size={18} aria-hidden="true" />
                   ) : (
-                    <FaEye size={18} />
+                    <FaEye size={18} aria-hidden="true" />
                   )}
                 </button>
               </div>
@@ -613,13 +668,17 @@ const Register = () => {
               )}
             </div>
 
-            {/* =================================================
-                TERMS
-            ================================================= */}
+            {/* --------------------------------------------------------------
+               TERMS
+            -------------------------------------------------------------- */}
 
             <div>
-              <label className="flex cursor-pointer items-start gap-3">
+              <label
+                htmlFor="terms"
+                className="flex cursor-pointer items-start gap-3"
+              >
                 <input
+                  id="terms"
                   type="checkbox"
                   disabled={isSubmitting}
                   className="checkbox checkbox-warning mt-1"
@@ -651,18 +710,21 @@ const Register = () => {
               )}
             </div>
 
-            {/* =================================================
-                SUBMIT
-            ================================================= */}
+            {/* --------------------------------------------------------------
+               EMAIL REGISTER BUTTON
+            -------------------------------------------------------------- */}
 
             <button
               type="submit"
               disabled={isSubmitting}
               className="btn btn-warning w-full"
             >
-              {isSubmitting ? (
+              {loading ? (
                 <>
-                  <span className="loading loading-spinner loading-sm" />
+                  <span
+                    className="loading loading-spinner loading-sm"
+                    aria-hidden="true"
+                  />
 
                   <span>Creating Account...</span>
                 </>
@@ -676,37 +738,63 @@ const Register = () => {
             </button>
           </form>
 
-          {/* ==================================================
-              GOOGLE
-          ================================================== */}
+          {/* ----------------------------------------------------------------
+             DIVIDER
+          ---------------------------------------------------------------- */}
 
-          <div className="divider my-7">OR</div>
+          <div className="my-6 flex items-center gap-3">
+            <div className="h-px flex-1 bg-base-300" />
 
-          <GoogleSign />
+            <span className="text-sm text-base-content/50">OR</span>
 
-          {/* ==================================================
-              LOGIN
-          ================================================== */}
+            <div className="h-px flex-1 bg-base-300" />
+          </div>
+
+          {/* ----------------------------------------------------------------
+             GOOGLE REGISTER / SIGN-IN
+          ---------------------------------------------------------------- */}
+
+          <button
+            type="button"
+            onClick={handleGoogleSignIn}
+            disabled={isSubmitting}
+            className="btn btn-outline w-full"
+          >
+            {googleLoading ? (
+              <>
+                <span
+                  className="loading loading-spinner loading-sm"
+                  aria-hidden="true"
+                />
+
+                <span>Connecting to Google...</span>
+              </>
+            ) : (
+              <>
+                <FaGoogle aria-hidden="true" />
+
+                <span>Continue with Google</span>
+              </>
+            )}
+          </button>
+
+          {/* ----------------------------------------------------------------
+             LOGIN
+          ---------------------------------------------------------------- */}
 
           <div className="mt-7 text-center">
-            <p className="text-sm">
+            <p className="text-sm text-base-content/70">
               Already have an account?{" "}
-              <Link
-                to="/login"
-                state={{
-                  from: location.state?.from,
-                }}
-                className="link link-warning font-semibold"
-              >
+              <Link to="/login" className="link link-warning font-semibold">
                 Login
               </Link>
             </p>
           </div>
         </div>
 
-        {/* ==================================================
-            FOOTER
-        ================================================== */}
+        {/* ------------------------------------------------------------------
+           FOOTER
+        ------------------------------------------------------------------ */}
 
         <div className="mt-6 text-center text-xs text-base-content/60">
           By creating an account, you agree to our{" "}
