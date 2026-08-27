@@ -1,9 +1,6 @@
 import { useContext, useState } from "react";
-
 import { Link, useNavigate } from "react-router-dom";
-
 import { useForm } from "react-hook-form";
-
 import {
   FaEnvelope,
   FaEye,
@@ -16,24 +13,14 @@ import {
 
 import { AuthContext } from "./AuthProvider";
 import { useToast } from "../context/ToastProvider";
-
-/* ==========================================================================
-   CONFIG
-========================================================================== */
+import GoogleSign from "../Auth/GoogleSign";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
 const NAME_MIN_LENGTH = 3;
 const NAME_MAX_LENGTH = 50;
-
 const PASSWORD_MIN_LENGTH = 6;
 const PASSWORD_MAX_LENGTH = 50;
-
 const STRONG_PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/;
-
-/* ==========================================================================
-   COMPONENT
-========================================================================== */
 
 const Register = () => {
   const {
@@ -43,29 +30,23 @@ const Register = () => {
   } = useContext(AuthContext);
 
   const { addToast } = useToast();
-
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
-
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-
-  /* ------------------------------------------------------------------------
-     FORM
-  ------------------------------------------------------------------------ */
 
   const {
     register,
     handleSubmit,
     watch,
     reset,
+    getValues,
     formState: { errors },
   } = useForm({
     mode: "onTouched",
     reValidateMode: "onChange",
-
     defaultValues: {
       name: "",
       email: "",
@@ -79,9 +60,9 @@ const Register = () => {
 
   const isSubmitting = loading || googleLoading || authLoading;
 
-  /* ------------------------------------------------------------------------
+  /* --------------------------------------------------------------------------
      ERROR MESSAGE
-  ------------------------------------------------------------------------ */
+  -------------------------------------------------------------------------- */
 
   const getErrorMessage = (error) => {
     const backendMessage =
@@ -113,12 +94,6 @@ const Register = () => {
       case "auth/user-disabled":
         return "This Firebase account has been disabled.";
 
-      case "auth/quota-exceeded":
-        return "Authentication quota has been exceeded. Please try again later.";
-
-      case "auth/invalid-api-key":
-        return "Firebase configuration is invalid.";
-
       case "auth/popup-closed-by-user":
         return "Google sign-in was cancelled.";
 
@@ -134,14 +109,11 @@ const Register = () => {
       case "auth/credential-already-in-use":
         return "This Google account is already linked to another account.";
 
-      case "auth/firebase-authentication-failed":
-        return "Firebase authentication failed. Please try again.";
+      case "auth/user-token-expired":
+        return "Your authentication session expired. Please login again.";
 
-      case "auth/firebase-uid-missing":
-        return "Firebase account information is incomplete.";
-
-      case "auth/firebase-email-missing":
-        return "Firebase account email is missing.";
+      case "auth/requires-recent-login":
+        return "Please login again to continue.";
 
       case "user/email-conflict":
         return "This Firebase account is linked to another email.";
@@ -155,20 +127,14 @@ const Register = () => {
       case "user/create-failed":
         return "Unable to create your account. Please try again.";
 
-      case "auth/user-token-expired":
-        return "Your authentication session expired. Please try again.";
-
-      case "auth/requires-recent-login":
-        return "Please login again to continue.";
-
       default:
-        return error?.message || "Authentication failed. Please try again.";
+        return error?.message || "Registration failed. Please try again.";
     }
   };
 
-  /* ------------------------------------------------------------------------
-     EMAIL/PASSWORD REGISTER
-  ------------------------------------------------------------------------ */
+  /* --------------------------------------------------------------------------
+     EMAIL REGISTER
+  -------------------------------------------------------------------------- */
 
   const onSubmit = async (formData) => {
     if (isSubmitting) {
@@ -179,16 +145,11 @@ const Register = () => {
 
     try {
       const name = String(formData.name || "").trim();
-
       const email = String(formData.email || "")
         .trim()
         .toLowerCase();
-
       const passwordValue = String(formData.password || "");
-
-      /* --------------------------------------------------------------------
-         EXTRA VALIDATION
-      -------------------------------------------------------------------- */
+      const confirmPassword = String(formData.confirmPassword || "");
 
       if (!name) {
         throw new Error("Full name is required.");
@@ -232,7 +193,7 @@ const Register = () => {
         );
       }
 
-      if (passwordValue !== formData.confirmPassword) {
+      if (passwordValue !== confirmPassword) {
         throw new Error("Passwords do not match.");
       }
 
@@ -242,16 +203,16 @@ const Register = () => {
         );
       }
 
-      /* --------------------------------------------------------------------
-         CREATE EMAIL ACCOUNT
+      /* ----------------------------------------------------------------------
+         CREATE ACCOUNT
 
          AuthProvider handles:
-         1. Firebase registration
-         2. Firebase profile update
-         3. MongoDB user creation
-         4. Email verification
-         5. Keeping Firebase session active
-      -------------------------------------------------------------------- */
+         - Firebase account creation
+         - Firebase profile update
+         - MongoDB synchronization
+         - JWT creation
+         - Application user state
+      ---------------------------------------------------------------------- */
 
       const result = await createUser(email, passwordValue, name);
 
@@ -261,36 +222,21 @@ const Register = () => {
         );
       }
 
-      /* --------------------------------------------------------------------
-         RESET FORM
-      -------------------------------------------------------------------- */
-
-      reset({
-        name: "",
-        email: "",
-        password: "",
-        confirmPassword: "",
-        terms: false,
-      });
+      reset();
 
       setShowPassword(false);
       setShowConfirmPassword(false);
 
-      /* --------------------------------------------------------------------
-         SUCCESS TOAST
-      -------------------------------------------------------------------- */
+      addToast(
+        result?.verificationSent
+          ? "Account created successfully. A verification email has been sent."
+          : "Account created successfully. Welcome!",
+        "success",
+      );
 
-      const successMessage = result?.verificationSent
-        ? "Account created successfully. A verification email has been sent."
-        : "Account created successfully. Welcome!";
-
-      addToast(successMessage, "success");
-
-      /* --------------------------------------------------------------------
+      /* ----------------------------------------------------------------------
          REDIRECT HOME
-
-         The user remains authenticated.
-      -------------------------------------------------------------------- */
+      ---------------------------------------------------------------------- */
 
       navigate("/", {
         replace: true,
@@ -307,32 +253,29 @@ const Register = () => {
     }
   };
 
-  /* ------------------------------------------------------------------------
-     GOOGLE SIGN-IN / REGISTRATION
-  ------------------------------------------------------------------------ */
+  /* --------------------------------------------------------------------------
+     GOOGLE SIGN-IN
+  -------------------------------------------------------------------------- */
 
   const handleGoogleSignIn = async () => {
     if (isSubmitting) {
       return;
     }
 
-    if (!formDataTermsAccepted()) {
+    const termsAccepted = getValues("terms");
+
+    if (!termsAccepted) {
+      addToast(
+        "Please accept the Terms & Conditions and Privacy Policy first.",
+        "error",
+      );
+
       return;
     }
 
     setGoogleLoading(true);
 
     try {
-      /* --------------------------------------------------------------------
-         AuthProvider handles:
-
-         1. Google popup
-         2. Firebase authentication
-         3. MongoDB user create/get
-         4. User validation
-         5. Application user state
-      -------------------------------------------------------------------- */
-
       const result = await signInWithGoogle();
 
       if (!result?.success) {
@@ -341,36 +284,25 @@ const Register = () => {
         );
       }
 
-      /* --------------------------------------------------------------------
-         SUCCESS MESSAGE
-      -------------------------------------------------------------------- */
+      addToast(
+        result?.isNewUser
+          ? "Google account created successfully. Welcome!"
+          : "Google sign-in successful. Welcome back!",
+        "success",
+      );
 
-      const successMessage = result?.isNewUser
-        ? "Google account created successfully. Welcome!"
-        : "Google sign-in successful. Welcome back!";
-
-      addToast(successMessage, "success");
-
-      /* --------------------------------------------------------------------
-         REDIRECT HOME
-
-         User is already authenticated.
-      -------------------------------------------------------------------- */
+      /* ----------------------------------------------------------------------
+         REDIRECT HOME AFTER GOOGLE SIGN-IN
+      ---------------------------------------------------------------------- */
 
       navigate("/", {
         replace: true,
       });
     } catch (error) {
       console.error(
-        "GOOGLE REGISTER ERROR:",
+        "GOOGLE SIGN-IN ERROR:",
         error?.response?.data || error?.message || error,
       );
-
-      /*
-       * The AuthProvider already treats popup cancellation specially.
-       * We don't need to show an error toast when the user simply closes
-       * the Google popup.
-       */
 
       const cancelled =
         error?.code === "auth/popup-closed-by-user" ||
@@ -384,28 +316,6 @@ const Register = () => {
     }
   };
 
-  /* ------------------------------------------------------------------------
-     TERMS CHECK FOR GOOGLE
-
-     Google users don't need the email/password fields, but your registration
-     page still requires accepting your Terms & Conditions and Privacy Policy.
-  ------------------------------------------------------------------------ */
-
-  const formDataTermsAccepted = () => {
-    const termsCheckbox = document.getElementById("terms");
-
-    if (!termsCheckbox?.checked) {
-      addToast(
-        "Please accept the Terms & Conditions and Privacy Policy first.",
-        "error",
-      );
-
-      return false;
-    }
-
-    return true;
-  };
-
   /* ==========================================================================
      UI
   ========================================================================== */
@@ -414,9 +324,7 @@ const Register = () => {
     <div className="min-h-screen bg-base-200 px-4 py-10">
       <div className="mx-auto w-full max-w-md">
         <div className="rounded-3xl border border-base-300 bg-base-100 p-6 shadow-xl sm:p-8">
-          {/* ----------------------------------------------------------------
-             HEADER
-          ---------------------------------------------------------------- */}
+          {/* HEADER */}
 
           <div className="text-center">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-warning/10">
@@ -433,18 +341,14 @@ const Register = () => {
             </p>
           </div>
 
-          {/* ----------------------------------------------------------------
-             REGISTER FORM
-          ---------------------------------------------------------------- */}
+          {/* REGISTER FORM */}
 
           <form
             onSubmit={handleSubmit(onSubmit)}
             noValidate
             className="mt-8 space-y-5"
           >
-            {/* --------------------------------------------------------------
-               NAME
-            -------------------------------------------------------------- */}
+            {/* NAME */}
 
             <div>
               <label htmlFor="name" className="label">
@@ -468,17 +372,14 @@ const Register = () => {
                   className="grow bg-transparent outline-none"
                   {...register("name", {
                     required: "Full name is required.",
-
                     minLength: {
                       value: NAME_MIN_LENGTH,
                       message: `Name must be at least ${NAME_MIN_LENGTH} characters.`,
                     },
-
                     maxLength: {
                       value: NAME_MAX_LENGTH,
                       message: `Name cannot exceed ${NAME_MAX_LENGTH} characters.`,
                     },
-
                     validate: (value) => {
                       const trimmed = String(value).trim();
 
@@ -496,9 +397,7 @@ const Register = () => {
               )}
             </div>
 
-            {/* --------------------------------------------------------------
-               EMAIL
-            -------------------------------------------------------------- */}
+            {/* EMAIL */}
 
             <div>
               <label htmlFor="email" className="label">
@@ -525,12 +424,10 @@ const Register = () => {
                   className="grow bg-transparent outline-none"
                   {...register("email", {
                     required: "Email is required.",
-
                     pattern: {
                       value: EMAIL_REGEX,
                       message: "Please enter a valid email address.",
                     },
-
                     setValueAs: (value) => String(value).trim().toLowerCase(),
                   })}
                 />
@@ -543,9 +440,7 @@ const Register = () => {
               )}
             </div>
 
-            {/* --------------------------------------------------------------
-               PASSWORD
-            -------------------------------------------------------------- */}
+            {/* PASSWORD */}
 
             <div>
               <label htmlFor="password" className="label">
@@ -568,17 +463,14 @@ const Register = () => {
                   className="grow bg-transparent outline-none"
                   {...register("password", {
                     required: "Password is required.",
-
                     minLength: {
                       value: PASSWORD_MIN_LENGTH,
                       message: `Password must be at least ${PASSWORD_MIN_LENGTH} characters.`,
                     },
-
                     maxLength: {
                       value: PASSWORD_MAX_LENGTH,
                       message: `Password cannot exceed ${PASSWORD_MAX_LENGTH} characters.`,
                     },
-
                     pattern: {
                       value: STRONG_PASSWORD_REGEX,
                       message:
@@ -609,9 +501,7 @@ const Register = () => {
               )}
             </div>
 
-            {/* --------------------------------------------------------------
-               CONFIRM PASSWORD
-            -------------------------------------------------------------- */}
+            {/* CONFIRM PASSWORD */}
 
             <div>
               <label htmlFor="confirmPassword" className="label">
@@ -636,7 +526,6 @@ const Register = () => {
                   className="grow bg-transparent outline-none"
                   {...register("confirmPassword", {
                     required: "Please confirm your password.",
-
                     validate: (value) =>
                       value === password || "Passwords do not match.",
                   })}
@@ -668,9 +557,7 @@ const Register = () => {
               )}
             </div>
 
-            {/* --------------------------------------------------------------
-               TERMS
-            -------------------------------------------------------------- */}
+            {/* TERMS */}
 
             <div>
               <label
@@ -688,7 +575,7 @@ const Register = () => {
                 />
 
                 <span className="text-sm leading-6">
-                  I agree to the{" "}
+                  I agree to{" "}
                   <Link to="/terms" className="link link-warning font-semibold">
                     Terms & Conditions
                   </Link>{" "}
@@ -710,9 +597,7 @@ const Register = () => {
               )}
             </div>
 
-            {/* --------------------------------------------------------------
-               EMAIL REGISTER BUTTON
-            -------------------------------------------------------------- */}
+            {/* REGISTER BUTTON */}
 
             <button
               type="submit"
@@ -738,9 +623,7 @@ const Register = () => {
             </button>
           </form>
 
-          {/* ----------------------------------------------------------------
-             DIVIDER
-          ---------------------------------------------------------------- */}
+          {/* DIVIDER */}
 
           <div className="my-6 flex items-center gap-3">
             <div className="h-px flex-1 bg-base-300" />
@@ -750,9 +633,7 @@ const Register = () => {
             <div className="h-px flex-1 bg-base-300" />
           </div>
 
-          {/* ----------------------------------------------------------------
-             GOOGLE REGISTER / SIGN-IN
-          ---------------------------------------------------------------- */}
+          {/* GOOGLE */}
 
           <button
             type="button"
@@ -778,9 +659,7 @@ const Register = () => {
             )}
           </button>
 
-          {/* ----------------------------------------------------------------
-             LOGIN
-          ---------------------------------------------------------------- */}
+          {/* LOGIN */}
 
           <div className="mt-7 text-center">
             <p className="text-sm text-base-content/70">
@@ -792,9 +671,7 @@ const Register = () => {
           </div>
         </div>
 
-        {/* ------------------------------------------------------------------
-           FOOTER
-        ------------------------------------------------------------------ */}
+        {/* FOOTER */}
 
         <div className="mt-6 text-center text-xs text-base-content/60">
           By creating an account, you agree to our{" "}

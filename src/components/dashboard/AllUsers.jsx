@@ -1,5 +1,4 @@
 import { useCallback, useContext, useEffect, useMemo, useState } from "react";
-import axios from "axios";
 
 import {
   FaCheckCircle,
@@ -20,23 +19,21 @@ import {
 } from "react-icons/fa";
 
 import { AuthContext } from "../../Auth/AuthProvider";
+import axiosSecure from "../../hooks/axiosSecure";
 
 // ============================================================
 // CONFIGURATION
 // ============================================================
 
-const API_URL = import.meta.env.VITE_API_URL;
-
 const USERS_PER_PAGE = 10;
 const API_USERS_LIMIT = 50;
-const REQUEST_TIMEOUT = 15000;
 
 // ============================================================
 // HELPERS
 // ============================================================
 
 const getUserId = (user) => {
-  return user?._id || user?.id || "";
+  return user?._id || user?.id || user?.uid || "";
 };
 
 const getUserName = (user) => {
@@ -111,15 +108,12 @@ const AllUsers = () => {
   const [users, setUsers] = useState([]);
 
   const [loading, setLoading] = useState(true);
-
   const [refreshing, setRefreshing] = useState(false);
 
   const [error, setError] = useState("");
 
   const [searchTerm, setSearchTerm] = useState("");
-
   const [roleFilter, setRoleFilter] = useState("all");
-
   const [statusFilter, setStatusFilter] = useState("all");
 
   const [currentPage, setCurrentPage] = useState(1);
@@ -127,22 +121,9 @@ const AllUsers = () => {
   const [selectedUser, setSelectedUser] = useState(null);
 
   const [actionLoading, setActionLoading] = useState(false);
-
   const [actionError, setActionError] = useState("");
 
   const [viewMode, setViewMode] = useState("table");
-
-  // ==========================================================
-  // AXIOS INSTANCE
-  // ==========================================================
-
-  const api = useMemo(() => {
-    return axios.create({
-      baseURL: API_URL,
-      timeout: REQUEST_TIMEOUT,
-      withCredentials: true,
-    });
-  }, []);
 
   // ==========================================================
   // CURRENT USER CHECK
@@ -157,7 +138,11 @@ const AllUsers = () => {
       const targetUid = targetUser?.uid;
       const currentUid = currentUser?.uid;
 
-      return Boolean(targetUid && currentUid && targetUid === currentUid);
+      if (!targetUid || !currentUid) {
+        return false;
+      }
+
+      return targetUid === currentUid;
     },
     [currentUser],
   );
@@ -166,76 +151,82 @@ const AllUsers = () => {
   // FETCH USERS
   // ==========================================================
 
-  const fetchUsers = useCallback(
-    async ({ isRefresh = false } = {}) => {
-      if (!API_URL) {
-        setError(
-          "VITE_API_URL is not configured. Please check your environment variables.",
-        );
-
-        setLoading(false);
-        setRefreshing(false);
-
-        return;
+  const fetchUsers = useCallback(async ({ isRefresh = false } = {}) => {
+    try {
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
       }
 
-      try {
-        if (isRefresh) {
-          setRefreshing(true);
-        } else {
-          setLoading(true);
-        }
+      setError("");
 
-        setError("");
+      const response = await axiosSecure.get("/users", {
+        params: {
+          page: 1,
+          limit: API_USERS_LIMIT,
+          sort: "newest",
+        },
+      });
 
-        const response = await api.get("/users", {
-          params: {
-            page: 1,
-            limit: API_USERS_LIMIT,
-            sort: "newest",
-          },
-        });
+      const responseData = response?.data;
 
-        const responseData = response?.data;
+      let usersData = [];
 
-        let usersData = [];
+      if (Array.isArray(responseData?.data)) {
+        usersData = responseData.data;
+      } else if (Array.isArray(responseData?.users)) {
+        usersData = responseData.users;
+      } else if (Array.isArray(responseData)) {
+        usersData = responseData;
+      }
 
-        if (Array.isArray(responseData?.data)) {
-          usersData = responseData.data;
-        } else if (Array.isArray(responseData?.users)) {
-          usersData = responseData.users;
-        } else if (Array.isArray(responseData)) {
-          usersData = responseData;
-        }
+      setUsers(usersData);
+      setCurrentPage(1);
+    } catch (err) {
+      console.error("Fetch Users Error:", err);
 
-        setUsers(usersData);
-        setCurrentPage(1);
-      } catch (err) {
-        console.error("Fetch Users Error:", err);
+      const status = err?.response?.status;
+      const serverCode = err?.response?.data?.code;
+      const serverMessage = err?.response?.data?.message;
 
-        if (err?.response?.status === 401) {
-          setError("Your session has expired. Please login again.");
-        } else if (err?.response?.status === 403) {
-          setError("You do not have permission to view users.");
-        } else if (err?.response?.status === 404) {
-          setError("Users API endpoint was not found.");
-        } else if (err?.code === "ECONNABORTED") {
-          setError("Request timed out. Please try again.");
-        } else if (!err?.response) {
-          setError("Unable to connect to the server.");
+      if (status === 401) {
+        if (serverCode === "auth/token-missing") {
+          setError(
+            "Authentication token is missing. Please login again and make sure your Firebase authentication token is being sent with the request.",
+          );
+        } else if (serverCode === "auth/token-invalid") {
+          setError(
+            "Your authentication token is invalid or expired. Please login again.",
+          );
         } else {
           setError(
-            err?.response?.data?.message ||
-              "Failed to load users. Please try again.",
+            serverMessage || "You are not authenticated. Please login again.",
           );
         }
-      } finally {
-        setLoading(false);
-        setRefreshing(false);
+      } else if (status === 403) {
+        setError(
+          serverMessage ||
+            "You do not have permission to view all users. Admin access is required.",
+        );
+      } else if (status === 404) {
+        setError("Users API endpoint was not found.");
+      } else if (err?.code === "ECONNABORTED") {
+        setError("Request timed out. Please try again.");
+      } else if (!err?.response) {
+        setError(
+          "Unable to connect to the server. Please check your backend server.",
+        );
+      } else {
+        setError(serverMessage || "Failed to load users. Please try again.");
       }
-    },
-    [api],
-  );
+
+      setUsers([]);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
 
   // ==========================================================
   // INITIAL LOAD
@@ -254,13 +245,10 @@ const AllUsers = () => {
 
     return users.filter((item) => {
       const name = getUserName(item).toLowerCase();
-
       const email = getUserEmail(item).toLowerCase();
-
       const uid = String(item?.uid || "").toLowerCase();
 
       const role = getUserRole(item);
-
       const status = getUserStatus(item);
 
       const matchesSearch =
@@ -387,9 +375,11 @@ const AllUsers = () => {
         setActionLoading(true);
         setActionError("");
 
-        await api.patch(`/users/${userId}/role`, {
+        await axiosSecure.patch(`/users/${userId}/role`, {
           role: newRole,
         });
+
+        const updatedAt = new Date().toISOString();
 
         setUsers((previousUsers) =>
           previousUsers.map((item) =>
@@ -397,7 +387,7 @@ const AllUsers = () => {
               ? {
                   ...item,
                   role: newRole,
-                  updatedAt: new Date().toISOString(),
+                  updatedAt,
                 }
               : item,
           ),
@@ -408,7 +398,7 @@ const AllUsers = () => {
             ? {
                 ...previousUser,
                 role: newRole,
-                updatedAt: new Date().toISOString(),
+                updatedAt,
               }
             : null,
         );
@@ -422,7 +412,7 @@ const AllUsers = () => {
         setActionLoading(false);
       }
     },
-    [api, isCurrentUser],
+    [isCurrentUser],
   );
 
   // ==========================================================
@@ -451,16 +441,6 @@ const AllUsers = () => {
 
       const currentStatus = getUserStatus(targetUser);
 
-      /*
-       * IMPORTANT:
-       *
-       * Backend accepts:
-       * active
-       * blocked
-       *
-       * Do NOT send "inactive".
-       */
-
       const newStatus = currentStatus === "active" ? "blocked" : "active";
 
       const actionText = newStatus === "blocked" ? "block" : "activate";
@@ -477,7 +457,7 @@ const AllUsers = () => {
         setActionLoading(true);
         setActionError("");
 
-        await api.patch(`/users/${userId}/status`, {
+        await axiosSecure.patch(`/users/${userId}/status`, {
           status: newStatus,
         });
 
@@ -514,7 +494,7 @@ const AllUsers = () => {
         setActionLoading(false);
       }
     },
-    [api, isCurrentUser],
+    [isCurrentUser],
   );
 
   // ==========================================================
@@ -553,7 +533,7 @@ const AllUsers = () => {
         setActionLoading(true);
         setActionError("");
 
-        await api.delete(`/users/${userId}`);
+        await axiosSecure.delete(`/users/${userId}`);
 
         setUsers((previousUsers) =>
           previousUsers.filter((item) => getUserId(item) !== userId),
@@ -570,7 +550,7 @@ const AllUsers = () => {
         setActionLoading(false);
       }
     },
-    [api, isCurrentUser],
+    [isCurrentUser],
   );
 
   // ==========================================================
@@ -604,15 +584,15 @@ const AllUsers = () => {
   if (loading) {
     return (
       <div className="space-y-6">
-        <div className="rounded-2xl border border-base-300 bg-base-100 p-6 shadow-sm">
+        <div className="rounded-2xl border border-base-300 bg-base-100 p-5 shadow-sm md:p-6">
           <div className="animate-pulse space-y-4">
-            <div className="h-8 w-56 rounded-lg bg-base-300" />
+            <div className="h-8 w-48 rounded-lg bg-base-300" />
 
-            <div className="h-4 w-80 rounded bg-base-300" />
+            <div className="h-4 w-full max-w-md rounded bg-base-300" />
           </div>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           {Array.from({ length: 5 }).map((_, index) => (
             <div
               key={index}
@@ -631,19 +611,19 @@ const AllUsers = () => {
   // ==========================================================
 
   return (
-    <div className="space-y-6">
+    <div className="w-full space-y-6">
       {/* ====================================================== */}
       {/* HEADER */}
       {/* ====================================================== */}
 
       <div className="rounded-2xl border border-base-300 bg-base-100 p-5 shadow-sm md:p-6">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
               <FaUsers className="text-xl" />
             </div>
 
-            <div>
+            <div className="min-w-0">
               <h1 className="text-2xl font-bold md:text-3xl">All Users</h1>
 
               <p className="mt-1 text-sm text-base-content/60">
@@ -656,7 +636,7 @@ const AllUsers = () => {
             type="button"
             onClick={() => fetchUsers({ isRefresh: true })}
             disabled={refreshing}
-            className="btn btn-outline gap-2"
+            className="btn btn-outline w-full gap-2 sm:w-auto"
           >
             <FaRedo className={refreshing ? "animate-spin" : ""} />
 
@@ -670,19 +650,19 @@ const AllUsers = () => {
       {/* ====================================================== */}
 
       {error && (
-        <div className="alert alert-error rounded-2xl">
-          <FaExclamationTriangle />
+        <div className="alert alert-error flex-col items-start gap-3 rounded-2xl sm:flex-row sm:items-center">
+          <FaExclamationTriangle className="shrink-0" />
 
-          <div className="flex-1">
+          <div className="min-w-0 flex-1">
             <h3 className="font-bold">Unable to load users</h3>
 
-            <p className="text-sm">{error}</p>
+            <p className="break-words text-sm">{error}</p>
           </div>
 
           <button
             type="button"
             onClick={() => fetchUsers()}
-            className="btn btn-sm"
+            className="btn btn-sm w-full sm:w-auto"
           >
             Try Again
           </button>
@@ -693,18 +673,18 @@ const AllUsers = () => {
       {/* STATISTICS */}
       {/* ====================================================== */}
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {/* TOTAL */}
 
         <div className="rounded-2xl border border-base-300 bg-base-100 p-5 shadow-sm">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm text-base-content/60">Total Users</p>
 
               <p className="mt-1 text-2xl font-bold">{statistics.total}</p>
             </div>
 
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
               <FaUsers />
             </div>
           </div>
@@ -713,14 +693,14 @@ const AllUsers = () => {
         {/* ADMINS */}
 
         <div className="rounded-2xl border border-base-300 bg-base-100 p-5 shadow-sm">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm text-base-content/60">Administrators</p>
 
               <p className="mt-1 text-2xl font-bold">{statistics.admins}</p>
             </div>
 
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-secondary/10 text-secondary">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-secondary/10 text-secondary">
               <FaUserShield />
             </div>
           </div>
@@ -729,14 +709,14 @@ const AllUsers = () => {
         {/* CUSTOMERS */}
 
         <div className="rounded-2xl border border-base-300 bg-base-100 p-5 shadow-sm">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm text-base-content/60">Customers</p>
 
               <p className="mt-1 text-2xl font-bold">{statistics.customers}</p>
             </div>
 
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-info/10 text-info">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-info/10 text-info">
               <FaUser />
             </div>
           </div>
@@ -745,14 +725,14 @@ const AllUsers = () => {
         {/* ACTIVE */}
 
         <div className="rounded-2xl border border-base-300 bg-base-100 p-5 shadow-sm">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm text-base-content/60">Active</p>
 
               <p className="mt-1 text-2xl font-bold">{statistics.active}</p>
             </div>
 
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-success/10 text-success">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-success/10 text-success">
               <FaCheckCircle />
             </div>
           </div>
@@ -761,14 +741,14 @@ const AllUsers = () => {
         {/* BLOCKED */}
 
         <div className="rounded-2xl border border-base-300 bg-base-100 p-5 shadow-sm">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm text-base-content/60">Blocked</p>
 
               <p className="mt-1 text-2xl font-bold">{statistics.blocked}</p>
             </div>
 
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-error/10 text-error">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-error/10 text-error">
               <FaUserSlash />
             </div>
           </div>
@@ -780,26 +760,26 @@ const AllUsers = () => {
       {/* ====================================================== */}
 
       <div className="rounded-2xl border border-base-300 bg-base-100 p-4 shadow-sm md:p-5">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex flex-1 flex-col gap-3 md:flex-row">
+        <div className="flex flex-col gap-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(0,2fr)_180px_170px_auto]">
             {/* SEARCH */}
 
-            <label className="input input-bordered flex w-full items-center gap-2 md:max-w-md">
-              <FaSearch className="text-base-content/40" />
+            <label className="input input-bordered flex w-full items-center gap-2">
+              <FaSearch className="shrink-0 text-base-content/40" />
 
               <input
                 type="search"
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
                 placeholder="Search name, email or UID..."
-                className="grow"
+                className="min-w-0 grow"
               />
 
               {searchTerm && (
                 <button
                   type="button"
                   onClick={() => setSearchTerm("")}
-                  className="btn btn-circle btn-ghost btn-xs"
+                  className="btn btn-circle btn-ghost btn-xs shrink-0"
                   aria-label="Clear search"
                 >
                   <FaTimes />
@@ -809,13 +789,13 @@ const AllUsers = () => {
 
             {/* ROLE */}
 
-            <label className="select select-bordered flex items-center gap-2 md:w-48">
-              <FaUserCog className="text-base-content/40" />
+            <label className="select select-bordered flex w-full items-center gap-2">
+              <FaUserCog className="shrink-0 text-base-content/40" />
 
               <select
                 value={roleFilter}
                 onChange={(event) => setRoleFilter(event.target.value)}
-                className="grow"
+                className="min-w-0 grow"
               >
                 <option value="all">All Roles</option>
 
@@ -830,7 +810,7 @@ const AllUsers = () => {
             <select
               value={statusFilter}
               onChange={(event) => setStatusFilter(event.target.value)}
-              className="select select-bordered md:w-44"
+              className="select select-bordered w-full"
             >
               <option value="all">All Status</option>
 
@@ -838,32 +818,34 @@ const AllUsers = () => {
 
               <option value="blocked">Blocked</option>
             </select>
-          </div>
 
-          {/* VIEW SWITCHER */}
+            {/* VIEW SWITCHER */}
 
-          <div className="join">
-            <button
-              type="button"
-              onClick={() => setViewMode("table")}
-              className={`btn join-item ${
-                viewMode === "table" ? "btn-primary" : "btn-outline"
-              }`}
-              aria-label="Table view"
-            >
-              <FaUsers />
-            </button>
+            <div className="join w-full md:w-fit">
+              <button
+                type="button"
+                onClick={() => setViewMode("table")}
+                className={`btn join-item flex-1 md:flex-none ${
+                  viewMode === "table" ? "btn-primary" : "btn-outline"
+                }`}
+                aria-label="Table view"
+              >
+                <FaUsers />
+                <span className="hidden sm:inline">Table</span>
+              </button>
 
-            <button
-              type="button"
-              onClick={() => setViewMode("grid")}
-              className={`btn join-item ${
-                viewMode === "grid" ? "btn-primary" : "btn-outline"
-              }`}
-              aria-label="Grid view"
-            >
-              <FaUser />
-            </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("grid")}
+                className={`btn join-item flex-1 md:flex-none ${
+                  viewMode === "grid" ? "btn-primary" : "btn-outline"
+                }`}
+                aria-label="Grid view"
+              >
+                <FaUser />
+                <span className="hidden sm:inline">Grid</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -903,7 +885,7 @@ const AllUsers = () => {
               setRoleFilter("all");
               setStatusFilter("all");
             }}
-            className="btn btn-ghost btn-sm"
+            className="btn btn-ghost btn-sm self-start sm:self-auto"
           >
             Clear filters
           </button>
@@ -915,7 +897,7 @@ const AllUsers = () => {
       {/* ====================================================== */}
 
       {paginatedUsers.length === 0 && (
-        <div className="rounded-2xl border border-base-300 bg-base-100 px-6 py-16 text-center shadow-sm">
+        <div className="rounded-2xl border border-base-300 bg-base-100 px-5 py-16 text-center shadow-sm">
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-base-200 text-base-content/40">
             <FaUsers className="text-2xl" />
           </div>
@@ -935,7 +917,7 @@ const AllUsers = () => {
       {paginatedUsers.length > 0 && viewMode === "table" && (
         <div className="overflow-hidden rounded-2xl border border-base-300 bg-base-100 shadow-sm">
           <div className="overflow-x-auto">
-            <table className="table">
+            <table className="table min-w-[900px]">
               <thead>
                 <tr className="bg-base-200/60">
                   <th>User</th>
@@ -960,15 +942,15 @@ const AllUsers = () => {
                       {/* USER */}
 
                       <td>
-                        <div className="flex items-center gap-3">
+                        <div className="flex min-w-[240px] items-center gap-3">
                           {item?.photo ? (
-                            <div className="avatar">
+                            <div className="avatar shrink-0">
                               <div className="h-11 w-11 rounded-full">
                                 <img src={item.photo} alt={name} />
                               </div>
                             </div>
                           ) : (
-                            <div className="avatar placeholder">
+                            <div className="avatar placeholder shrink-0">
                               <div className="h-11 w-11 rounded-full bg-primary text-primary-content">
                                 <span className="font-bold">
                                   {getInitial(name)}
@@ -984,7 +966,7 @@ const AllUsers = () => {
                               </p>
 
                               {current && (
-                                <span className="badge badge-primary badge-xs">
+                                <span className="badge badge-primary badge-xs shrink-0">
                                   You
                                 </span>
                               )}
@@ -1038,7 +1020,7 @@ const AllUsers = () => {
                       {/* LAST LOGIN */}
 
                       <td>
-                        <span className="text-sm text-base-content/70">
+                        <span className="whitespace-nowrap text-sm text-base-content/70">
                           {formatDate(item?.lastLogin)}
                         </span>
                       </td>
@@ -1087,7 +1069,7 @@ const AllUsers = () => {
                               <li>
                                 <button
                                   type="button"
-                                  disabled={current}
+                                  disabled={current || actionLoading}
                                   onClick={() => handleRoleChange(item)}
                                 >
                                   <FaUserShield />
@@ -1098,7 +1080,7 @@ const AllUsers = () => {
                               <li>
                                 <button
                                   type="button"
-                                  disabled={current}
+                                  disabled={current || actionLoading}
                                   onClick={() => handleStatusChange(item)}
                                 >
                                   {status === "active" ? (
@@ -1116,7 +1098,7 @@ const AllUsers = () => {
                               <li>
                                 <button
                                   type="button"
-                                  disabled={current}
+                                  disabled={current || actionLoading}
                                   className="text-error"
                                   onClick={() => handleDeleteUser(item)}
                                 >
@@ -1153,7 +1135,7 @@ const AllUsers = () => {
             return (
               <div
                 key={getUserId(item)}
-                className="rounded-2xl border border-base-300 bg-base-100 p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                className="min-w-0 rounded-2xl border border-base-300 bg-base-100 p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex min-w-0 items-center gap-3">
@@ -1183,7 +1165,9 @@ const AllUsers = () => {
                   </div>
 
                   {current && (
-                    <span className="badge badge-primary badge-sm">You</span>
+                    <span className="badge badge-primary badge-sm shrink-0">
+                      You
+                    </span>
                   )}
                 </div>
 
@@ -1229,17 +1213,18 @@ const AllUsers = () => {
                       setActionError("");
                       setSelectedUser(item);
                     }}
-                    className="btn btn-primary btn-sm flex-1"
+                    className="btn btn-primary btn-sm min-w-0 flex-1"
                   >
                     Manage
                   </button>
 
                   <button
                     type="button"
-                    disabled={current}
+                    disabled={current || actionLoading}
                     onClick={() => handleDeleteUser(item)}
                     className="btn btn-error btn-outline btn-sm"
                     title="Delete user"
+                    aria-label={`Delete ${name}`}
                   >
                     <FaTrash />
                   </button>
@@ -1267,12 +1252,13 @@ const AllUsers = () => {
             </span>
           </p>
 
-          <div className="join">
+          <div className="join max-w-full overflow-x-auto">
             <button
               type="button"
               className="btn join-item"
               disabled={safeCurrentPage === 1}
               onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+              aria-label="Previous page"
             >
               <FaChevronLeft />
             </button>
@@ -1297,6 +1283,7 @@ const AllUsers = () => {
               onClick={() =>
                 setCurrentPage((page) => Math.min(totalPages, page + 1))
               }
+              aria-label="Next page"
             >
               <FaChevronRight />
             </button>
@@ -1310,7 +1297,7 @@ const AllUsers = () => {
 
       {selectedUser && (
         <dialog open className="modal modal-bottom sm:modal-middle">
-          <div className="modal-box max-w-2xl">
+          <div className="modal-box max-h-[90vh] max-w-2xl overflow-y-auto">
             <button
               type="button"
               onClick={closeModal}
@@ -1325,7 +1312,7 @@ const AllUsers = () => {
 
             <div className="flex items-center gap-4 pr-8">
               {selectedUser?.photo ? (
-                <div className="avatar">
+                <div className="avatar shrink-0">
                   <div className="h-16 w-16 rounded-full ring-2 ring-primary ring-offset-2">
                     <img
                       src={selectedUser.photo}
@@ -1334,7 +1321,7 @@ const AllUsers = () => {
                   </div>
                 </div>
               ) : (
-                <div className="avatar placeholder">
+                <div className="avatar placeholder shrink-0">
                   <div className="h-16 w-16 rounded-full bg-primary text-primary-content">
                     <span className="text-xl font-bold">
                       {getInitial(getUserName(selectedUser))}
@@ -1344,7 +1331,7 @@ const AllUsers = () => {
               )}
 
               <div className="min-w-0">
-                <h3 className="truncate text-2xl font-bold">
+                <h3 className="truncate text-xl font-bold sm:text-2xl">
                   {getUserName(selectedUser)}
                 </h3>
 
@@ -1360,7 +1347,7 @@ const AllUsers = () => {
               <div className="alert alert-error mt-5">
                 <FaExclamationTriangle />
 
-                <span>{actionError}</span>
+                <span className="break-words">{actionError}</span>
               </div>
             )}
 
@@ -1428,7 +1415,7 @@ const AllUsers = () => {
               </div>
             </div>
 
-            {/* UID */}
+            {/* FIREBASE UID */}
 
             <div className="mt-4 rounded-xl bg-base-200 p-4">
               <p className="text-xs uppercase tracking-wide text-base-content/50">
@@ -1447,7 +1434,7 @@ const AllUsers = () => {
                 type="button"
                 disabled={actionLoading || isCurrentUser(selectedUser)}
                 onClick={() => handleRoleChange(selectedUser)}
-                className="btn btn-primary"
+                className="btn btn-primary w-full"
               >
                 <FaUserShield />
                 Make{" "}
@@ -1458,7 +1445,7 @@ const AllUsers = () => {
                 type="button"
                 disabled={actionLoading || isCurrentUser(selectedUser)}
                 onClick={() => handleStatusChange(selectedUser)}
-                className="btn btn-outline"
+                className="btn btn-outline w-full"
               >
                 {getUserStatus(selectedUser) === "active" ? (
                   <FaUserSlash />
@@ -1475,7 +1462,7 @@ const AllUsers = () => {
                 type="button"
                 disabled={actionLoading || isCurrentUser(selectedUser)}
                 onClick={() => handleDeleteUser(selectedUser)}
-                className="btn btn-error"
+                className="btn btn-error w-full"
               >
                 <FaTrash />
                 Delete
@@ -1501,7 +1488,7 @@ const AllUsers = () => {
               <button
                 type="button"
                 onClick={closeModal}
-                className="btn"
+                className="btn w-full sm:w-auto"
                 disabled={actionLoading}
               >
                 Close
