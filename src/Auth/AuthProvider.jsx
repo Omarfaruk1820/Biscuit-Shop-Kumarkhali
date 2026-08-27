@@ -20,19 +20,17 @@ import {
 } from "firebase/auth";
 
 import { auth } from "./firebase.config";
-
 import axiosPublic from "../hooks/axiosPublic";
-import axiosSecure from "../hooks/axiosSecure";
 
-/* ============================================================
-   AUTH CONTEXT
-============================================================ */
+// ============================================================
+// AUTH CONTEXT
+// ============================================================
 
 export const AuthContext = createContext(null);
 
-/* ============================================================
-   CONFIG
-============================================================ */
+// ============================================================
+// CONFIG
+// ============================================================
 
 const REQUEST_TIMEOUT = 15000;
 
@@ -43,9 +41,9 @@ const ENDPOINTS = {
   LOGOUT: "/auth/logout",
 };
 
-/* ============================================================
-   GOOGLE PROVIDER
-============================================================ */
+// ============================================================
+// GOOGLE PROVIDER
+// ============================================================
 
 const googleProvider = new GoogleAuthProvider();
 
@@ -53,17 +51,14 @@ googleProvider.setCustomParameters({
   prompt: "select_account",
 });
 
-/* ============================================================
-   HELPERS
-============================================================ */
+// ============================================================
+// HELPERS
+// ============================================================
 
-const normalizeString = (value = "") => {
-  return typeof value === "string" ? value.trim() : "";
-};
+const normalizeString = (value = "") =>
+  typeof value === "string" ? value.trim() : "";
 
-const normalizeEmail = (value = "") => {
-  return normalizeString(value).toLowerCase();
-};
+const normalizeEmail = (value = "") => normalizeString(value).toLowerCase();
 
 const getErrorMessage = (error, fallback = "Something went wrong.") => {
   return (
@@ -74,42 +69,40 @@ const getErrorMessage = (error, fallback = "Something went wrong.") => {
   );
 };
 
-/* ============================================================
-   AUTH PROVIDER
-============================================================ */
+// ============================================================
+// AUTH PROVIDER
+// ============================================================
 
 const AuthProvider = ({ children }) => {
-  /* ==========================================================
-     STATE
-  ========================================================== */
+  // ==========================================================
+  // STATE
+  // ==========================================================
 
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  /* ==========================================================
-     REFS
-  ========================================================== */
+  // ==========================================================
+  // REFS
+  // ==========================================================
 
   const mountedRef = useRef(false);
   const operationRef = useRef(false);
 
-  /* ==========================================================
-     ROLE / STATUS
-  ========================================================== */
+  // ==========================================================
+  // ROLE / STATUS
+  // ==========================================================
 
   const role = user?.role || "user";
   const status = user?.status || "active";
 
-  /* ==========================================================
-     GET FIREBASE ID TOKEN
-
-     forceRefresh = true is used for authentication handshake.
-  ========================================================== */
+  // ==========================================================
+  // FIREBASE TOKEN
+  // ==========================================================
 
   const getFirebaseToken = useCallback(
     async (firebaseUser, forceRefresh = false) => {
       if (!firebaseUser) {
-        throw new Error("Firebase user is not available.");
+        throw new Error("No authenticated Firebase user.");
       }
 
       const token = await firebaseUser.getIdToken(forceRefresh);
@@ -123,15 +116,9 @@ const AuthProvider = ({ children }) => {
     [],
   );
 
-  /* ==========================================================
-     GET CURRENT DATABASE USER
-
-     IMPORTANT:
-     This function does NOT use axiosSecure.
-
-     The Firebase ID token is explicitly attached to the
-     /auth/me request.
-  ========================================================== */
+  // ==========================================================
+  // GET DATABASE USER
+  // ==========================================================
 
   const getCurrentUser = useCallback(
     async (firebaseUser = auth.currentUser, forceRefresh = false) => {
@@ -150,7 +137,7 @@ const AuthProvider = ({ children }) => {
 
       if (!response?.data?.success || !response?.data?.user) {
         throw new Error(
-          response?.data?.message || "Unable to load current user.",
+          response?.data?.message || "Unable to load authenticated user.",
         );
       }
 
@@ -159,9 +146,42 @@ const AuthProvider = ({ children }) => {
     [getFirebaseToken],
   );
 
-  /* ==========================================================
-     REGISTER USER IN DATABASE
-  ========================================================== */
+  // ==========================================================
+  // VALIDATE DATABASE USER
+  // ==========================================================
+
+  const validateDatabaseUser = useCallback((databaseUser) => {
+    if (!databaseUser) {
+      throw new Error("User account was not found.");
+    }
+
+    if (databaseUser.status === "blocked") {
+      throw new Error("Your account has been blocked. Please contact support.");
+    }
+
+    if (databaseUser.status && databaseUser.status !== "active") {
+      throw new Error("Your account is not active.");
+    }
+
+    return databaseUser;
+  }, []);
+
+  // ==========================================================
+  // LOAD APPLICATION USER
+  // ==========================================================
+
+  const loadApplicationUser = useCallback(
+    async (firebaseUser, forceRefresh = false) => {
+      const databaseUser = await getCurrentUser(firebaseUser, forceRefresh);
+
+      return validateDatabaseUser(databaseUser);
+    },
+    [getCurrentUser, validateDatabaseUser],
+  );
+
+  // ==========================================================
+  // REGISTER USER IN DATABASE
+  // ==========================================================
 
   const registerUserInDatabase = useCallback(
     async (firebaseUser, additionalData = {}) => {
@@ -206,46 +226,9 @@ const AuthProvider = ({ children }) => {
     [getFirebaseToken],
   );
 
-  /* ==========================================================
-     VALIDATE DATABASE USER
-  ========================================================== */
-
-  const validateDatabaseUser = useCallback((databaseUser) => {
-    if (!databaseUser) {
-      throw new Error("User account was not found.");
-    }
-
-    if (databaseUser.status === "blocked") {
-      throw new Error("Your account has been blocked. Please contact support.");
-    }
-
-    if (databaseUser.status && databaseUser.status !== "active") {
-      throw new Error("Your account is not active.");
-    }
-
-    return databaseUser;
-  }, []);
-
-  /* ==========================================================
-     LOAD APPLICATION USER
-  ========================================================== */
-
-  const loadApplicationUser = useCallback(
-    async (firebaseUser, forceRefresh = false) => {
-      if (!firebaseUser) {
-        throw new Error("Firebase user is not available.");
-      }
-
-      const databaseUser = await getCurrentUser(firebaseUser, forceRefresh);
-
-      return validateDatabaseUser(databaseUser);
-    },
-    [getCurrentUser, validateDatabaseUser],
-  );
-
-  /* ==========================================================
-     BACKEND LOGOUT
-  ========================================================== */
+  // ==========================================================
+  // BACKEND LOGOUT
+  // ==========================================================
 
   const logoutBackend = useCallback(async () => {
     try {
@@ -264,9 +247,9 @@ const AuthProvider = ({ children }) => {
     }
   }, []);
 
-  /* ==========================================================
-     FIREBASE ONLY LOGOUT
-  ========================================================== */
+  // ==========================================================
+  // FIREBASE LOGOUT ONLY
+  // ==========================================================
 
   const signOutFirebaseOnly = useCallback(async () => {
     try {
@@ -285,18 +268,9 @@ const AuthProvider = ({ children }) => {
     }
   }, []);
 
-  /* ==========================================================
-     COMPLETE AUTH CLEANUP
-  ========================================================== */
-
-  const cleanupAuth = useCallback(async () => {
-    await logoutBackend();
-    await signOutFirebaseOnly();
-  }, [logoutBackend, signOutFirebaseOnly]);
-
-  /* ==========================================================
-     CREATE EMAIL/PASSWORD USER
-  ========================================================== */
+  // ==========================================================
+  // CREATE USER
+  // ==========================================================
 
   const createUser = useCallback(
     async (email, password, name, photoURL = "") => {
@@ -306,7 +280,6 @@ const AuthProvider = ({ children }) => {
 
       const cleanEmail = normalizeEmail(email);
       const cleanPassword = typeof password === "string" ? password : "";
-
       const cleanName = normalizeString(name);
       const cleanPhoto = normalizeString(photoURL);
 
@@ -329,9 +302,9 @@ const AuthProvider = ({ children }) => {
       operationRef.current = true;
 
       try {
-        /* ----------------------------------------------------
-           1. CREATE FIREBASE USER
-        ---------------------------------------------------- */
+        // ----------------------------------------------------
+        // FIREBASE ACCOUNT
+        // ----------------------------------------------------
 
         const result = await createUserWithEmailAndPassword(
           auth,
@@ -345,9 +318,9 @@ const AuthProvider = ({ children }) => {
           throw new Error("Firebase registration failed.");
         }
 
-        /* ----------------------------------------------------
-           2. FALLBACK PHOTO
-        ---------------------------------------------------- */
+        // ----------------------------------------------------
+        // DEFAULT PHOTO
+        // ----------------------------------------------------
 
         const fallbackPhoto = `https://ui-avatars.com/api/?name=${encodeURIComponent(
           cleanName,
@@ -355,9 +328,9 @@ const AuthProvider = ({ children }) => {
 
         const finalPhoto = cleanPhoto || fallbackPhoto;
 
-        /* ----------------------------------------------------
-           3. UPDATE FIREBASE PROFILE
-        ---------------------------------------------------- */
+        // ----------------------------------------------------
+        // FIREBASE PROFILE
+        // ----------------------------------------------------
 
         await updateProfile(firebaseUser, {
           displayName: cleanName,
@@ -372,9 +345,9 @@ const AuthProvider = ({ children }) => {
           throw new Error("Unable to reload Firebase user.");
         }
 
-        /* ----------------------------------------------------
-           4. CREATE DATABASE USER
-        ---------------------------------------------------- */
+        // ----------------------------------------------------
+        // DATABASE USER
+        // ----------------------------------------------------
 
         const registerResponse = await registerUserInDatabase(firebaseUser, {
           name: cleanName,
@@ -383,16 +356,15 @@ const AuthProvider = ({ children }) => {
 
         const databaseUser = validateDatabaseUser(registerResponse?.user);
 
-        /* ----------------------------------------------------
-           5. SEND EMAIL VERIFICATION
-        ---------------------------------------------------- */
+        // ----------------------------------------------------
+        // EMAIL VERIFICATION
+        // ----------------------------------------------------
 
         let verificationSent = false;
 
         if (!firebaseUser.emailVerified) {
           try {
             await sendEmailVerification(firebaseUser);
-
             verificationSent = true;
           } catch (verificationError) {
             console.warn(
@@ -405,9 +377,9 @@ const AuthProvider = ({ children }) => {
           }
         }
 
-        /* ----------------------------------------------------
-           6. KEEP USER LOGGED IN
-        ---------------------------------------------------- */
+        // ----------------------------------------------------
+        // APPLICATION USER
+        // ----------------------------------------------------
 
         if (mountedRef.current) {
           setUser(databaseUser);
@@ -421,7 +393,7 @@ const AuthProvider = ({ children }) => {
           emailVerified: firebaseUser.emailVerified,
           message: verificationSent
             ? "Account created successfully. Please verify your email."
-            : "Account created successfully. Please continue.",
+            : "Account created successfully.",
         };
       } catch (error) {
         console.error(
@@ -439,9 +411,9 @@ const AuthProvider = ({ children }) => {
     [registerUserInDatabase, validateDatabaseUser, signOutFirebaseOnly],
   );
 
-  /* ==========================================================
-     EMAIL/PASSWORD LOGIN
-  ========================================================== */
+  // ==========================================================
+  // EMAIL LOGIN
+  // ==========================================================
 
   const loginUser = useCallback(
     async (email, password) => {
@@ -450,7 +422,6 @@ const AuthProvider = ({ children }) => {
       }
 
       const cleanEmail = normalizeEmail(email);
-
       const cleanPassword = typeof password === "string" ? password : "";
 
       if (!cleanEmail) {
@@ -464,9 +435,9 @@ const AuthProvider = ({ children }) => {
       operationRef.current = true;
 
       try {
-        /* ----------------------------------------------------
-           1. FIREBASE LOGIN
-        ---------------------------------------------------- */
+        // ----------------------------------------------------
+        // FIREBASE LOGIN
+        // ----------------------------------------------------
 
         const result = await signInWithEmailAndPassword(
           auth,
@@ -480,9 +451,9 @@ const AuthProvider = ({ children }) => {
           throw new Error("Login failed.");
         }
 
-        /* ----------------------------------------------------
-           2. RELOAD FIREBASE USER
-        ---------------------------------------------------- */
+        // ----------------------------------------------------
+        // RELOAD
+        // ----------------------------------------------------
 
         await reload(firebaseUser);
 
@@ -492,29 +463,20 @@ const AuthProvider = ({ children }) => {
           throw new Error("Unable to load Firebase user.");
         }
 
-        /* ----------------------------------------------------
-           3. GET FRESH ID TOKEN
-           
-           IMPORTANT:
-           This is the key fix.
-        ---------------------------------------------------- */
+        // ----------------------------------------------------
+        // FRESH TOKEN
+        // ----------------------------------------------------
 
-        const freshToken = await getFirebaseToken(firebaseUser, true);
+        const token = await getFirebaseToken(firebaseUser, true);
 
-        if (!freshToken) {
-          throw new Error("Unable to obtain fresh Firebase ID token.");
-        }
-
-        /* ----------------------------------------------------
-           4. LOAD MONGODB USER
-
-           Use explicit token instead of axiosSecure.
-        ---------------------------------------------------- */
+        // ----------------------------------------------------
+        // DATABASE USER
+        // ----------------------------------------------------
 
         const response = await axiosPublic.get(ENDPOINTS.ME, {
           timeout: REQUEST_TIMEOUT,
           headers: {
-            Authorization: `Bearer ${freshToken}`,
+            Authorization: `Bearer ${token}`,
           },
         });
 
@@ -526,17 +488,13 @@ const AuthProvider = ({ children }) => {
 
         const databaseUser = validateDatabaseUser(response.data.user);
 
-        /* ----------------------------------------------------
-           5. SET APPLICATION USER
-        ---------------------------------------------------- */
+        // ----------------------------------------------------
+        // APPLICATION USER
+        // ----------------------------------------------------
 
         if (mountedRef.current) {
           setUser(databaseUser);
         }
-
-        /* ----------------------------------------------------
-           6. RETURN RESULT
-        ---------------------------------------------------- */
 
         return {
           success: true,
@@ -551,13 +509,6 @@ const AuthProvider = ({ children }) => {
           error?.response?.data || error?.message || error,
         );
 
-        /*
-         * Login failed after Firebase authentication.
-         *
-         * We clean up the Firebase session so the application
-         * does not remain in a partially authenticated state.
-         */
-
         await signOutFirebaseOnly();
 
         throw error;
@@ -568,9 +519,9 @@ const AuthProvider = ({ children }) => {
     [getFirebaseToken, validateDatabaseUser, signOutFirebaseOnly],
   );
 
-  /* ==========================================================
-     GOOGLE SIGN IN
-  ========================================================== */
+  // ==========================================================
+  // GOOGLE LOGIN
+  // ==========================================================
 
   const signInWithGoogle = useCallback(async () => {
     if (operationRef.current) {
@@ -580,9 +531,9 @@ const AuthProvider = ({ children }) => {
     operationRef.current = true;
 
     try {
-      /* ----------------------------------------------------
-           1. GOOGLE FIREBASE LOGIN
-        ---------------------------------------------------- */
+      // ----------------------------------------------------
+      // GOOGLE AUTH
+      // ----------------------------------------------------
 
       const result = await signInWithPopup(auth, googleProvider);
 
@@ -592,10 +543,6 @@ const AuthProvider = ({ children }) => {
         throw new Error("Google authentication failed.");
       }
 
-      /* ----------------------------------------------------
-           2. RELOAD
-        ---------------------------------------------------- */
-
       await reload(firebaseUser);
 
       firebaseUser = auth.currentUser;
@@ -604,19 +551,15 @@ const AuthProvider = ({ children }) => {
         throw new Error("Unable to load Google authenticated user.");
       }
 
-      /* ----------------------------------------------------
-           3. GET FRESH TOKEN
-        ---------------------------------------------------- */
+      // ----------------------------------------------------
+      // FRESH TOKEN
+      // ----------------------------------------------------
 
-      const freshToken = await getFirebaseToken(firebaseUser, true);
+      const token = await getFirebaseToken(firebaseUser, true);
 
-      if (!freshToken) {
-        throw new Error("Unable to obtain Google Firebase ID token.");
-      }
-
-      /* ----------------------------------------------------
-           4. USER INFORMATION
-        ---------------------------------------------------- */
+      // ----------------------------------------------------
+      // GOOGLE USER DATA
+      // ----------------------------------------------------
 
       const googleName =
         normalizeString(firebaseUser.displayName) ||
@@ -625,11 +568,11 @@ const AuthProvider = ({ children }) => {
 
       const googlePhoto = normalizeString(firebaseUser.photoURL);
 
-      /* ----------------------------------------------------
-           5. CREATE / GET DATABASE USER
-        ---------------------------------------------------- */
-
       let databaseUser = null;
+
+      // ----------------------------------------------------
+      // CREATE / FIND DATABASE USER
+      // ----------------------------------------------------
 
       try {
         const registerResponse = await registerUserInDatabase(firebaseUser, {
@@ -660,17 +603,15 @@ const AuthProvider = ({ children }) => {
         }
       }
 
-      /* ----------------------------------------------------
-           6. LOAD CURRENT USER IF NEEDED
-           
-           Use the fresh token.
-        ---------------------------------------------------- */
+      // ----------------------------------------------------
+      // LOAD EXISTING DATABASE USER
+      // ----------------------------------------------------
 
       if (!databaseUser) {
         const response = await axiosPublic.get(ENDPOINTS.ME, {
           timeout: REQUEST_TIMEOUT,
           headers: {
-            Authorization: `Bearer ${freshToken}`,
+            Authorization: `Bearer ${token}`,
           },
         });
 
@@ -683,23 +624,15 @@ const AuthProvider = ({ children }) => {
         databaseUser = response.data.user;
       }
 
-      /* ----------------------------------------------------
-           7. VALIDATE
-        ---------------------------------------------------- */
-
       databaseUser = validateDatabaseUser(databaseUser);
 
-      /* ----------------------------------------------------
-           8. SET USER
-        ---------------------------------------------------- */
+      // ----------------------------------------------------
+      // APPLICATION USER
+      // ----------------------------------------------------
 
       if (mountedRef.current) {
         setUser(databaseUser);
       }
-
-      /* ----------------------------------------------------
-           9. RETURN
-        ---------------------------------------------------- */
 
       const isNewUser = result?.additionalUserInfo?.isNewUser ?? false;
 
@@ -738,9 +671,9 @@ const AuthProvider = ({ children }) => {
     signOutFirebaseOnly,
   ]);
 
-  /* ==========================================================
-     UPDATE PROFILE
-  ========================================================== */
+  // ==========================================================
+  // UPDATE PROFILE
+  // ==========================================================
 
   const updateUserProfile = useCallback(
     async (name, photo = "") => {
@@ -751,7 +684,6 @@ const AuthProvider = ({ children }) => {
       }
 
       const cleanName = normalizeString(name);
-
       const cleanPhoto = normalizeString(photo);
 
       if (!cleanName) {
@@ -767,9 +699,9 @@ const AuthProvider = ({ children }) => {
       const previousPhoto = firebaseUser.photoURL || "";
 
       try {
-        /* ----------------------------------------------------
-           1. FIREBASE PROFILE
-        ---------------------------------------------------- */
+        // ----------------------------------------------------
+        // FIREBASE PROFILE
+        // ----------------------------------------------------
 
         await updateProfile(firebaseUser, {
           displayName: cleanName,
@@ -784,9 +716,9 @@ const AuthProvider = ({ children }) => {
           throw new Error("Unable to reload Firebase user.");
         }
 
-        /* ----------------------------------------------------
-           2. DATABASE PROFILE
-        ---------------------------------------------------- */
+        // ----------------------------------------------------
+        // DATABASE PROFILE
+        // ----------------------------------------------------
 
         const token = await getFirebaseToken(currentFirebaseUser, true);
 
@@ -810,9 +742,9 @@ const AuthProvider = ({ children }) => {
           );
         }
 
-        /* ----------------------------------------------------
-           3. UPDATED USER
-        ---------------------------------------------------- */
+        // ----------------------------------------------------
+        // UPDATED USER
+        // ----------------------------------------------------
 
         const updatedUser =
           response?.data?.user ||
@@ -831,9 +763,9 @@ const AuthProvider = ({ children }) => {
           message: response?.data?.message || "Profile updated successfully.",
         };
       } catch (error) {
-        /* ----------------------------------------------------
-           ROLLBACK FIREBASE PROFILE
-        ---------------------------------------------------- */
+        // ----------------------------------------------------
+        // FIREBASE ROLLBACK
+        // ----------------------------------------------------
 
         try {
           await updateProfile(firebaseUser, {
@@ -855,9 +787,9 @@ const AuthProvider = ({ children }) => {
     [getFirebaseToken, getCurrentUser, validateDatabaseUser],
   );
 
-  /* ==========================================================
-     REFRESH USER
-  ========================================================== */
+  // ==========================================================
+  // REFRESH USER
+  // ==========================================================
 
   const refreshUser = useCallback(async () => {
     const firebaseUser = auth.currentUser;
@@ -870,35 +802,30 @@ const AuthProvider = ({ children }) => {
       return null;
     }
 
-    try {
-      await reload(firebaseUser);
+    await reload(firebaseUser);
 
-      const currentFirebaseUser = auth.currentUser;
+    const currentFirebaseUser = auth.currentUser;
 
-      if (!currentFirebaseUser) {
-        throw new Error("Firebase user could not be loaded.");
-      }
-
-      const databaseUser = await loadApplicationUser(currentFirebaseUser, true);
-
+    if (!currentFirebaseUser) {
       if (mountedRef.current) {
-        setUser(databaseUser);
+        setUser(null);
       }
 
-      return databaseUser;
-    } catch (error) {
-      console.error(
-        "REFRESH USER ERROR:",
-        error?.response?.data || error?.message || error,
-      );
-
-      throw error;
+      return null;
     }
+
+    const databaseUser = await loadApplicationUser(currentFirebaseUser, true);
+
+    if (mountedRef.current) {
+      setUser(databaseUser);
+    }
+
+    return databaseUser;
   }, [loadApplicationUser]);
 
-  /* ==========================================================
-     LOGOUT
-  ========================================================== */
+  // ==========================================================
+  // LOGOUT
+  // ==========================================================
 
   const logOutUser = useCallback(async () => {
     if (operationRef.current) {
@@ -928,9 +855,9 @@ const AuthProvider = ({ children }) => {
 
   const signOutUser = logOutUser;
 
-  /* ==========================================================
-     RESEND EMAIL VERIFICATION
-  ========================================================== */
+  // ==========================================================
+  // RESEND EMAIL VERIFICATION
+  // ==========================================================
 
   const resendEmailVerification = useCallback(async () => {
     const firebaseUser = auth.currentUser;
@@ -964,9 +891,9 @@ const AuthProvider = ({ children }) => {
     };
   }, []);
 
-  /* ==========================================================
-     CLEAR USER
-  ========================================================== */
+  // ==========================================================
+  // CLEAR USER
+  // ==========================================================
 
   const clearUser = useCallback(() => {
     if (mountedRef.current) {
@@ -974,9 +901,9 @@ const AuthProvider = ({ children }) => {
     }
   }, []);
 
-  /* ==========================================================
-     INITIAL AUTH STATE
-  ========================================================== */
+  // ==========================================================
+  // AUTH STATE LISTENER
+  // ==========================================================
 
   useEffect(() => {
     mountedRef.current = true;
@@ -986,28 +913,23 @@ const AuthProvider = ({ children }) => {
         return;
       }
 
-      /*
-       * Login/register/google/logout explicitly manage
-       * their own application state.
-       */
-
       if (operationRef.current) {
         return;
       }
 
       try {
-        /* ------------------------------------------------
-               NO FIREBASE USER
-            ------------------------------------------------ */
+        // --------------------------------------------------
+        // NO USER
+        // --------------------------------------------------
 
         if (!firebaseUser) {
           setUser(null);
           return;
         }
 
-        /* ------------------------------------------------
-               REFRESH FIREBASE USER
-            ------------------------------------------------ */
+        // --------------------------------------------------
+        // RELOAD FIREBASE USER
+        // --------------------------------------------------
 
         await reload(firebaseUser);
 
@@ -1018,12 +940,9 @@ const AuthProvider = ({ children }) => {
           return;
         }
 
-        /* ------------------------------------------------
-               RESTORE DATABASE SESSION
-
-               Use fresh token because this is the initial
-               authentication handshake.
-            ------------------------------------------------ */
+        // --------------------------------------------------
+        // LOAD DATABASE USER
+        // --------------------------------------------------
 
         const databaseUser = await loadApplicationUser(
           currentFirebaseUser,
@@ -1066,47 +985,37 @@ const AuthProvider = ({ children }) => {
     };
   }, [loadApplicationUser]);
 
-  /* ==========================================================
-     AUTH CONTEXT VALUE
-  ========================================================== */
+  // ==========================================================
+  // AUTH CONTEXT VALUE
+  // ==========================================================
 
   const authInfo = useMemo(
     () => ({
-      /* USER */
       user,
       loading,
 
-      /* ROLE / STATUS */
       role,
       status,
 
-      /* EMAIL AUTH */
       createUser,
+
       loginUser,
       signInUser: loginUser,
 
-      /* GOOGLE AUTH */
       signInWithGoogle,
 
-      /* PROFILE */
       updateUserProfile,
 
-      /* SESSION */
       refreshUser,
+
       getCurrentUser,
 
-      /* EMAIL VERIFICATION */
       resendEmailVerification,
 
-      /* LOGOUT */
       logOutUser,
       signOutUser,
 
-      /* UTILITY */
       clearUser,
-
-      /* SECURE API */
-      axiosSecure,
     }),
     [
       user,
@@ -1126,9 +1035,9 @@ const AuthProvider = ({ children }) => {
     ],
   );
 
-  /* ==========================================================
-     PROVIDER
-  ========================================================== */
+  // ==========================================================
+  // PROVIDER
+  // ==========================================================
 
   return (
     <AuthContext.Provider value={authInfo}>{children}</AuthContext.Provider>

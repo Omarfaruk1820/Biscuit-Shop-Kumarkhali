@@ -1,14 +1,11 @@
-import { useContext, useEffect, useMemo, useState } from "react";
-
-import axios from "axios";
+import { useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import {
   keepPreviousData,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-
-import { useNavigate } from "react-router-dom";
 
 import {
   FaCartPlus,
@@ -20,6 +17,7 @@ import {
 
 import { AuthContext } from "../../Auth/AuthProvider";
 import { useToast } from "../../context/ToastProvider";
+import axiosSecure from "../../hooks/axiosSecure";
 import { useFlyToCart } from "../../hooks/useFlyToCart";
 
 // ============================================================
@@ -119,7 +117,7 @@ const fetchProducts = async ({ queryKey, signal }) => {
 
   const safePage = Math.max(Number(page) || 1, 1);
 
-  const response = await axios.get(`${API_URL}/products`, {
+  const response = await axiosSecure.get("/products", {
     params: {
       page: safePage,
       limit: PRODUCTS_PER_PAGE,
@@ -170,7 +168,7 @@ const ProductCard = () => {
   const [addingProductId, setAddingProductId] = useState(null);
 
   // ==========================================================
-  // PRODUCTS
+  // PRODUCTS QUERY
   // ==========================================================
 
   const { data, isLoading, isError, error, isFetching, refetch } = useQuery({
@@ -189,11 +187,25 @@ const ProductCard = () => {
     retry: 1,
 
     refetchOnWindowFocus: false,
+
+    refetchOnReconnect: true,
   });
 
-  const products = Array.isArray(data?.products) ? data.products : [];
+  // ==========================================================
+  // PRODUCTS
+  // ==========================================================
 
-  const pagination = data?.pagination || {};
+  const products = useMemo(() => {
+    return Array.isArray(data?.products) ? data.products : [];
+  }, [data?.products]);
+
+  // ==========================================================
+  // PAGINATION
+  // ==========================================================
+
+  const pagination = useMemo(() => {
+    return data?.pagination || {};
+  }, [data?.pagination]);
 
   const total = Math.max(toNumber(pagination.total), 0);
 
@@ -201,17 +213,16 @@ const ProductCard = () => {
     total > 0 ? Math.ceil(total / PRODUCTS_PER_PAGE) : 0;
 
   const totalPages = Math.max(
-    toNumber(pagination.totalPages, totalPagesFromTotal),
+    Math.floor(toNumber(pagination.totalPages, totalPagesFromTotal)),
     1,
   );
 
-  const paginationPages = useMemo(
-    () => getPaginationPages(currentPage, totalPages),
-    [currentPage, totalPages],
-  );
+  const paginationPages = useMemo(() => {
+    return getPaginationPages(currentPage, totalPages);
+  }, [currentPage, totalPages]);
 
   // ==========================================================
-  // KEEP PAGE VALID
+  // KEEP CURRENT PAGE VALID
   // ==========================================================
 
   useEffect(() => {
@@ -244,40 +255,46 @@ const ProductCard = () => {
   // PAGE NAVIGATION
   // ==========================================================
 
-  const goToPage = (page) => {
-    const safePage = Math.min(Math.max(Number(page) || 1, 1), totalPages);
+  const goToPage = useCallback(
+    (page) => {
+      const safePage = Math.min(Math.max(Number(page) || 1, 1), totalPages);
 
-    if (safePage === currentPage) {
-      return;
-    }
+      if (safePage === currentPage) {
+        return;
+      }
 
-    setCurrentPage(safePage);
+      setCurrentPage(safePage);
 
-    window.scrollTo({
-      top: 0,
-      behavior: "smooth",
-    });
-  };
+      window.scrollTo({
+        top: 0,
+        behavior: "smooth",
+      });
+    },
+    [currentPage, totalPages],
+  );
 
   // ==========================================================
   // PRODUCT DETAILS
   // ==========================================================
 
-  const openProductDetails = (productId) => {
-    const id = String(productId || "").trim();
+  const openProductDetails = useCallback(
+    (productId) => {
+      const id = String(productId || "").trim();
 
-    if (!id) {
-      return;
-    }
+      if (!id) {
+        return;
+      }
 
-    navigate(`/product/${id}`);
-  };
+      navigate(`/product/${id}`);
+    },
+    [navigate],
+  );
 
   // ==========================================================
-  // LOGIN REDIRECT
+  // REDIRECT TO LOGIN
   // ==========================================================
 
-  const redirectToLogin = () => {
+  const redirectToLogin = useCallback(() => {
     navigate("/login", {
       state: {
         from: {
@@ -287,169 +304,67 @@ const ProductCard = () => {
         },
       },
     });
-  };
+  }, [navigate]);
+
+  // ==========================================================
+  // INVALIDATE CART QUERIES
+  // ==========================================================
+
+  const invalidateCartQueries = useCallback(async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: ["cart"],
+      }),
+
+      queryClient.invalidateQueries({
+        queryKey: ["cart-count"],
+      }),
+
+      queryClient.invalidateQueries({
+        queryKey: ["cart-summary"],
+      }),
+
+      queryClient.invalidateQueries({
+        queryKey: ["validated-cart"],
+      }),
+    ]);
+  }, [queryClient]);
 
   // ==========================================================
   // ADD TO CART
   // ==========================================================
 
-  const handleAddToCart = async (product, event) => {
-    event?.stopPropagation();
+  const handleAddToCart = useCallback(
+    async (product, event) => {
+      event?.stopPropagation();
 
-    // --------------------------------------------------------
-    // API
-    // --------------------------------------------------------
-
-    if (!API_URL) {
-      addToast("API URL is not configured.", "error");
-
-      return;
-    }
-
-    // --------------------------------------------------------
-    // AUTH
-    // --------------------------------------------------------
-
-    if (authLoading) {
-      return;
-    }
-
-    if (!user) {
-      addToast("Please login before adding products to your cart.", "warning");
-
-      redirectToLogin();
-
-      return;
-    }
-
-    // --------------------------------------------------------
-    // PRODUCT
-    // --------------------------------------------------------
-
-    const productId = getProductId(product);
-
-    if (!productId) {
-      addToast("This product has an invalid ID.", "error");
-
-      return;
-    }
-
-    // --------------------------------------------------------
-    // STOCK
-    // --------------------------------------------------------
-
-    const stock = getStock(product?.stock);
-
-    if (stock <= 0) {
-      addToast("This product is currently out of stock.", "warning");
-
-      return;
-    }
-
-    // --------------------------------------------------------
-    // DUPLICATE REQUEST
-    // --------------------------------------------------------
-
-    if (addingProductId !== null) {
-      return;
-    }
-
-    setAddingProductId(productId);
-
-    // --------------------------------------------------------
-    // FLY TO CART
-    // --------------------------------------------------------
-
-    const productCard = event?.currentTarget?.closest?.(".product-card");
-
-    const productImage = productCard?.querySelector("img");
-
-    const cartIcon = document.querySelector(".cart-icon");
-
-    try {
       // ------------------------------------------------------
-      // CREATE / UPDATE CART
+      // API CONFIGURATION
       // ------------------------------------------------------
 
-      const response = await axios.post(
-        `${API_URL}/carts`,
-        {
-          productId,
-          quantity: 1,
-        },
-        {
-          withCredentials: true,
+      if (!API_URL) {
+        addToast("API URL is not configured.", "error");
 
-          timeout: REQUEST_TIMEOUT,
-
-          headers: {
-            Accept: "application/json",
-            "Content-Type": "application/json",
-          },
-        },
-      );
-
-      const result = response?.data;
-
-      if (!result?.success) {
-        throw new Error(result?.message || "Failed to add product to cart.");
+        return;
       }
 
       // ------------------------------------------------------
-      // SUCCESS
+      // AUTH LOADING
       // ------------------------------------------------------
 
-      const productName = getText(product?.name, "Product");
-
-      addToast(`${productName} added to your cart.`, "success");
-
-      // ------------------------------------------------------
-      // INVALIDATE CART
-      // ------------------------------------------------------
-
-      await queryClient.invalidateQueries({
-        queryKey: ["cart"],
-      });
-
-      await queryClient.invalidateQueries({
-        queryKey: ["cart-count"],
-      });
-
-      await queryClient.invalidateQueries({
-        queryKey: ["cart-summary"],
-      });
-
-      await queryClient.invalidateQueries({
-        queryKey: ["validated-cart"],
-      });
-
-      // ------------------------------------------------------
-      // ANIMATION
-      // ------------------------------------------------------
-
-      if (productImage && cartIcon && typeof flyToCart === "function") {
-        try {
-          flyToCart(productImage, cartIcon);
-        } catch (animationError) {
-          console.warn("Fly-to-cart animation failed:", animationError);
-        }
+      if (authLoading) {
+        return;
       }
-    } catch (error) {
-      console.error(
-        "ADD TO CART ERROR:",
-        error?.response?.data || error?.message || error,
-      );
-
-      const status = error?.response?.status;
-
-      const serverMessage = error?.response?.data?.message;
 
       // ------------------------------------------------------
-      // UNAUTHORIZED
+      // AUTHENTICATION
       // ------------------------------------------------------
 
-      if (status === 401) {
-        addToast("Your session has expired. Please login again.", "warning");
+      if (!user) {
+        addToast(
+          "Please login before adding products to your cart.",
+          "warning",
+        );
 
         redirectToLogin();
 
@@ -457,85 +372,231 @@ const ProductCard = () => {
       }
 
       // ------------------------------------------------------
-      // FORBIDDEN
+      // PRODUCT ID
       // ------------------------------------------------------
 
-      if (status === 403) {
+      const productId = getProductId(product);
+
+      if (!productId) {
+        addToast("This product has an invalid ID.", "error");
+
+        return;
+      }
+
+      // ------------------------------------------------------
+      // STOCK
+      // ------------------------------------------------------
+
+      const stock = getStock(product?.stock);
+
+      if (stock <= 0) {
+        addToast("This product is currently out of stock.", "warning");
+
+        return;
+      }
+
+      // ------------------------------------------------------
+      // PREVENT DUPLICATE REQUESTS
+      // ------------------------------------------------------
+
+      if (addingProductId !== null) {
+        return;
+      }
+
+      setAddingProductId(productId);
+
+      // ------------------------------------------------------
+      // FLY TO CART ELEMENTS
+      // ------------------------------------------------------
+
+      const productCard = event?.currentTarget?.closest?.(".product-card");
+
+      const productImage = productCard?.querySelector("img");
+
+      const cartIcon = document.querySelector(".cart-icon");
+
+      try {
+        // ----------------------------------------------------
+        // ADD / UPDATE CART
+        //
+        // axiosSecure automatically attaches:
+        // Authorization: Bearer <Firebase ID Token>
+        // ----------------------------------------------------
+
+        const response = await axiosSecure.post(
+          "/carts",
+          {
+            productId,
+            quantity: 1,
+          },
+          {
+            timeout: REQUEST_TIMEOUT,
+
+            headers: {
+              Accept: "application/json",
+              "Content-Type": "application/json",
+            },
+          },
+        );
+
+        const result = response?.data;
+
+        if (!result?.success) {
+          throw new Error(result?.message || "Failed to add product to cart.");
+        }
+
+        // ----------------------------------------------------
+        // SUCCESS
+        // ----------------------------------------------------
+
+        const productName = getText(product?.name, "Product");
+
+        addToast(`${productName} added to your cart.`, "success");
+
+        // ----------------------------------------------------
+        // REFRESH CART CACHE
+        // ----------------------------------------------------
+
+        await invalidateCartQueries();
+
+        // ----------------------------------------------------
+        // FLY TO CART ANIMATION
+        // ----------------------------------------------------
+
+        if (productImage && cartIcon && typeof flyToCart === "function") {
+          try {
+            flyToCart(productImage, cartIcon);
+          } catch (animationError) {
+            console.warn("Fly-to-cart animation failed:", animationError);
+          }
+        }
+      } catch (error) {
+        console.error(
+          "ADD TO CART ERROR:",
+          error?.response?.data || error?.message || error,
+        );
+
+        const status = error?.response?.status;
+
+        const serverMessage = error?.response?.data?.message;
+
+        // ----------------------------------------------------
+        // UNAUTHORIZED
+        // ----------------------------------------------------
+
+        if (status === 401) {
+          addToast("Your session has expired. Please login again.", "warning");
+
+          redirectToLogin();
+
+          return;
+        }
+
+        // ----------------------------------------------------
+        // FORBIDDEN
+        // ----------------------------------------------------
+
+        if (status === 403) {
+          addToast(
+            serverMessage || "You are not allowed to add this product.",
+            "error",
+          );
+
+          return;
+        }
+
+        // ----------------------------------------------------
+        // NOT FOUND
+        // ----------------------------------------------------
+
+        if (status === 404) {
+          addToast(
+            serverMessage || "This product is no longer available.",
+            "error",
+          );
+
+          return;
+        }
+
+        // ----------------------------------------------------
+        // CONFLICT / STOCK
+        // ----------------------------------------------------
+
+        if (status === 409) {
+          addToast(
+            serverMessage || "The requested quantity is not available.",
+            "warning",
+          );
+
+          return;
+        }
+
+        // ----------------------------------------------------
+        // VALIDATION
+        // ----------------------------------------------------
+
+        if (status === 400 || status === 422) {
+          addToast(serverMessage || "Invalid cart information.", "warning");
+
+          return;
+        }
+
+        // ----------------------------------------------------
+        // SERVER ERROR
+        // ----------------------------------------------------
+
+        if (typeof status === "number" && status >= 500) {
+          addToast("Server error. Please try again later.", "error");
+
+          return;
+        }
+
+        // ----------------------------------------------------
+        // TIMEOUT
+        // ----------------------------------------------------
+
+        if (error?.code === "ECONNABORTED") {
+          addToast("The request timed out. Please try again.", "error");
+
+          return;
+        }
+
+        // ----------------------------------------------------
+        // NETWORK
+        // ----------------------------------------------------
+
+        if (!error?.response) {
+          addToast("Unable to connect to the server.", "error");
+
+          return;
+        }
+
+        // ----------------------------------------------------
+        // FALLBACK
+        // ----------------------------------------------------
+
         addToast(
-          serverMessage || "You are not allowed to add this product.",
+          serverMessage || error?.message || "Failed to add product to cart.",
           "error",
         );
-
-        return;
+      } finally {
+        setAddingProductId(null);
       }
-
-      // ------------------------------------------------------
-      // NOT FOUND
-      // ------------------------------------------------------
-
-      if (status === 404) {
-        addToast(
-          serverMessage || "This product is no longer available.",
-          "error",
-        );
-
-        return;
-      }
-
-      // ------------------------------------------------------
-      // CONFLICT / STOCK
-      // ------------------------------------------------------
-
-      if (status === 409) {
-        addToast(
-          serverMessage || "The requested quantity is not available.",
-          "warning",
-        );
-
-        return;
-      }
-
-      // ------------------------------------------------------
-      // VALIDATION
-      // ------------------------------------------------------
-
-      if (status === 400 || status === 422) {
-        addToast(serverMessage || "Invalid cart information.", "warning");
-
-        return;
-      }
-
-      // ------------------------------------------------------
-      // SERVER ERROR
-      // ------------------------------------------------------
-
-      if (typeof status === "number" && status >= 500) {
-        addToast("Server error. Please try again later.", "error");
-
-        return;
-      }
-
-      // ------------------------------------------------------
-      // NETWORK
-      // ------------------------------------------------------
-
-      if (!error?.response) {
-        addToast("Unable to connect to the server.", "error");
-
-        return;
-      }
-
-      addToast(
-        serverMessage || error?.message || "Failed to add product to cart.",
-        "error",
-      );
-    } finally {
-      setAddingProductId(null);
-    }
-  };
+    },
+    [
+      API_URL,
+      authLoading,
+      user,
+      addingProductId,
+      addToast,
+      redirectToLogin,
+      invalidateCartQueries,
+      flyToCart,
+    ],
+  );
 
   // ==========================================================
-  // LOADING
+  // INITIAL LOADING
   // ==========================================================
 
   if (isLoading) {
@@ -582,6 +643,26 @@ const ProductCard = () => {
   }
 
   // ==========================================================
+  // API CONFIGURATION ERROR
+  // ==========================================================
+
+  if (!API_URL) {
+    return (
+      <section className="mx-auto flex w-full max-w-7xl items-center justify-center px-4 py-16 sm:px-6 lg:px-8">
+        <div className="max-w-xl text-center">
+          <div className="text-5xl">⚠️</div>
+
+          <h2 className="mt-4 text-2xl font-bold">API Configuration Error</h2>
+
+          <p className="mt-2 text-sm leading-6 text-base-content/60">
+            VITE_API_URL is not configured.
+          </p>
+        </div>
+      </section>
+    );
+  }
+
+  // ==========================================================
   // ERROR
   // ==========================================================
 
@@ -622,7 +703,7 @@ const ProductCard = () => {
             type="button"
             onClick={() => refetch()}
             disabled={isFetching}
-            className="mt-6 flex h-11 mx-auto items-center gap-2 rounded-xl bg-warning px-6 font-semibold text-warning-content transition hover:bg-warning/90 disabled:cursor-not-allowed disabled:opacity-60"
+            className="mx-auto mt-6 flex h-11 items-center gap-2 rounded-xl bg-warning px-6 font-semibold text-warning-content transition hover:bg-warning/90 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isFetching ? (
               <>
@@ -664,7 +745,9 @@ const ProductCard = () => {
 
   return (
     <section className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
-      {/* HEADER */}
+      {/* ======================================================
+          HEADER
+      ====================================================== */}
 
       <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
@@ -683,7 +766,9 @@ const ProductCard = () => {
         )}
       </div>
 
-      {/* PRODUCT GRID */}
+      {/* ======================================================
+          PRODUCT GRID
+      ====================================================== */}
 
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
         {products.map((product) => {
@@ -721,7 +806,9 @@ const ProductCard = () => {
               className="product-card group cursor-pointer overflow-hidden rounded-2xl border border-base-300 bg-base-100 shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-xl"
               onClick={() => openProductDetails(productId)}
             >
-              {/* IMAGE */}
+              {/* ==================================================
+                  IMAGE
+              ================================================== */}
 
               <div className="relative h-56 overflow-hidden bg-base-200">
                 {image ? (
@@ -754,7 +841,9 @@ const ProductCard = () => {
                 )}
               </div>
 
-              {/* CONTENT */}
+              {/* ==================================================
+                  CONTENT
+              ================================================== */}
 
               <div className="p-4">
                 {/* BRAND */}
@@ -838,17 +927,17 @@ const ProductCard = () => {
                     Details
                   </button>
 
-                  {/* CART */}
+                  {/* ADD TO CART */}
 
                   <button
                     type="button"
-                    disabled={isAdding || stock <= 0}
+                    disabled={isAdding || stock <= 0 || authLoading}
                     onClick={(event) => handleAddToCart(product, event)}
                     className={`flex h-11 items-center justify-center gap-2 rounded-xl font-semibold transition active:scale-95 ${
                       stock > 0
                         ? "bg-warning text-warning-content hover:bg-warning/90"
                         : "cursor-not-allowed bg-base-300 text-base-content/40"
-                    }`}
+                    } disabled:cursor-not-allowed disabled:opacity-60`}
                   >
                     {isAdding ? (
                       <>
@@ -869,7 +958,9 @@ const ProductCard = () => {
         })}
       </div>
 
-      {/* PAGINATION */}
+      {/* ======================================================
+          PAGINATION
+      ====================================================== */}
 
       {totalPages > 1 && (
         <div className="mt-12 flex flex-wrap items-center justify-center gap-3">
@@ -885,7 +976,7 @@ const ProductCard = () => {
             Previous
           </button>
 
-          {/* PAGES */}
+          {/* PAGE NUMBERS */}
 
           {paginationPages.map((page) => (
             <button
@@ -917,7 +1008,9 @@ const ProductCard = () => {
         </div>
       )}
 
-      {/* FETCHING */}
+      {/* ======================================================
+          FETCHING INDICATOR
+      ====================================================== */}
 
       {isFetching && (
         <div className="mt-6 flex justify-center">

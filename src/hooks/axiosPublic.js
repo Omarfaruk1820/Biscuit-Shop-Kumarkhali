@@ -1,23 +1,38 @@
-// src/api/axiosPublic.js
-
 import axios from "axios";
 
+// ============================================================
+// CONFIG
+// ============================================================
+
 const API_URL = String(import.meta.env.VITE_API_URL || "").trim();
+
+const REQUEST_TIMEOUT = 15000;
+
+// ============================================================
+// VALIDATION
+// ============================================================
 
 if (!API_URL) {
   throw new Error("Missing VITE_API_URL environment variable.");
 }
 
+// ============================================================
+// AXIOS PUBLIC INSTANCE
+// ============================================================
+
 const axiosPublic = axios.create({
   baseURL: API_URL,
-  withCredentials: true,
-  timeout: 15000,
+  timeout: REQUEST_TIMEOUT,
 
   headers: {
-    "Content-Type": "application/json",
     Accept: "application/json",
+    "Content-Type": "application/json",
   },
 });
+
+// ============================================================
+// RESPONSE INTERCEPTOR
+// ============================================================
 
 axiosPublic.interceptors.response.use(
   (response) => response,
@@ -25,13 +40,13 @@ axiosPublic.interceptors.response.use(
   (error) => {
     if (!error?.response) {
       console.error(
-        "Axios Public Network Error:",
+        "AXIOS PUBLIC NETWORK ERROR:",
         error?.message || "Network error.",
       );
     }
 
     if (error?.code === "ECONNABORTED") {
-      console.error("Axios Public Request Timeout.");
+      console.error("AXIOS PUBLIC REQUEST TIMEOUT.");
     }
 
     return Promise.reject(error);

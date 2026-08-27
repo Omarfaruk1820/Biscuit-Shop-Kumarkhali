@@ -359,7 +359,7 @@ const Invoice = () => {
 
   const orderId = normalizeString(invoice?.orderId, "N/A");
 
-  const shopName = normalizeString(shop.name, "Your Store");
+ const shopName = normalizeString(shop.name, "Biscuit Shop");
 
   const shopSlogan = normalizeString(shop.slogan);
 

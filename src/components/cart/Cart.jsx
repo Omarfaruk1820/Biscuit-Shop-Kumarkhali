@@ -18,11 +18,10 @@ import { useToast } from "../../context/ToastProvider";
 import axiosSecure from "../../hooks/axiosSecure";
 
 // ============================================================
-// CONSTANTS
+// CONFIG
 // ============================================================
 
 const MAX_QUANTITY = 99;
-
 const CART_STALE_TIME = 60 * 1000;
 const CART_GC_TIME = 10 * 60 * 1000;
 
@@ -30,14 +29,23 @@ const CART_GC_TIME = 10 * 60 * 1000;
 // HELPERS
 // ============================================================
 
-const toSafeNumber = (value, fallback = 0) => {
+const toNumber = (value, fallback = 0) => {
   const number = Number(value);
 
   return Number.isFinite(number) ? number : fallback;
 };
 
 const formatCurrency = (value) => {
-  return toSafeNumber(value).toFixed(2);
+  return toNumber(value).toFixed(2);
+};
+
+const getApiErrorMessage = (error, fallback) => {
+  return (
+    error?.response?.data?.message ||
+    error?.response?.data?.error ||
+    error?.message ||
+    fallback
+  );
 };
 
 // ============================================================
@@ -45,43 +53,18 @@ const formatCurrency = (value) => {
 // ============================================================
 
 const Cart = () => {
-  // ==========================================================
-  // AUTH
-  // ==========================================================
-
   const { user, loading: authLoading } = useContext(AuthContext);
 
-  // ==========================================================
-  // ROUTER
-  // ==========================================================
-
   const navigate = useNavigate();
-
-  // ==========================================================
-  // QUERY CLIENT
-  // ==========================================================
-
   const queryClient = useQueryClient();
-
-  // ==========================================================
-  // TOAST
-  // ==========================================================
 
   const { addToast } = useToast();
 
-  // ==========================================================
-  // LOCAL STATE
-  // ==========================================================
-
   const [updatingCartId, setUpdatingCartId] = useState(null);
-
   const [deletingCartId, setDeletingCartId] = useState(null);
 
   // ==========================================================
-  // EMAIL
-  //
-  // Only used as part of the React Query cache key.
-  // It is NOT sent to the server for authentication.
+  // USER
   // ==========================================================
 
   const email = useMemo(() => {
@@ -94,10 +77,12 @@ const Cart = () => {
   // QUERY KEY
   // ==========================================================
 
-  const cartQueryKey = useMemo(() => ["cart", email], [email]);
+  const cartQueryKey = useMemo(() => {
+    return ["cart", email];
+  }, [email]);
 
   // ==========================================================
-  // GET /carts
+  // GET CART
   // ==========================================================
 
   const fetchCart = useCallback(async () => {
@@ -112,24 +97,21 @@ const Cart = () => {
     return response.data;
   }, []);
 
-  const { data, isPending, isFetching, isError, error, refetch } = useQuery({
+  const { data, error, isError, isPending, isFetching, refetch } = useQuery({
     queryKey: cartQueryKey,
-
     queryFn: fetchCart,
-
-    enabled: Boolean(email) && !authLoading,
+    enabled: Boolean(user && email) && !authLoading,
 
     staleTime: CART_STALE_TIME,
     gcTime: CART_GC_TIME,
 
-    retry: 1,
-
+    retry: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: true,
   });
 
   // ==========================================================
-  // CART ITEMS
+  // CART DATA
   // ==========================================================
 
   const cart = useMemo(() => {
@@ -137,33 +119,56 @@ const Cart = () => {
   }, [data?.data]);
 
   // ==========================================================
-  // SERVER SUMMARY
-  //
-  // The server is authoritative.
-  // Do not recalculate totals here.
+  // CART SUMMARY
   // ==========================================================
 
   const summary = useMemo(() => {
     const serverSummary = data?.summary || {};
 
     return {
-      totalItems: toSafeNumber(serverSummary.totalItems),
-
-      totalQuantity: toSafeNumber(serverSummary.totalQuantity),
-
-      subtotal: toSafeNumber(serverSummary.subtotal),
-
-      discount: toSafeNumber(
-        serverSummary.totalDiscount ?? serverSummary.discount,
-      ),
-
-      shipping: toSafeNumber(serverSummary.shipping),
-
-      tax: toSafeNumber(serverSummary.tax),
-
-      grandTotal: toSafeNumber(serverSummary.grandTotal),
+      totalItems: toNumber(serverSummary.totalItems),
+      totalQuantity: toNumber(serverSummary.totalQuantity),
+      subtotal: toNumber(serverSummary.subtotal),
+      discount: toNumber(serverSummary.totalDiscount ?? serverSummary.discount),
+      shipping: toNumber(serverSummary.shipping),
+      tax: toNumber(serverSummary.tax),
+      grandTotal: toNumber(serverSummary.grandTotal),
     };
   }, [data?.summary]);
+
+  // ==========================================================
+  // HANDLE AUTH ERROR
+  // ==========================================================
+
+  const handleAuthError = useCallback(
+    (error) => {
+      const status = error?.response?.status;
+      const code = error?.response?.data?.code;
+
+      if (status !== 401) {
+        return false;
+      }
+
+      console.warn("CART AUTH ERROR:", {
+        code,
+        message: error?.response?.data?.message,
+      });
+
+      addToast("Your session has expired. Please login again.", "error");
+
+      navigate("/login", {
+        replace: true,
+        state: {
+          from: {
+            pathname: "/cart",
+          },
+        },
+      });
+
+      return true;
+    },
+    [addToast, navigate],
+  );
 
   // ==========================================================
   // REFRESH CART
@@ -178,13 +183,15 @@ const Cart = () => {
       queryClient.invalidateQueries({
         queryKey: ["cart-count"],
       }),
+
+      queryClient.invalidateQueries({
+        queryKey: ["cart-summary"],
+      }),
     ]);
   }, [queryClient, cartQueryKey]);
 
   // ==========================================================
   // UPDATE QUANTITY
-  //
-  // PATCH /carts/:id
   // ==========================================================
 
   const quantityMutation = useMutation({
@@ -224,13 +231,18 @@ const Cart = () => {
       addToast("Cart quantity updated.", "success");
     },
 
-    onError: (mutationError) => {
-      console.error("UPDATE CART QUANTITY ERROR:", mutationError);
+    onError: (error) => {
+      console.error(
+        "UPDATE CART QUANTITY ERROR:",
+        error?.response?.data || error,
+      );
+
+      if (handleAuthError(error)) {
+        return;
+      }
 
       addToast(
-        mutationError?.response?.data?.message ||
-          mutationError?.message ||
-          "Failed to update cart quantity.",
+        getApiErrorMessage(error, "Failed to update cart quantity."),
         "error",
       );
     },
@@ -241,9 +253,7 @@ const Cart = () => {
   });
 
   // ==========================================================
-  // DELETE ITEM
-  //
-  // DELETE /carts/:id
+  // DELETE CART ITEM
   // ==========================================================
 
   const deleteMutation = useMutation({
@@ -273,13 +283,15 @@ const Cart = () => {
       addToast("Product removed from cart.", "success");
     },
 
-    onError: (mutationError) => {
-      console.error("DELETE CART ITEM ERROR:", mutationError);
+    onError: (error) => {
+      console.error("DELETE CART ITEM ERROR:", error?.response?.data || error);
+
+      if (handleAuthError(error)) {
+        return;
+      }
 
       addToast(
-        mutationError?.response?.data?.message ||
-          mutationError?.message ||
-          "Failed to remove cart item.",
+        getApiErrorMessage(error, "Failed to remove cart item."),
         "error",
       );
     },
@@ -293,14 +305,10 @@ const Cart = () => {
   // MUTATION STATE
   // ==========================================================
 
-  const isQuantityUpdating = quantityMutation.isPending;
-
-  const isDeleting = deleteMutation.isPending;
-
-  const isUpdating = isQuantityUpdating || isDeleting;
+  const isUpdating = quantityMutation.isPending || deleteMutation.isPending;
 
   // ==========================================================
-  // INCREASE
+  // INCREASE QUANTITY
   // ==========================================================
 
   const handleIncrease = useCallback(
@@ -309,7 +317,7 @@ const Cart = () => {
         return;
       }
 
-      const quantity = Math.floor(toSafeNumber(item.quantity, 1));
+      const quantity = Math.max(1, Math.floor(toNumber(item.quantity, 1)));
 
       if (quantity >= MAX_QUANTITY) {
         addToast(`Maximum quantity is ${MAX_QUANTITY}.`, "warning");
@@ -322,11 +330,11 @@ const Cart = () => {
         quantity: quantity + 1,
       });
     },
-    [isUpdating, quantityMutation, addToast],
+    [isUpdating, addToast, quantityMutation],
   );
 
   // ==========================================================
-  // DECREASE
+  // DECREASE QUANTITY
   // ==========================================================
 
   const handleDecrease = useCallback(
@@ -335,7 +343,7 @@ const Cart = () => {
         return;
       }
 
-      const quantity = Math.floor(toSafeNumber(item.quantity, 1));
+      const quantity = Math.max(1, Math.floor(toNumber(item.quantity, 1)));
 
       if (quantity <= 1) {
         return;
@@ -350,7 +358,7 @@ const Cart = () => {
   );
 
   // ==========================================================
-  // DELETE
+  // DELETE ITEM
   // ==========================================================
 
   const handleDelete = useCallback(
@@ -407,14 +415,10 @@ const Cart = () => {
   }, [navigate]);
 
   // ==========================================================
-  // INITIAL LOADING
-  // ==========================================================
-
-  const initialLoading = authLoading || (Boolean(email) && isPending);
-
-  // ==========================================================
   // LOADING
   // ==========================================================
+
+  const initialLoading = authLoading || (Boolean(user && email) && isPending);
 
   if (initialLoading) {
     return (
@@ -498,10 +502,52 @@ const Cart = () => {
   }
 
   // ==========================================================
-  // ERROR
+  // CART ERROR
   // ==========================================================
 
   if (isError) {
+    const status = error?.response?.status;
+
+    const isUnauthorized = status === 401;
+
+    if (isUnauthorized) {
+      return (
+        <section className="min-h-screen bg-base-200 px-4 py-12 md:px-6 lg:px-8">
+          <div className="mx-auto flex min-h-[500px] max-w-3xl items-center justify-center">
+            <div className="w-full rounded-2xl border border-error/20 bg-base-100 p-8 text-center shadow-sm">
+              <FaShoppingCart className="mx-auto text-5xl text-error" />
+
+              <h1 className="mt-5 text-3xl font-bold">
+                Authentication Required
+              </h1>
+
+              <p className="mt-3 text-base-content/60">
+                Your authentication session is no longer valid. Please login
+                again.
+              </p>
+
+              <button
+                type="button"
+                onClick={() =>
+                  navigate("/login", {
+                    replace: true,
+                    state: {
+                      from: {
+                        pathname: "/cart",
+                      },
+                    },
+                  })
+                }
+                className="btn btn-primary mt-6"
+              >
+                Login Again
+              </button>
+            </div>
+          </div>
+        </section>
+      );
+    }
+
     return (
       <section className="min-h-screen bg-base-200 px-4 py-12 md:px-6 lg:px-8">
         <div className="mx-auto flex min-h-[500px] max-w-3xl items-center justify-center">
@@ -511,9 +557,10 @@ const Cart = () => {
             <h1 className="mt-5 text-3xl font-bold">Failed to Load Cart</h1>
 
             <p className="mt-3 text-base-content/60">
-              {error?.response?.data?.message ||
-                error?.message ||
-                "Something went wrong while loading your cart."}
+              {getApiErrorMessage(
+                error,
+                "Something went wrong while loading your cart.",
+              )}
             </p>
 
             <button
@@ -566,13 +613,15 @@ const Cart = () => {
   }
 
   // ==========================================================
-  // MAIN UI
+  // MAIN CART
   // ==========================================================
 
   return (
     <section className="min-h-screen bg-base-200 px-4 py-8 md:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl">
-        {/* HEADER */}
+        {/* ====================================================
+            HEADER
+        ==================================================== */}
 
         <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
           <div>
@@ -593,7 +642,9 @@ const Cart = () => {
           </button>
         </div>
 
-        {/* BACKGROUND REFRESH */}
+        {/* ====================================================
+            BACKGROUND REFRESH
+        ==================================================== */}
 
         {isFetching && !isPending && (
           <div className="mb-5 flex items-center gap-2 text-sm text-base-content/60">
@@ -602,34 +653,35 @@ const Cart = () => {
           </div>
         )}
 
-        {/* MAIN GRID */}
+        {/* ====================================================
+            GRID
+        ==================================================== */}
 
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
-          {/* CART ITEMS */}
+          {/* ==================================================
+              CART ITEMS
+          ================================================== */}
 
           <div className="space-y-5 lg:col-span-8">
             {cart.map((item) => {
               const itemId = String(item?._id || "");
 
-              const price = toSafeNumber(item?.price);
+              const price = toNumber(item?.price);
 
-              const finalPrice = toSafeNumber(item?.finalPrice, price);
+              const finalPrice = toNumber(item?.finalPrice, price);
 
               const quantity = Math.max(
                 1,
-                Math.floor(toSafeNumber(item?.quantity, 1)),
+                Math.floor(toNumber(item?.quantity, 1)),
               );
 
-              const subtotal = toSafeNumber(
-                item?.subtotal,
-                finalPrice * quantity,
-              );
+              const subtotal = toNumber(item?.subtotal, finalPrice * quantity);
 
-              const discount = toSafeNumber(item?.discount);
+              const discount = toNumber(item?.discount);
 
-              const isDeletingThisItem = deletingCartId === itemId;
+              const isUpdatingThis = updatingCartId === itemId;
 
-              const isUpdatingThisItem = updatingCartId === itemId;
+              const isDeletingThis = deletingCartId === itemId;
 
               return (
                 <div
@@ -647,9 +699,6 @@ const Cart = () => {
                           loading="lazy"
                           decoding="async"
                           className="h-28 w-28 rounded-xl border border-base-300 object-cover"
-                          onError={(event) => {
-                            event.currentTarget.style.display = "none";
-                          }}
                         />
                       ) : (
                         <div className="flex h-28 w-28 items-center justify-center rounded-xl bg-base-200 text-xs text-base-content/40">
@@ -717,7 +766,7 @@ const Cart = () => {
                             item?.name || "product"
                           } quantity`}
                         >
-                          {isUpdatingThisItem && isQuantityUpdating ? (
+                          {isUpdatingThis ? (
                             <span className="loading loading-spinner loading-xs" />
                           ) : (
                             <FaMinus />
@@ -737,7 +786,7 @@ const Cart = () => {
                             item?.name || "product"
                           } quantity`}
                         >
-                          {isUpdatingThisItem && isQuantityUpdating ? (
+                          {isUpdatingThis ? (
                             <span className="loading loading-spinner loading-xs" />
                           ) : (
                             <FaPlus />
@@ -754,7 +803,7 @@ const Cart = () => {
                         onClick={() => handleDelete(item?._id)}
                         aria-label={`Remove ${item?.name || "product"}`}
                       >
-                        {isDeletingThisItem ? (
+                        {isDeletingThis ? (
                           <span className="loading loading-spinner loading-xs" />
                         ) : (
                           <FaTrash />
@@ -763,7 +812,7 @@ const Cart = () => {
                     </div>
                   </div>
 
-                  {/* SUBTOTAL */}
+                  {/* ITEM SUBTOTAL */}
 
                   <div className="mt-5 flex items-center justify-between border-t border-base-300 pt-4">
                     <span className="text-sm text-base-content/60">
@@ -779,7 +828,9 @@ const Cart = () => {
             })}
           </div>
 
-          {/* ORDER SUMMARY */}
+          {/* ==================================================
+              ORDER SUMMARY
+          ================================================== */}
 
           <div className="lg:col-span-4">
             <div className="sticky top-6 rounded-2xl border border-base-300 bg-base-100 p-6 shadow-sm">
@@ -790,8 +841,6 @@ const Cart = () => {
               </div>
 
               <div className="divider" />
-
-              {/* SUMMARY */}
 
               <div className="space-y-3">
                 <div className="flex justify-between">
@@ -835,8 +884,6 @@ const Cart = () => {
 
               <div className="divider" />
 
-              {/* GRAND TOTAL */}
-
               <div className="flex justify-between text-xl font-bold">
                 <span>Grand Total</span>
 
@@ -875,7 +922,7 @@ const Cart = () => {
 
               <div className="divider" />
 
-              {/* SERVICE FEATURES */}
+              {/* FEATURES */}
 
               <div className="space-y-5">
                 <div className="flex items-start gap-3">

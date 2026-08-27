@@ -13,6 +13,7 @@ import {
 } from "react-icons/fa";
 
 import { AuthContext } from "../../Auth/AuthProvider";
+import { auth } from "../../Auth/firebase.config";
 
 // ============================================================
 // API
@@ -34,6 +35,10 @@ const STATUS_OPTIONS = [
   {
     value: "pending",
     label: "Pending",
+  },
+  {
+    value: "confirmed",
+    label: "Confirmed",
   },
   {
     value: "processing",
@@ -123,11 +128,11 @@ const getStatusBadgeClass = (status) => {
     case "pending":
       return "badge-warning";
 
-    case "processing":
+    case "confirmed":
       return "badge-info";
 
-    case "paid":
-      return "badge-primary";
+    case "processing":
+      return "badge-info";
 
     case "shipped":
       return "badge-secondary";
@@ -255,6 +260,20 @@ const getOrderTotal = (order) => {
 };
 
 // ============================================================
+// FIREBASE TOKEN
+// ============================================================
+
+const getFirebaseIdToken = async () => {
+  const currentUser = auth.currentUser;
+
+  if (!currentUser) {
+    throw new Error("You are not authenticated.");
+  }
+
+  return currentUser.getIdToken();
+};
+
+// ============================================================
 // COMPONENT
 // ============================================================
 
@@ -285,6 +304,8 @@ const MyOrders = () => {
         throw new Error("User email is required.");
       }
 
+      const idToken = await getFirebaseIdToken();
+
       const params = new URLSearchParams();
 
       params.set("page", String(page));
@@ -298,6 +319,10 @@ const MyOrders = () => {
       const response = await axios.get(
         `${API_URL}/orders/my?${params.toString()}`,
         {
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+          },
+
           withCredentials: true,
         },
       );
@@ -326,16 +351,43 @@ const MyOrders = () => {
 
   const orders = Array.isArray(data?.data) ? data.data : [];
 
-  const pagination = data?.pagination || {};
+  const pagination =
+    data?.pagination && typeof data.pagination === "object"
+      ? data.pagination
+      : {};
 
-  const totalOrders = Number(pagination.totalOrders ?? pagination.total ?? 0);
+  // ==========================================================
+  // IMPORTANT:
+  // totalOrders = ALL ORDERS OF CURRENT USER
+  //
+  // Server:
+  // const totalOrders = await ordersCollection.countDocuments({
+  //   email,
+  // });
+  //
+  // Therefore this value does NOT depend on status filter.
+  // ==========================================================
+
+  const totalOrders = Number(pagination.totalOrders ?? 0);
+
+  // ==========================================================
+  // FILTERED ORDERS
+  //
+  // This changes when status filter is selected.
+  // ==========================================================
+
+  const filteredOrders = Number(pagination.filteredOrders ?? orders.length);
+
+  // ==========================================================
+  // PAGINATION
+  // ==========================================================
 
   const calculatedTotalPages =
-    totalOrders > 0 ? Math.ceil(totalOrders / ORDERS_PER_PAGE) : 0;
+    filteredOrders > 0 ? Math.ceil(filteredOrders / ORDERS_PER_PAGE) : 0;
 
   const totalPages = Number(pagination.totalPages ?? calculatedTotalPages);
 
-  const currentPage = Number(pagination.page || page);
+  const currentPage = Number(pagination.page ?? page);
 
   const hasNextPage =
     typeof pagination.hasNextPage === "boolean"
@@ -377,10 +429,16 @@ const MyOrders = () => {
         throw new Error("Order ID is missing.");
       }
 
+      const idToken = await getFirebaseIdToken();
+
       const response = await axios.patch(
         `${API_URL}/orders/cancel/${orderId}`,
         {},
         {
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+          },
+
           withCredentials: true,
         },
       );
@@ -614,6 +672,8 @@ const MyOrders = () => {
       ====================================================== */}
 
       <div className="mb-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        {/* TOTAL ORDERS */}
+
         <div className="card border border-base-300 bg-base-100 shadow-sm">
           <div className="card-body">
             <p className="text-sm text-gray-500">Total Orders</p>
@@ -622,13 +682,19 @@ const MyOrders = () => {
           </div>
         </div>
 
+        {/* FILTERED ORDERS */}
+
         <div className="card border border-base-300 bg-base-100 shadow-sm">
           <div className="card-body">
-            <p className="text-sm text-gray-500">Orders on This Page</p>
+            <p className="text-sm text-gray-500">Matching Orders</p>
 
-            <h2 className="text-3xl font-bold text-primary">{orders.length}</h2>
+            <h2 className="text-3xl font-bold text-primary">
+              {filteredOrders}
+            </h2>
           </div>
         </div>
+
+        {/* ITEMS */}
 
         <div className="card border border-base-300 bg-base-100 shadow-sm">
           <div className="card-body">
@@ -637,6 +703,8 @@ const MyOrders = () => {
             <h2 className="text-3xl font-bold">{pageSummary.totalQuantity}</h2>
           </div>
         </div>
+
+        {/* PAGE */}
 
         <div className="card border border-base-300 bg-base-100 shadow-sm">
           <div className="card-body">
@@ -737,10 +805,6 @@ const MyOrders = () => {
         </div>
       ) : (
         <div className="space-y-8">
-          {/* ==================================================
-              ORDERS
-          ================================================== */}
-
           {orders.map((order) => {
             const orderId = getOrderId(order);
             const orderNumber = getOrderNumber(order);
@@ -765,9 +829,9 @@ const MyOrders = () => {
                 key={orderId || orderNumber}
                 className="card overflow-hidden rounded-2xl border border-base-300 bg-base-100 shadow-sm"
               >
-                {/* ==========================================
+                {/* ==================================================
                     ORDER HEADER
-                ========================================== */}
+                ================================================== */}
 
                 <div className="card-body border-b border-base-300">
                   <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
@@ -803,9 +867,9 @@ const MyOrders = () => {
                   </div>
                 </div>
 
-                {/* ==========================================
+                {/* ==================================================
                     CUSTOMER INFORMATION
-                ========================================== */}
+                ================================================== */}
 
                 <div className="border-b border-base-300 px-6 py-6">
                   <h3 className="mb-5 text-lg font-bold">
@@ -875,9 +939,9 @@ const MyOrders = () => {
                   </div>
                 </div>
 
-                {/* ==========================================
+                {/* ==================================================
                     ORDER SUMMARY
-                ========================================== */}
+                ================================================== */}
 
                 <div className="border-b border-base-300 px-6 py-6">
                   <h3 className="mb-5 text-lg font-bold">Order Summary</h3>
@@ -933,9 +997,9 @@ const MyOrders = () => {
                   </div>
                 </div>
 
-                {/* ==========================================
+                {/* ==================================================
                     PRODUCTS
-                ========================================== */}
+                ================================================== */}
 
                 <div className="p-6">
                   <h3 className="mb-5 text-lg font-bold">Ordered Products</h3>
@@ -1040,9 +1104,9 @@ const MyOrders = () => {
                     </div>
                   )}
 
-                  {/* ========================================
+                  {/* ==================================================
                       ORDER ACTIONS
-                  ======================================== */}
+                  ================================================== */}
 
                   <div className="mt-6 border-t border-base-300 pt-6">
                     <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
@@ -1059,9 +1123,7 @@ const MyOrders = () => {
                       </div>
 
                       <div className="flex flex-col gap-3 sm:flex-row">
-                        {/* ==================================
-                            INVOICE BUTTON
-                        ================================== */}
+                        {/* INVOICE */}
 
                         {orderId && (
                           <Link
@@ -1076,9 +1138,7 @@ const MyOrders = () => {
                           </Link>
                         )}
 
-                        {/* ==================================
-                            CANCEL BUTTON
-                        ================================== */}
+                        {/* CANCEL */}
 
                         {orderStatus === "pending" && (
                           <button
@@ -1094,8 +1154,6 @@ const MyOrders = () => {
                         )}
                       </div>
                     </div>
-
-                    {/* CANCEL ERROR */}
 
                     {cancelMutation.isError &&
                       cancelMutation.variables === orderId && (

@@ -1,12 +1,12 @@
 import { useContext, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import axios from "axios";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   FaArrowLeft,
   FaBoxOpen,
   FaCartPlus,
+  FaCheckCircle,
   FaRedo,
   FaShieldAlt,
   FaStar,
@@ -14,28 +14,23 @@ import {
   FaTruck,
   FaUndoAlt,
   FaWeightHanging,
-  FaCheckCircle,
 } from "react-icons/fa";
 
 import { AuthContext } from "../../Auth/AuthProvider";
 import { useToast } from "../../context/ToastProvider";
 
+import axiosPublic from "../../hooks/axiosPublic";
+import axiosSecure from "../../hooks/axiosSecure";
+
 // ============================================================
 // CONFIG
 // ============================================================
-
-const API_URL = String(import.meta.env.VITE_API_URL || "")
-  .trim()
-  .replace(/\/+$/, "");
-
-const REQUEST_TIMEOUT = 15000;
 
 const PRODUCT_STALE_TIME = 1000 * 60 * 5;
 const PRODUCT_GC_TIME = 1000 * 60 * 10;
 
 const RELATED_PRODUCTS_LIMIT = 12;
 
-// MongoDB ObjectId
 const PRODUCT_ID_REGEX = /^[0-9a-fA-F]{24}$/;
 
 // ============================================================
@@ -53,7 +48,13 @@ const getText = (value, fallback = "") => {
     return fallback;
   }
 
-  return value.trim() || fallback;
+  const text = value.trim();
+
+  return text || fallback;
+};
+
+const getProductId = (product) => {
+  return String(product?._id || "").trim();
 };
 
 const getPrice = (value) => {
@@ -90,34 +91,37 @@ const normalizeImageUrl = (value) => {
   return value.replace(/[\[\]\(\)]/g, "").trim();
 };
 
+const getErrorMessage = (error, fallback = "Something went wrong.") => {
+  return (
+    error?.response?.data?.message ||
+    error?.response?.data?.error ||
+    error?.message ||
+    fallback
+  );
+};
+
+const isNetworkError = (error) => {
+  return (
+    error?.code === "ERR_NETWORK" ||
+    error?.code === "ECONNABORTED" ||
+    error?.code === "ETIMEDOUT" ||
+    !error?.response
+  );
+};
+
 // ============================================================
 // API
 // ============================================================
 
-// ------------------------------------------------------------
-// GET /products/:id
-// Server response:
-//
-// {
-//   success: true,
-//   data: product
-// }
-// ------------------------------------------------------------
-
 const fetchProduct = async ({ queryKey, signal }) => {
   const [, productId] = queryKey;
-
-  if (!API_URL) {
-    throw new Error("API URL is not configured.");
-  }
 
   if (!PRODUCT_ID_REGEX.test(productId || "")) {
     throw new Error("Invalid product ID.");
   }
 
-  const response = await axios.get(`${API_URL}/products/${productId}`, {
+  const response = await axiosPublic.get(`/products/${productId}`, {
     signal,
-    timeout: REQUEST_TIMEOUT,
     headers: {
       Accept: "application/json",
     },
@@ -136,23 +140,13 @@ const fetchProduct = async ({ queryKey, signal }) => {
   return result.data;
 };
 
-// ------------------------------------------------------------
-// GET /products
-// Used for related products.
-// ------------------------------------------------------------
-
-const fetchProducts = async ({ signal }) => {
-  if (!API_URL) {
-    throw new Error("API URL is not configured.");
-  }
-
-  const response = await axios.get(`${API_URL}/products`, {
+const fetchRelatedProducts = async ({ signal }) => {
+  const response = await axiosPublic.get("/products", {
     params: {
       page: 1,
       limit: RELATED_PRODUCTS_LIMIT,
     },
     signal,
-    timeout: REQUEST_TIMEOUT,
     headers: {
       Accept: "application/json",
     },
@@ -164,7 +158,11 @@ const fetchProducts = async ({ signal }) => {
     throw new Error(result?.message || "Failed to load related products.");
   }
 
-  return Array.isArray(result?.data) ? result.data : [];
+  if (!Array.isArray(result?.data)) {
+    throw new Error("Invalid related products response.");
+  }
+
+  return result.data;
 };
 
 // ============================================================
@@ -173,13 +171,10 @@ const fetchProducts = async ({ signal }) => {
 
 const FeaturedProdetails = () => {
   const { id } = useParams();
-
   const navigate = useNavigate();
-
   const queryClient = useQueryClient();
 
-  const { user } = useContext(AuthContext);
-
+  const { user, loading: authLoading } = useContext(AuthContext);
   const { addToast } = useToast();
 
   const [isAdding, setIsAdding] = useState(false);
@@ -205,17 +200,11 @@ const FeaturedProdetails = () => {
     refetch,
   } = useQuery({
     queryKey: ["product", productId],
-
     queryFn: fetchProduct,
-
-    enabled: Boolean(API_URL) && isValidProductId,
-
+    enabled: isValidProductId,
     staleTime: PRODUCT_STALE_TIME,
-
     gcTime: PRODUCT_GC_TIME,
-
     retry: 1,
-
     refetchOnWindowFocus: false,
   });
 
@@ -223,24 +212,22 @@ const FeaturedProdetails = () => {
   // RELATED PRODUCTS QUERY
   // ==========================================================
 
-  const { data: products = [], isLoading: relatedProductsLoading } = useQuery({
+  const {
+    data: products = [],
+    isLoading: relatedProductsLoading,
+    isError: relatedProductsError,
+  } = useQuery({
     queryKey: ["products", "related"],
-
-    queryFn: fetchProducts,
-
-    enabled: Boolean(API_URL) && Boolean(product),
-
+    queryFn: fetchRelatedProducts,
+    enabled: Boolean(product),
     staleTime: PRODUCT_STALE_TIME,
-
     gcTime: PRODUCT_GC_TIME,
-
     retry: 1,
-
     refetchOnWindowFocus: false,
   });
 
   // ==========================================================
-  // PRODUCT VALUES
+  // PRODUCT DATA
   // ==========================================================
 
   const price = getPrice(product?.price);
@@ -286,29 +273,29 @@ const FeaturedProdetails = () => {
   // ==========================================================
 
   const relatedProducts = useMemo(() => {
-    if (!product?._id || !Array.isArray(products)) {
+    if (!product || !Array.isArray(products)) {
       return [];
     }
 
-    const currentProductId = String(product._id);
+    const currentProductId = getProductId(product);
 
-    const currentCategory = getText(product.category).toLowerCase().trim();
+    const currentCategory = getText(product?.category).toLowerCase();
 
-    if (!currentCategory) {
+    if (!currentProductId || !currentCategory) {
       return [];
     }
 
     return products
       .filter((item) => {
-        if (!item?._id) {
+        const itemId = getProductId(item);
+
+        if (!itemId || itemId === currentProductId) {
           return false;
         }
 
-        const itemId = String(item._id);
+        const itemCategory = getText(item?.category).toLowerCase();
 
-        const itemCategory = getText(item.category).toLowerCase().trim();
-
-        return itemId !== currentProductId && itemCategory === currentCategory;
+        return itemCategory === currentCategory;
       })
       .slice(0, 4);
   }, [product, products]);
@@ -321,7 +308,9 @@ const FeaturedProdetails = () => {
     navigate("/login", {
       state: {
         from: {
-          pathname: `/product/${productId}`,
+          pathname: window.location.pathname,
+          search: window.location.search,
+          hash: window.location.hash,
         },
       },
     });
@@ -329,7 +318,6 @@ const FeaturedProdetails = () => {
 
   // ==========================================================
   // ADD TO CART
-  // POST /carts
   // ==========================================================
 
   const handleAddToCart = async () => {
@@ -337,18 +325,12 @@ const FeaturedProdetails = () => {
       return;
     }
 
-    // --------------------------------------------------------
-    // API CHECK
-    // --------------------------------------------------------
-
-    if (!API_URL) {
-      addToast("API URL is not configured.", "error");
-
+    if (authLoading) {
       return;
     }
 
     // --------------------------------------------------------
-    // AUTH CHECK
+    // AUTH
     // --------------------------------------------------------
 
     if (!user) {
@@ -360,17 +342,19 @@ const FeaturedProdetails = () => {
     }
 
     // --------------------------------------------------------
-    // PRODUCT CHECK
+    // PRODUCT
     // --------------------------------------------------------
 
-    if (!product?._id) {
+    const currentProductId = getProductId(product);
+
+    if (!currentProductId) {
       addToast("Product information is unavailable.", "error");
 
       return;
     }
 
     // --------------------------------------------------------
-    // STOCK CHECK
+    // STOCK
     // --------------------------------------------------------
 
     if (stock <= 0) {
@@ -382,23 +366,10 @@ const FeaturedProdetails = () => {
     try {
       setIsAdding(true);
 
-      const response = await axios.post(
-        `${API_URL}/carts`,
-        {
-          productId: String(product._id),
-          quantity: 1,
-        },
-        {
-          withCredentials: true,
-
-          timeout: REQUEST_TIMEOUT,
-
-          headers: {
-            Accept: "application/json",
-            "Content-Type": "application/json",
-          },
-        },
-      );
+      const response = await axiosSecure.post("/carts", {
+        productId: currentProductId,
+        quantity: 1,
+      });
 
       const result = response?.data;
 
@@ -413,7 +384,7 @@ const FeaturedProdetails = () => {
       addToast(`${productName} added to your cart.`, "success");
 
       // ------------------------------------------------------
-      // INVALIDATE ALL CART QUERIES
+      // INVALIDATE CART QUERIES
       // ------------------------------------------------------
 
       await Promise.all([
@@ -434,18 +405,17 @@ const FeaturedProdetails = () => {
         }),
       ]);
     } catch (error) {
-      console.error("FEATURED PRODUCT ADD TO CART ERROR:", error);
+      console.error(
+        "ADD TO CART ERROR:",
+        error?.response?.data || error?.message || error,
+      );
 
       const status = error?.response?.status;
 
-      const message =
-        error?.response?.data?.message ||
-        error?.response?.data?.error ||
-        error?.message ||
-        "Failed to add product to cart.";
+      const message = getErrorMessage(error, "Failed to add product to cart.");
 
       // ------------------------------------------------------
-      // 401
+      // UNAUTHORIZED
       // ------------------------------------------------------
 
       if (status === 401) {
@@ -457,7 +427,7 @@ const FeaturedProdetails = () => {
       }
 
       // ------------------------------------------------------
-      // 403
+      // FORBIDDEN
       // ------------------------------------------------------
 
       if (status === 403) {
@@ -470,7 +440,7 @@ const FeaturedProdetails = () => {
       }
 
       // ------------------------------------------------------
-      // 404
+      // NOT FOUND
       // ------------------------------------------------------
 
       if (status === 404) {
@@ -480,7 +450,7 @@ const FeaturedProdetails = () => {
       }
 
       // ------------------------------------------------------
-      // 409
+      // CONFLICT / STOCK
       // ------------------------------------------------------
 
       if (status === 409) {
@@ -493,10 +463,10 @@ const FeaturedProdetails = () => {
       }
 
       // ------------------------------------------------------
-      // 422
+      // VALIDATION
       // ------------------------------------------------------
 
-      if (status === 422) {
+      if (status === 400 || status === 422) {
         addToast(message || "Invalid cart information.", "warning");
 
         return;
@@ -516,11 +486,7 @@ const FeaturedProdetails = () => {
       // NETWORK / TIMEOUT
       // ------------------------------------------------------
 
-      if (
-        error?.code === "ECONNABORTED" ||
-        error?.code === "ERR_NETWORK" ||
-        !error?.response
-      ) {
+      if (isNetworkError(error)) {
         addToast("Unable to connect to the server. Please try again.", "error");
 
         return;
@@ -577,8 +543,6 @@ const FeaturedProdetails = () => {
         <div className="mb-6 h-11 w-28 animate-pulse rounded-xl bg-base-300" />
 
         <div className="grid gap-10 lg:grid-cols-2">
-          {/* Image skeleton */}
-
           <div className="overflow-hidden rounded-3xl border border-base-300 bg-base-100 p-4 shadow-lg">
             <div className="flex h-[350px] items-center justify-center rounded-2xl bg-base-300 sm:h-[480px] lg:h-[560px]">
               <div className="flex flex-col items-center gap-4">
@@ -590,8 +554,6 @@ const FeaturedProdetails = () => {
               </div>
             </div>
           </div>
-
-          {/* Content skeleton */}
 
           <div className="space-y-6">
             <div className="h-8 w-28 animate-pulse rounded-full bg-base-300" />
@@ -629,16 +591,16 @@ const FeaturedProdetails = () => {
   }
 
   // ==========================================================
-  // ERROR
+  // PRODUCT ERROR
   // ==========================================================
 
   if (isError || !product) {
     const status = error?.response?.status;
 
-    let errorMessage =
-      error?.response?.data?.message ||
-      error?.message ||
-      "The product could not be loaded.";
+    let errorMessage = getErrorMessage(
+      error,
+      "The product could not be loaded.",
+    );
 
     if (status === 400) {
       errorMessage = "The product ID is invalid.";
@@ -648,7 +610,7 @@ const FeaturedProdetails = () => {
       errorMessage = "This product does not exist or has been removed.";
     }
 
-    if (status >= 500) {
+    if (typeof status === "number" && status >= 500) {
       errorMessage =
         "The server is currently unavailable. Please try again later.";
     }
@@ -657,7 +619,7 @@ const FeaturedProdetails = () => {
       errorMessage = "The server request timed out. Please try again.";
     }
 
-    if (error?.code === "ERR_NETWORK" || !error?.response) {
+    if (error?.code === "ERR_NETWORK") {
       errorMessage =
         "Unable to connect to the server. Please check your connection.";
     }
@@ -759,15 +721,11 @@ const FeaturedProdetails = () => {
 
           <div className="lg:sticky lg:top-24 lg:self-start">
             <div className="relative overflow-hidden rounded-2xl bg-base-200">
-              {/* Discount */}
-
               {discount > 0 && (
                 <span className="absolute left-4 top-4 z-10 rounded-full bg-error px-4 py-2 text-sm font-bold text-error-content shadow-lg">
                   {discount}% OFF
                 </span>
               )}
-
-              {/* Image */}
 
               {productImage ? (
                 <img
@@ -778,7 +736,6 @@ const FeaturedProdetails = () => {
                   className="h-[350px] w-full object-contain p-6 transition duration-500 hover:scale-105 sm:h-[480px] lg:h-[560px]"
                   onError={(event) => {
                     event.currentTarget.onerror = null;
-
                     event.currentTarget.style.display = "none";
                   }}
                 />
@@ -872,8 +829,6 @@ const FeaturedProdetails = () => {
             {/* Product Information */}
 
             <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
-              {/* Brand */}
-
               <div className="rounded-2xl bg-base-200 p-5">
                 <FaTag className="mb-3 text-2xl text-warning" />
 
@@ -882,8 +837,6 @@ const FeaturedProdetails = () => {
                 <p className="mt-1 font-bold">{productBrand}</p>
               </div>
 
-              {/* Category */}
-
               <div className="rounded-2xl bg-base-200 p-5">
                 <FaBoxOpen className="mb-3 text-2xl text-warning" />
 
@@ -891,8 +844,6 @@ const FeaturedProdetails = () => {
 
                 <p className="mt-1 font-bold capitalize">{productCategory}</p>
               </div>
-
-              {/* Weight */}
 
               <div className="rounded-2xl bg-base-200 p-5">
                 <FaWeightHanging className="mb-3 text-2xl text-warning" />
@@ -975,7 +926,7 @@ const FeaturedProdetails = () => {
               <button
                 type="button"
                 onClick={handleAddToCart}
-                disabled={isAdding || stock <= 0}
+                disabled={isAdding || authLoading || stock <= 0}
                 className={`inline-flex h-14 w-full items-center justify-center gap-3 rounded-xl px-8 text-lg font-bold transition active:scale-[0.98] ${
                   stock > 0
                     ? "bg-warning text-warning-content hover:bg-warning/90"
@@ -1081,144 +1032,169 @@ const FeaturedProdetails = () => {
         </div>
       )}
 
-      {!relatedProductsLoading && relatedProducts.length > 0 && (
-        <div className="mt-14">
-          <div className="mb-8">
-            <h2 className="text-3xl font-extrabold">Related Products</h2>
+      {!relatedProductsLoading &&
+        !relatedProductsError &&
+        relatedProducts.length > 0 && (
+          <div className="mt-14">
+            <div className="mb-8">
+              <h2 className="text-3xl font-extrabold">Related Products</h2>
 
-            <p className="mt-2 text-base-content/60">
-              You may also like these products.
-            </p>
-          </div>
+              <p className="mt-2 text-base-content/60">
+                You may also like these products.
+              </p>
+            </div>
 
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-            {relatedProducts.map((item) => {
-              const itemId = String(item?._id || "");
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+              {relatedProducts.map((item) => {
+                const itemId = getProductId(item);
 
-              if (!itemId) {
-                return null;
-              }
+                if (!itemId) {
+                  return null;
+                }
 
-              const itemPrice = getPrice(item?.price);
+                const itemPrice = getPrice(item?.price);
 
-              const itemDiscount = getDiscount(item?.discount);
+                const itemDiscount = getDiscount(item?.discount);
 
-              const itemFinalPrice = getFinalPrice(itemPrice, itemDiscount);
+                const itemFinalPrice = getFinalPrice(itemPrice, itemDiscount);
 
-              const itemName = getText(item?.name, "Unnamed Product");
+                const itemName = getText(item?.name, "Unnamed Product");
 
-              const itemBrand = getText(item?.brand, "No Brand");
+                const itemBrand = getText(item?.brand, "No Brand");
 
-              const itemCategory = getText(item?.category, "General");
+                const itemCategory = getText(item?.category, "General");
 
-              const itemImage = normalizeImageUrl(item?.image);
+                const itemImage = normalizeImageUrl(item?.image);
 
-              const itemRating = getRating(item?.rating);
+                const itemRating = getRating(item?.rating);
 
-              const itemStock = getStock(item?.stock);
+                const itemReviews = getReviews(item?.reviews);
 
-              return (
-                <Link
-                  key={itemId}
-                  to={`/product/${itemId}`}
-                  className="group overflow-hidden rounded-2xl border border-base-300 bg-base-100 shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-xl"
-                >
-                  {/* Image */}
+                const itemStock = getStock(item?.stock);
 
-                  <div className="relative h-56 overflow-hidden bg-base-200">
-                    {itemDiscount > 0 && (
-                      <span className="absolute left-3 top-3 z-10 rounded-full bg-error px-3 py-1 text-xs font-bold text-error-content shadow">
-                        -{itemDiscount}%
-                      </span>
-                    )}
+                return (
+                  <Link
+                    key={itemId}
+                    to={`/product/${itemId}`}
+                    className="group overflow-hidden rounded-2xl border border-base-300 bg-base-100 shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-xl"
+                  >
+                    {/* Image */}
 
-                    {itemImage ? (
-                      <img
-                        src={itemImage}
-                        alt={itemName}
-                        loading="lazy"
-                        decoding="async"
-                        className="h-full w-full object-contain p-5 transition duration-500 group-hover:scale-105"
-                        onError={(event) => {
-                          event.currentTarget.onerror = null;
-
-                          event.currentTarget.style.display = "none";
-                        }}
-                      />
-                    ) : (
-                      <div className="flex h-full items-center justify-center text-base-content/40">
-                        <div className="text-center">
-                          <FaBoxOpen className="mx-auto text-4xl" />
-
-                          <p className="mt-2 text-sm">No Image</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Content */}
-
-                  <div className="p-4">
-                    <div className="flex flex-wrap gap-2">
-                      <span className="rounded-full bg-warning/10 px-2.5 py-1 text-xs font-semibold text-warning">
-                        {itemBrand}
-                      </span>
-
-                      <span className="rounded-full bg-base-200 px-2.5 py-1 text-xs capitalize text-base-content/50">
-                        {itemCategory}
-                      </span>
-                    </div>
-
-                    <h3 className="mt-3 min-h-[48px] line-clamp-2 font-bold">
-                      {itemName}
-                    </h3>
-
-                    {/* Rating */}
-
-                    <div className="mt-3 flex items-center gap-1 text-warning">
-                      <FaStar />
-
-                      <span className="text-sm font-semibold">
-                        {itemRating.toFixed(1)}
-                      </span>
-
-                      <span className="ml-1 text-xs text-base-content/40">
-                        ({getReviews(item?.reviews)})
-                      </span>
-                    </div>
-
-                    {/* Price */}
-
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <span className="text-xl font-bold text-warning">
-                        ৳{itemFinalPrice.toFixed(2)}
-                      </span>
-
+                    <div className="relative h-56 overflow-hidden bg-base-200">
                       {itemDiscount > 0 && (
-                        <span className="text-sm text-base-content/40 line-through">
-                          ৳{itemPrice.toFixed(2)}
+                        <span className="absolute left-3 top-3 z-10 rounded-full bg-error px-3 py-1 text-xs font-bold text-error-content shadow">
+                          -{itemDiscount}%
                         </span>
+                      )}
+
+                      {itemImage ? (
+                        <img
+                          src={itemImage}
+                          alt={itemName}
+                          loading="lazy"
+                          decoding="async"
+                          className="h-full w-full object-contain p-5 transition duration-500 group-hover:scale-105"
+                          onError={(event) => {
+                            event.currentTarget.onerror = null;
+                            event.currentTarget.style.display = "none";
+                          }}
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-base-content/40">
+                          <div className="text-center">
+                            <FaBoxOpen className="mx-auto text-4xl" />
+
+                            <p className="mt-2 text-sm">No Image</p>
+                          </div>
+                        </div>
                       )}
                     </div>
 
-                    {/* Stock */}
+                    {/* Content */}
 
-                    <div className="mt-3">
-                      <span
-                        className={`text-xs font-semibold ${
-                          itemStock > 0 ? "text-success" : "text-error"
-                        }`}
-                      >
-                        {itemStock > 0
-                          ? `${itemStock} Available`
-                          : "Out of Stock"}
-                      </span>
+                    <div className="p-4">
+                      <div className="flex flex-wrap gap-2">
+                        <span className="max-w-full rounded-full bg-warning/10 px-2.5 py-1 text-xs font-semibold text-warning">
+                          <span className="block max-w-[150px] truncate">
+                            {itemBrand}
+                          </span>
+                        </span>
+
+                        <span className="max-w-full rounded-full bg-base-200 px-2.5 py-1 text-xs capitalize text-base-content/50">
+                          <span className="block max-w-[150px] truncate">
+                            {itemCategory}
+                          </span>
+                        </span>
+                      </div>
+
+                      <h3 className="mt-3 min-h-[48px] line-clamp-2 font-bold">
+                        {itemName}
+                      </h3>
+
+                      {/* Rating */}
+
+                      <div className="mt-3 flex items-center gap-1 text-warning">
+                        <FaStar />
+
+                        <span className="text-sm font-semibold">
+                          {itemRating.toFixed(1)}
+                        </span>
+
+                        <span className="ml-1 text-xs text-base-content/40">
+                          ({itemReviews})
+                        </span>
+                      </div>
+
+                      {/* Price */}
+
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <span className="text-xl font-bold text-warning">
+                          ৳{itemFinalPrice.toFixed(2)}
+                        </span>
+
+                        {itemDiscount > 0 && (
+                          <span className="text-sm text-base-content/40 line-through">
+                            ৳{itemPrice.toFixed(2)}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Stock */}
+
+                      <div className="mt-3">
+                        <span
+                          className={`text-xs font-semibold ${
+                            itemStock > 0 ? "text-success" : "text-error"
+                          }`}
+                        >
+                          {itemStock > 0
+                            ? `${itemStock} Available`
+                            : "Out of Stock"}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                </Link>
-              );
-            })}
+                  </Link>
+                );
+              })}
+            </div>
           </div>
+        )}
+
+      {/* ======================================================
+          RELATED PRODUCTS ERROR
+      ====================================================== */}
+
+      {!relatedProductsLoading && relatedProductsError && (
+        <div className="mt-14 rounded-2xl border border-base-300 bg-base-100 p-8 text-center">
+          <FaBoxOpen className="mx-auto text-4xl text-base-content/30" />
+
+          <h3 className="mt-4 text-xl font-bold">
+            Related Products Unavailable
+          </h3>
+
+          <p className="mt-2 text-base-content/50">
+            We could not load related products right now.
+          </p>
         </div>
       )}
 
@@ -1226,17 +1202,19 @@ const FeaturedProdetails = () => {
           RELATED PRODUCTS EMPTY
       ====================================================== */}
 
-      {!relatedProductsLoading && relatedProducts.length === 0 && (
-        <div className="mt-14 rounded-2xl border border-base-300 bg-base-100 p-8 text-center">
-          <FaBoxOpen className="mx-auto text-4xl text-base-content/30" />
+      {!relatedProductsLoading &&
+        !relatedProductsError &&
+        relatedProducts.length === 0 && (
+          <div className="mt-14 rounded-2xl border border-base-300 bg-base-100 p-8 text-center">
+            <FaBoxOpen className="mx-auto text-4xl text-base-content/30" />
 
-          <h3 className="mt-4 text-xl font-bold">No Related Products</h3>
+            <h3 className="mt-4 text-xl font-bold">No Related Products</h3>
 
-          <p className="mt-2 text-base-content/50">
-            There are no other products in this category right now.
-          </p>
-        </div>
-      )}
+            <p className="mt-2 text-base-content/50">
+              There are no other products in this category right now.
+            </p>
+          </div>
+        )}
     </section>
   );
 };
