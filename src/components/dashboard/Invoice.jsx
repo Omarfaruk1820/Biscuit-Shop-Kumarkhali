@@ -1,3 +1,4 @@
+import React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import {
@@ -7,16 +8,35 @@ import {
   FaFileInvoiceDollar,
   FaMapMarkerAlt,
   FaMoneyBillWave,
-  FaPhone,
   FaPrint,
   FaReceipt,
   FaShoppingBag,
   FaSpinner,
   FaTruck,
   FaUser,
+  FaPhone,
 } from "react-icons/fa";
 
 import axiosSecure from "../../hooks/axiosSecure";
+
+// ============================================================
+// CONSTANTS
+// ============================================================
+
+const INVOICE_STALE_TIME = 1000 * 60 * 5;
+const INVOICE_GC_TIME = 1000 * 60 * 10;
+
+const PAYMENT_METHOD_LABELS = {
+  cod: "Cash on Delivery",
+  cash: "Cash",
+  cash_on_delivery: "Cash on Delivery",
+  online: "Online Payment",
+  card: "Card Payment",
+  mobile_banking: "Mobile Banking",
+  bkash: "bKash",
+  nagad: "Nagad",
+  rocket: "Rocket",
+};
 
 // ============================================================
 // HELPERS
@@ -69,6 +89,16 @@ const formatStatus = (value, fallback = "Pending") => {
     .replace(/[_-]/g, " ")
     .replace(/\s+/g, " ")
     .replace(/\b\w/g, (character) => character.toUpperCase());
+};
+
+const formatPaymentMethod = (value) => {
+  const normalized = normalizeString(value).toLowerCase();
+
+  if (PAYMENT_METHOD_LABELS[normalized]) {
+    return PAYMENT_METHOD_LABELS[normalized];
+  }
+
+  return formatStatus(value, "Cash on Delivery");
 };
 
 const getStatusClass = (status) => {
@@ -134,8 +164,77 @@ const getProductSubtotal = (item) => {
   return getProductFinalPrice(item) * getProductQuantity(item);
 };
 
-const getApiUrl = () => {
-  return normalizeString(import.meta.env.VITE_API_URL).replace(/\/+$/, "");
+// ============================================================
+// PDF HELPERS
+// ============================================================
+
+const getPdfErrorMessage = (error, fallbackMessage) => {
+  const status = error?.response?.status;
+
+  if (status === 400) {
+    return "The invoice ID is invalid.";
+  }
+
+  if (status === 401) {
+    return "Your session has expired. Please sign in again.";
+  }
+
+  if (status === 403) {
+    return "You are not allowed to access this invoice.";
+  }
+
+  if (status === 404) {
+    return "The requested invoice could not be found.";
+  }
+
+  return error?.response?.data?.message || error?.message || fallbackMessage;
+};
+
+/**
+ * Fetch the protected PDF through axiosSecure.
+ *
+ * IMPORTANT:
+ * Do NOT use window.open(apiUrl) directly because that request
+ * will not contain the Firebase Authorization header added by
+ * axiosSecure.
+ */
+const fetchInvoicePdf = async (id) => {
+  if (!id) {
+    throw new Error("Invoice ID is missing.");
+  }
+
+  const response = await axiosSecure.get(
+    `/invoices/view/${encodeURIComponent(id)}`,
+    {
+      responseType: "blob",
+      timeout: 30000,
+    },
+  );
+
+  const contentType =
+    response?.headers?.["content-type"] ||
+    response?.data?.type ||
+    "application/pdf";
+
+  // If the backend unexpectedly returned JSON instead of PDF,
+  // convert the blob back to JSON and expose the server message.
+  if (!contentType.includes("application/pdf")) {
+    let message = "Failed to generate invoice PDF.";
+
+    try {
+      const text = await response.data.text();
+
+      const parsed = JSON.parse(text);
+
+      message = parsed?.message || message;
+    } catch {
+      // Keep fallback message.
+    }
+
+    throw new Error(message);
+  }
+
+  return response.data;
 };
 
 // ============================================================
@@ -146,7 +245,13 @@ const Invoice = () => {
   const { id } = useParams();
 
   // ==========================================================
-  // LOAD INVOICE
+  // PDF ACTION STATE
+  // ==========================================================
+
+  const [pdfAction, setPdfAction] = React.useState(null);
+
+  // ==========================================================
+  // LOAD INVOICE DATA
   // ==========================================================
 
   const {
@@ -175,9 +280,9 @@ const Invoice = () => {
       return response.data.invoice;
     },
 
-    staleTime: 1000 * 60 * 5,
+    staleTime: INVOICE_STALE_TIME,
 
-    gcTime: 1000 * 60 * 10,
+    gcTime: INVOICE_GC_TIME,
 
     retry: 1,
 
@@ -196,43 +301,117 @@ const Invoice = () => {
   // VIEW PDF
   // ==========================================================
 
-  const handleViewPDF = () => {
-    if (!id) {
+  const handleViewPDF = async () => {
+    if (!id || pdfAction) {
       return;
     }
 
-    const apiUrl = getApiUrl();
+    /*
+     * Open a blank tab immediately.
+     *
+     * This avoids popup blockers because the window.open()
+     * happens directly inside the user's click event.
+     */
+    const pdfWindow = window.open("", "_blank");
 
-    if (!apiUrl) {
-      console.error("VITE_API_URL is not configured.");
+    if (!pdfWindow) {
+      window.alert(
+        "Please allow pop-ups in your browser to view the invoice PDF.",
+      );
+
       return;
     }
 
-    const pdfUrl = `${apiUrl}/invoices/view/${encodeURIComponent(id)}`;
+    setPdfAction("view");
 
-    window.open(pdfUrl, "_blank", "noopener,noreferrer");
+    try {
+      pdfWindow.document.title = "Loading Invoice...";
+
+      const pdfBlob = await fetchInvoicePdf(id);
+
+      const pdfUrl = URL.createObjectURL(pdfBlob);
+
+      pdfWindow.location.href = pdfUrl;
+
+      /*
+       * Keep the object URL alive long enough for the new tab
+       * to load the PDF.
+       */
+      window.setTimeout(() => {
+        URL.revokeObjectURL(pdfUrl);
+      }, 60_000);
+    } catch (error) {
+      console.error("VIEW INVOICE PDF ERROR:", error);
+
+      pdfWindow.close();
+
+      window.alert(
+        getPdfErrorMessage(error, "Failed to open the invoice PDF."),
+      );
+    } finally {
+      setPdfAction(null);
+    }
   };
 
   // ==========================================================
   // DOWNLOAD PDF
   // ==========================================================
 
-  const handleDownloadPDF = () => {
-    if (!id) {
+  const handleDownloadPDF = async () => {
+    if (!id || pdfAction) {
       return;
     }
 
-    const apiUrl = getApiUrl();
+    setPdfAction("download");
 
-    if (!apiUrl) {
-      console.error("VITE_API_URL is not configured.");
-      return;
+    try {
+      const pdfBlob = await fetchInvoicePdf(id);
+
+      const pdfUrl = URL.createObjectURL(pdfBlob);
+
+      const invoiceNumber = normalizeString(
+        invoice?.invoiceNumber,
+        `invoice-${id}`,
+      )
+        .replace(/[^a-zA-Z0-9._-]/g, "-")
+        .replace(/-+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 150);
+
+      const filename = `${invoiceNumber || "invoice"}.pdf`;
+
+      const anchor = document.createElement("a");
+
+      anchor.href = pdfUrl;
+      anchor.download = filename;
+
+      document.body.appendChild(anchor);
+
+      anchor.click();
+
+      anchor.remove();
+
+      window.setTimeout(() => {
+        URL.revokeObjectURL(pdfUrl);
+      }, 60_000);
+    } catch (error) {
+      console.error("DOWNLOAD INVOICE PDF ERROR:", error);
+
+      window.alert(
+        getPdfErrorMessage(error, "Failed to download the invoice PDF."),
+      );
+    } finally {
+      setPdfAction(null);
     }
-
-    const pdfUrl = `${apiUrl}/invoices/pdf/${encodeURIComponent(id)}`;
-
-    window.open(pdfUrl, "_blank", "noopener,noreferrer");
   };
+
+  // const shop = {
+  //   name: "Fresh Basket",
+  //   address: "123 Main Road, Kaliganj, Dhaka, Bangladesh",
+  //   phone: "+880 1700-000000",
+  //   email: "hello@freshbasket.com",
+  //   website: "freshbasket.com",
+  // };
 
   // ==========================================================
   // LOADING
@@ -279,28 +458,10 @@ const Invoice = () => {
   // ==========================================================
 
   if (isError || !invoice) {
-    const statusCode = error?.response?.status;
-
-    let errorMessage =
-      error?.response?.data?.message ||
-      error?.message ||
-      "We could not load this invoice.";
-
-    if (statusCode === 400) {
-      errorMessage = "The invoice ID is invalid.";
-    }
-
-    if (statusCode === 401) {
-      errorMessage = "Your session has expired. Please sign in again.";
-    }
-
-    if (statusCode === 403) {
-      errorMessage = "You are not allowed to access this invoice.";
-    }
-
-    if (statusCode === 404) {
-      errorMessage = "The requested invoice could not be found.";
-    }
+    const errorMessage = getPdfErrorMessage(
+      error,
+      "We could not load this invoice.",
+    );
 
     return (
       <section className="min-h-screen bg-base-200/40 px-4 py-12 sm:px-6 lg:px-8">
@@ -357,9 +518,9 @@ const Invoice = () => {
 
   const orderNumber = normalizeString(invoice?.orderNumber, "N/A");
 
-  const orderId = normalizeString(invoice?.orderId, "N/A");
+  const invoiceOrderId = normalizeString(invoice?.orderId, "N/A");
 
- const shopName = normalizeString(shop.name, "Biscuit Shop");
+  const shopName = normalizeString(shop.name, "Mamun Biscuit Shop");
 
   const shopSlogan = normalizeString(shop.slogan);
 
@@ -375,12 +536,14 @@ const Invoice = () => {
 
   const customerZip = normalizeString(customer.zip);
 
-  const paymentMethod = formatStatus(payment.method, "Cash on Delivery");
+  const paymentMethod = formatPaymentMethod(payment.method);
 
   const paymentStatus = formatStatus(payment.status, "Pending");
 
-  // IMPORTANT:
-  // buildInvoice stores order status inside shipping.status.
+  /*
+   * Your buildInvoice structure stores order status
+   * inside shipping.status.
+   */
   const orderStatus = formatStatus(shipping.status, "Pending");
 
   const shippingStatus = formatStatus(shipping.status, "Pending");
@@ -410,6 +573,14 @@ const Invoice = () => {
     summary.grandTotal,
     subtotal + shippingCharge + tax - discount,
   );
+
+  // ==========================================================
+  // PDF BUTTON STATE
+  // ==========================================================
+
+  const isViewingPdf = pdfAction === "view";
+  const isDownloadingPdf = pdfAction === "download";
+  const isPdfBusy = Boolean(pdfAction);
 
   // ==========================================================
   // RENDER
@@ -446,31 +617,50 @@ const Invoice = () => {
           </div>
 
           <div className="flex flex-col gap-2 sm:flex-row">
+            {/* PRINT */}
+
             <button
               type="button"
               onClick={handlePrint}
+              disabled={isPdfBusy}
               className="btn btn-outline"
             >
               <FaPrint />
               Print
             </button>
 
+            {/* VIEW PDF */}
+
             <button
               type="button"
               onClick={handleViewPDF}
+              disabled={isPdfBusy}
               className="btn btn-outline"
             >
-              <FaFileInvoiceDollar />
-              View PDF
+              {isViewingPdf ? (
+                <FaSpinner className="animate-spin" />
+              ) : (
+                <FaFileInvoiceDollar />
+              )}
+
+              {isViewingPdf ? "Opening..." : "View PDF"}
             </button>
+
+            {/* DOWNLOAD PDF */}
 
             <button
               type="button"
               onClick={handleDownloadPDF}
+              disabled={isPdfBusy}
               className="btn btn-primary"
             >
-              <FaCloudDownloadAlt />
-              Download PDF
+              {isDownloadingPdf ? (
+                <FaSpinner className="animate-spin" />
+              ) : (
+                <FaCloudDownloadAlt />
+              )}
+
+              {isDownloadingPdf ? "Downloading..." : "Download PDF"}
             </button>
           </div>
         </div>
@@ -491,7 +681,9 @@ const Invoice = () => {
         ================================================== */}
 
         <div className="overflow-hidden rounded-3xl border border-base-300 bg-base-100 shadow-sm print:rounded-none print:border-0 print:shadow-none">
-          {/* COMPANY HEADER */}
+          {/* ==================================================
+              COMPANY HEADER
+          ================================================== */}
 
           <div className="border-b border-base-300 p-6 sm:p-8 lg:p-10">
             <div className="flex flex-col gap-8 md:flex-row md:items-start md:justify-between">
@@ -545,7 +737,7 @@ const Invoice = () => {
                     <span className="text-base-content/50">Order ID:</span>
 
                     <span className="max-w-[260px] break-all font-mono text-xs font-medium">
-                      {orderId}
+                      {invoiceOrderId}
                     </span>
                   </div>
 
@@ -561,7 +753,9 @@ const Invoice = () => {
             </div>
           </div>
 
-          {/* STATUS */}
+          {/* ==================================================
+              STATUS BAR
+          ================================================== */}
 
           <div className="grid grid-cols-1 border-b border-base-300 sm:grid-cols-3">
             <div className="flex items-center gap-3 p-5 sm:border-r sm:border-base-300">
@@ -619,9 +813,13 @@ const Invoice = () => {
             </div>
           </div>
 
-          {/* CUSTOMER + PAYMENT */}
+          {/* ==================================================
+              CUSTOMER + PAYMENT
+          ================================================== */}
 
           <div className="grid grid-cols-1 gap-6 border-b border-base-300 p-6 sm:p-8 lg:grid-cols-2 lg:p-10">
+            {/* CUSTOMER */}
+
             <div className="rounded-2xl border border-base-300 p-5">
               <div className="mb-5 flex items-center gap-3">
                 <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -659,6 +857,8 @@ const Invoice = () => {
                 </p>
               </div>
             </div>
+
+            {/* PAYMENT */}
 
             <div className="rounded-2xl border border-base-300 p-5">
               <div className="mb-5 flex items-center gap-3">
@@ -709,7 +909,9 @@ const Invoice = () => {
             </div>
           </div>
 
-          {/* ORDER ITEMS */}
+          {/* ==================================================
+              ORDER ITEMS
+          ================================================== */}
 
           <div className="border-b border-base-300 p-6 sm:p-8 lg:p-10">
             <div className="mb-5">
@@ -820,7 +1022,9 @@ const Invoice = () => {
             )}
           </div>
 
-          {/* SUMMARY */}
+          {/* ==================================================
+              SUMMARY
+          ================================================== */}
 
           <div className="grid grid-cols-1 gap-8 p-6 sm:p-8 lg:grid-cols-2 lg:p-10">
             <div>
@@ -901,7 +1105,9 @@ const Invoice = () => {
             </div>
           </div>
 
-          {/* FOOTER */}
+          {/* ==================================================
+              FOOTER
+          ================================================== */}
 
           <div className="border-t border-base-300 bg-base-200/40 px-6 py-6 text-center sm:px-8">
             <p className="font-semibold">{shopName}</p>
@@ -932,6 +1138,7 @@ const Invoice = () => {
             <button
               type="button"
               onClick={handlePrint}
+              disabled={isPdfBusy}
               className="btn btn-outline"
             >
               <FaPrint />
@@ -941,19 +1148,31 @@ const Invoice = () => {
             <button
               type="button"
               onClick={handleViewPDF}
+              disabled={isPdfBusy}
               className="btn btn-outline"
             >
-              <FaFileInvoiceDollar />
-              View PDF
+              {isViewingPdf ? (
+                <FaSpinner className="animate-spin" />
+              ) : (
+                <FaFileInvoiceDollar />
+              )}
+
+              {isViewingPdf ? "Opening..." : "View PDF"}
             </button>
 
             <button
               type="button"
               onClick={handleDownloadPDF}
+              disabled={isPdfBusy}
               className="btn btn-primary"
             >
-              <FaCloudDownloadAlt />
-              Download PDF
+              {isDownloadingPdf ? (
+                <FaSpinner className="animate-spin" />
+              ) : (
+                <FaCloudDownloadAlt />
+              )}
+
+              {isDownloadingPdf ? "Downloading..." : "Download PDF"}
             </button>
           </div>
         </div>
