@@ -39,7 +39,7 @@ const adminMenus = [
   },
   {
     title: "Manage Orders",
-    path: "/dashboard/manage-orders",
+    path: "/dashboard/orders",
     icon: FaClipboardList,
   },
   {

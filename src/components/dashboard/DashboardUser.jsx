@@ -43,7 +43,11 @@ const normalizeStatus = (value, fallback = "pending") => {
 };
 
 const getOrderId = (order) => {
-  return order?._id ? String(order._id) : "";
+  if (!order?._id) {
+    return "";
+  }
+
+  return String(order._id);
 };
 
 const getOrderStatus = (order) => {
@@ -146,8 +150,22 @@ const formatStatus = (status) => {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 };
 
+const extractArray = (response) => {
+  const data = response?.data?.data;
+
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  if (Array.isArray(response?.data)) {
+    return response.data;
+  }
+
+  return [];
+};
+
 // ============================================================
-// STATUS HELPERS
+// ORDER STATUS HELPERS
 // ============================================================
 
 const getStatusBadgeClass = (status) => {
@@ -241,7 +259,7 @@ const getPaymentBadgeClass = (status) => {
 };
 
 // ============================================================
-// ORDER STATUS CARD COLORS
+// STATUS CARD STYLES
 // ============================================================
 
 const STATUS_CARD_STYLES = {
@@ -272,24 +290,6 @@ const STATUS_CARD_STYLES = {
     icon: "bg-success text-success-content",
     progress: "progress-success",
   },
-};
-
-// ============================================================
-// API HELPERS
-// ============================================================
-
-const extractArray = (response) => {
-  const data = response?.data?.data;
-
-  if (Array.isArray(data)) {
-    return data;
-  }
-
-  if (Array.isArray(response?.data)) {
-    return response.data;
-  }
-
-  return [];
 };
 
 // ============================================================
@@ -474,6 +474,51 @@ const EmptyOrders = () => {
 };
 
 // ============================================================
+// ORDER ACTIONS
+// ============================================================
+
+const OrderActions = ({ orderId, mobile = false }) => {
+  const buttonClass = mobile ? "btn btn-sm" : "btn btn-xs";
+
+  return (
+    <div
+      className={
+        mobile ? "grid grid-cols-3 gap-2" : "flex flex-wrap justify-end gap-2"
+      }
+    >
+      <Link to="/dashboard/my-orders" className={`${buttonClass} btn-primary`}>
+        View
+      </Link>
+
+      {orderId ? (
+        <>
+          <Link
+            to={`/dashboard/orders/${orderId}/track`}
+            className="btn btn-xs btn-info"
+          >
+            Track
+          </Link>
+
+          <Link
+            to={`/dashboard/invoice/${orderId}`}
+            className={`${buttonClass} btn-success`}
+          >
+            Invoice
+          </Link>
+        </>
+      ) : (
+        mobile && (
+          <>
+            <span />
+            <span />
+          </>
+        )
+      )}
+    </div>
+  );
+};
+
+// ============================================================
 // RECENT ORDERS DESKTOP TABLE
 // ============================================================
 
@@ -559,32 +604,7 @@ const RecentOrdersTable = ({ orders }) => {
                 </td>
 
                 <td>
-                  <div className="flex flex-wrap justify-end gap-2">
-                    <Link
-                      to="/dashboard/my-orders"
-                      className="btn btn-xs btn-primary"
-                    >
-                      View
-                    </Link>
-
-                    {orderId && (
-                      <>
-                        <Link
-                          to={`/dashboard/track-order/${orderId}`}
-                          className="btn btn-xs btn-info"
-                        >
-                          Track
-                        </Link>
-
-                        <Link
-                          to={`/dashboard/invoice/${orderId}`}
-                          className="btn btn-xs btn-success"
-                        >
-                          Invoice
-                        </Link>
-                      </>
-                    )}
-                  </div>
+                  <OrderActions orderId={orderId} />
                 </td>
               </tr>
             );
@@ -731,34 +751,7 @@ const MobileOrderCard = ({ order }) => {
 
         <div className="divider my-2" />
 
-        <div className="grid grid-cols-3 gap-2">
-          <Link to="/dashboard/my-orders" className="btn btn-primary btn-sm">
-            View
-          </Link>
-
-          {orderId ? (
-            <>
-              <Link
-                to={`/dashboard/track-order/${orderId}`}
-                className="btn btn-info btn-sm"
-              >
-                Track
-              </Link>
-
-              <Link
-                to={`/dashboard/invoice/${orderId}`}
-                className="btn btn-success btn-sm"
-              >
-                Invoice
-              </Link>
-            </>
-          ) : (
-            <>
-              <span />
-              <span />
-            </>
-          )}
-        </div>
+        <OrderActions orderId={orderId} mobile />
       </div>
     </div>
   );
@@ -880,8 +873,8 @@ const RecentActivity = ({ orders }) => {
                       {orderId && (
                         <>
                           <Link
-                            to={`/dashboard/track-order/${orderId}`}
-                            className="btn btn-info btn-xs"
+                            to={`/dashboard/orders/${orderId}/track`}
+                            className="btn btn-xs btn-info"
                           >
                             Track
                           </Link>
@@ -916,7 +909,7 @@ const DashboardUser = () => {
   const { user, loading: authLoading } = useContext(AuthContext);
 
   // ==========================================================
-  // USER AUTHENTICATION
+  // AUTHENTICATION
   // ==========================================================
 
   const userEmail = String(user?.email || "")
@@ -1047,7 +1040,7 @@ const DashboardUser = () => {
   };
 
   // ==========================================================
-  // LOADING / ERROR STATES
+  // STATES
   // ==========================================================
 
   const isLoading = authLoading || ordersLoading || cartLoading;
@@ -1183,8 +1176,6 @@ const DashboardUser = () => {
               </Link>
             </div>
           </div>
-
-          {/* USER PROFILE CARD */}
 
           <div className="flex justify-center">
             <div className="card w-full max-w-sm bg-base-100 text-base-content shadow-2xl">
@@ -1473,7 +1464,9 @@ const DashboardUser = () => {
           />
         </div>
 
-        {/* OVERALL PROGRESS */}
+        {/* ====================================================
+            OVERALL PROGRESS
+        ==================================================== */}
 
         <div className="card border border-base-300 bg-base-100 shadow-xl">
           <div className="card-body">

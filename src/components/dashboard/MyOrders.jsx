@@ -8,8 +8,9 @@ import {
   FaChevronLeft,
   FaChevronRight,
   FaExclamationTriangle,
-  FaShoppingBag,
   FaFileInvoice,
+  FaShoppingBag,
+  FaTruck,
 } from "react-icons/fa";
 
 import { AuthContext } from "../../Auth/AuthProvider";
@@ -28,45 +29,18 @@ const API_URL = String(import.meta.env.VITE_API_URL || "").trim();
 const ORDERS_PER_PAGE = 5;
 
 const STATUS_OPTIONS = [
-  {
-    value: "all",
-    label: "All",
-  },
-  {
-    value: "pending",
-    label: "Pending",
-  },
-  {
-    value: "confirmed",
-    label: "Confirmed",
-  },
-  {
-    value: "processing",
-    label: "Processing",
-  },
-  {
-    value: "shipped",
-    label: "Shipped",
-  },
-  {
-    value: "delivered",
-    label: "Delivered",
-  },
-  {
-    value: "cancelled",
-    label: "Cancelled",
-  },
+  { value: "all", label: "All" },
+  { value: "pending", label: "Pending" },
+  { value: "confirmed", label: "Confirmed" },
+  { value: "processing", label: "Processing" },
+  { value: "shipped", label: "Shipped" },
+  { value: "delivered", label: "Delivered" },
+  { value: "cancelled", label: "Cancelled" },
 ];
 
 const SORT_OPTIONS = [
-  {
-    value: "newest",
-    label: "Newest First",
-  },
-  {
-    value: "oldest",
-    label: "Oldest First",
-  },
+  { value: "newest", label: "Newest First" },
+  { value: "oldest", label: "Oldest First" },
 ];
 
 // ============================================================
@@ -291,7 +265,7 @@ const MyOrders = () => {
   const [page, setPage] = useState(1);
 
   // ==========================================================
-  // GET MY ORDERS
+  // FETCH MY ORDERS
   // ==========================================================
 
   const { data, isLoading, isFetching, isError, error, refetch } = useQuery({
@@ -322,7 +296,6 @@ const MyOrders = () => {
           headers: {
             Authorization: `Bearer ${idToken}`,
           },
-
           withCredentials: true,
         },
       );
@@ -337,11 +310,8 @@ const MyOrders = () => {
     },
 
     staleTime: 1000 * 30,
-
     gcTime: 1000 * 60 * 5,
-
     retry: 1,
-
     refetchOnWindowFocus: false,
   });
 
@@ -357,30 +327,12 @@ const MyOrders = () => {
       : {};
 
   // ==========================================================
-  // IMPORTANT:
-  // totalOrders = ALL ORDERS OF CURRENT USER
-  //
-  // Server:
-  // const totalOrders = await ordersCollection.countDocuments({
-  //   email,
-  // });
-  //
-  // Therefore this value does NOT depend on status filter.
+  // PAGINATION DATA
   // ==========================================================
 
   const totalOrders = Number(pagination.totalOrders ?? 0);
 
-  // ==========================================================
-  // FILTERED ORDERS
-  //
-  // This changes when status filter is selected.
-  // ==========================================================
-
   const filteredOrders = Number(pagination.filteredOrders ?? orders.length);
-
-  // ==========================================================
-  // PAGINATION
-  // ==========================================================
 
   const calculatedTotalPages =
     filteredOrders > 0 ? Math.ceil(filteredOrders / ORDERS_PER_PAGE) : 0;
@@ -438,7 +390,6 @@ const MyOrders = () => {
           headers: {
             Authorization: `Bearer ${idToken}`,
           },
-
           withCredentials: true,
         },
       );
@@ -868,6 +819,45 @@ const MyOrders = () => {
                 </div>
 
                 {/* ==================================================
+                    ORDER TRACKING
+                ================================================== */}
+
+                {["confirmed", "processing", "shipped", "delivered"].includes(
+                  orderStatus,
+                ) && (
+                  <div className="border-b border-base-300 bg-base-200/40 px-6 py-6">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <div className="flex items-center gap-3">
+                          <FaTruck className="text-2xl text-primary" />
+
+                          <h3 className="text-lg font-bold">Order Tracking</h3>
+                        </div>
+
+                        <p className="mt-2 text-sm text-gray-500">
+                          Current status:{" "}
+                          <span className="font-semibold text-base-content">
+                            {formatStatus(orderStatus)}
+                          </span>
+                        </p>
+                      </div>
+
+                      {orderId && (
+                        <Link
+                          to={`/dashboard/orders/${encodeURIComponent(
+                            orderId,
+                          )}/track`}
+                          className="btn btn-primary btn-sm gap-2"
+                        >
+                          <FaTruck />
+                          Track Order
+                        </Link>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* ==================================================
                     CUSTOMER INFORMATION
                 ================================================== */}
 
@@ -1046,7 +1036,7 @@ const MyOrders = () => {
                                 )}
                               </div>
 
-                              {/* PRODUCT INFORMATION */}
+                              {/* PRODUCT INFO */}
 
                               <div className="flex-1">
                                 <h4 className="text-lg font-bold">
@@ -1110,6 +1100,8 @@ const MyOrders = () => {
 
                   <div className="mt-6 border-t border-base-300 pt-6">
                     <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+                      {/* TOTAL */}
+
                       <div>
                         <p className="text-sm text-gray-500">Grand Total</p>
 
@@ -1122,7 +1114,30 @@ const MyOrders = () => {
                         </p>
                       </div>
 
+                      {/* ACTIONS */}
+
                       <div className="flex flex-col gap-3 sm:flex-row">
+                        {/* TRACK ORDER */}
+
+                        {orderId &&
+                          [
+                            "confirmed",
+                            "processing",
+                            "shipped",
+                            "delivered",
+                          ].includes(orderStatus) && (
+                            <Link
+                              to={`/dashboard/orders/${encodeURIComponent(
+                                orderId,
+                              )}/track`}
+                              className="btn btn-primary gap-2"
+                            >
+                              <FaTruck />
+
+                              <span>Track Order</span>
+                            </Link>
+                          )}
+
                         {/* INVOICE */}
 
                         {orderId && (
@@ -1154,6 +1169,8 @@ const MyOrders = () => {
                         )}
                       </div>
                     </div>
+
+                    {/* CANCEL ERROR */}
 
                     {cancelMutation.isError &&
                       cancelMutation.variables === orderId && (

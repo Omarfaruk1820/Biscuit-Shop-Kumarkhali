@@ -58,7 +58,6 @@ import Invoice from "../components/dashboard/Invoice";
 
 import AddProduct from "../components/dashboard/AddProduct";
 import ManageProducts from "../components/dashboard/ManageProducts";
-import ManageOrders from "../components/dashboard/ManageOrders";
 import AllUsers from "../components/dashboard/AllUsers";
 
 // ============================================================
@@ -68,6 +67,9 @@ import AllUsers from "../components/dashboard/AllUsers";
 import PrivateRoute from "./PrivateRoute";
 import UserRoute from "./UserRoute";
 import AdminRoute from "./AdminRoute";
+import OrderTracking from "../pages/OrderTracking";
+import AdminOrderList from "../components/dashboard/AdminOrderList";
+import AdminOrderDetails from "../components/dashboard/AdminOrderDetails";
 
 // ============================================================
 // ROUTER
@@ -180,6 +182,10 @@ const router = createBrowserRouter([
       // USER DASHBOARD
       // ========================================================
 
+      // ========================================================
+      // USER DASHBOARD
+      // ========================================================
+
       {
         path: "user-dashboard",
         element: (
@@ -224,6 +230,19 @@ const router = createBrowserRouter([
         element: (
           <UserRoute>
             <Invoice />
+          </UserRoute>
+        ),
+      },
+
+      // ========================================================
+      // USER ORDER TRACKING
+      // ========================================================
+
+      {
+        path: "orders/:id/track",
+        element: (
+          <UserRoute>
+            <OrderTracking />
           </UserRoute>
         ),
       },
@@ -294,33 +313,29 @@ const router = createBrowserRouter([
       },
 
       // ========================================================
+      // ADMIN - ORDER MANAGEMENT
+      // ========================================================
+
+      {
+        path: "orders",
+        element: (
+          <AdminRoute>
+            <AdminOrderList />
+          </AdminRoute>
+        ),
+      },
+
+      {
+        path: "orders/:id",
+        element: (
+          <AdminRoute>
+            <AdminOrderDetails />
+          </AdminRoute>
+        ),
+      },
+
+      // ========================================================
       // ADMIN - MANAGE PRODUCTS
-      // ========================================================
-
-      {
-        path: "manage-products",
-        element: (
-          <AdminRoute>
-            <ManageProducts />
-          </AdminRoute>
-        ),
-      },
-
-      // ========================================================
-      // ADMIN - MANAGE ORDERS
-      // ========================================================
-
-      {
-        path: "manage-orders",
-        element: (
-          <AdminRoute>
-            <ManageOrders />
-          </AdminRoute>
-        ),
-      },
-
-      // ========================================================
-      // ADMIN - ALL USERS
       // ========================================================
 
       {
