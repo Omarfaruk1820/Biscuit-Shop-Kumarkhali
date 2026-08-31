@@ -1,9 +1,9 @@
 import { useCallback, useContext, useEffect, useMemo, useState } from "react";
-
 import {
   FiArrowLeft,
   FiCalendar,
   FiCheckCircle,
+  FiChevronRight,
   FiClock,
   FiCreditCard,
   FiDollarSign,
@@ -17,46 +17,23 @@ import {
   FiUser,
   FiXCircle,
 } from "react-icons/fi";
-
 import { useNavigate, useParams } from "react-router-dom";
 
 import { AuthContext } from "../../Auth/AuthProvider";
 import axiosSecure from "../../hooks/axiosSecure";
 
-// ============================================================
-// CONSTANTS
-// ============================================================
-
 const REQUEST_TIMEOUT = 15000;
 
-const STATUS_OPTIONS = [
-  {
-    value: "pending",
-    label: "Pending",
-  },
-  {
-    value: "confirmed",
-    label: "Confirmed",
-  },
-  {
-    value: "processing",
-    label: "Processing",
-  },
-  {
-    value: "shipped",
-    label: "Shipped",
-  },
-  {
-    value: "delivered",
-    label: "Delivered",
-  },
-  {
-    value: "cancelled",
-    label: "Cancelled",
-  },
+const ORDER_STATUSES = [
+  "pending",
+  "confirmed",
+  "processing",
+  "shipped",
+  "delivered",
+  "cancelled",
 ];
 
-const ORDER_STATUS_LABELS = {
+const STATUS_LABELS = {
   pending: "Pending",
   confirmed: "Confirmed",
   processing: "Processing",
@@ -65,85 +42,82 @@ const ORDER_STATUS_LABELS = {
   cancelled: "Cancelled",
 };
 
-// ============================================================
-// STATUS HELPERS
-// ============================================================
-
-const getStatusBadge = (status) => {
-  switch (status) {
-    case "pending":
-      return "badge-warning";
-
-    case "confirmed":
-      return "badge-primary";
-
-    case "processing":
-      return "badge-info";
-
-    case "shipped":
-      return "badge-secondary";
-
-    case "delivered":
-      return "badge-success";
-
-    case "cancelled":
-      return "badge-error";
-
-    default:
-      return "badge-ghost";
-  }
+const STATUS_BADGES = {
+  pending: "badge-warning",
+  confirmed: "badge-primary",
+  processing: "badge-info",
+  shipped: "badge-secondary",
+  delivered: "badge-success",
+  cancelled: "badge-error",
 };
 
-const getStatusIcon = (status) => {
-  switch (status) {
-    case "pending":
-      return <FiClock />;
-
-    case "confirmed":
-      return <FiCheckCircle />;
-
-    case "processing":
-      return <FiPackage />;
-
-    case "shipped":
-      return <FiTruck />;
-
-    case "delivered":
-      return <FiCheckCircle />;
-
-    case "cancelled":
-      return <FiXCircle />;
-
-    default:
-      return <FiClock />;
-  }
+const PAYMENT_BADGES = {
+  unpaid: "badge-warning",
+  pending: "badge-warning",
+  paid: "badge-success",
+  failed: "badge-error",
+  refunded: "badge-info",
 };
 
-const getPaymentStatusBadge = (status) => {
-  switch (status) {
-    case "paid":
-      return "badge-success";
-
-    case "pending":
-      return "badge-warning";
-
-    case "failed":
-      return "badge-error";
-
-    case "refunded":
-      return "badge-info";
-
-    case "unpaid":
-      return "badge-warning";
-
-    default:
-      return "badge-ghost";
-  }
+const STATUS_ICONS = {
+  pending: FiClock,
+  confirmed: FiCheckCircle,
+  processing: FiPackage,
+  shipped: FiTruck,
+  delivered: FiCheckCircle,
+  cancelled: FiXCircle,
 };
 
-// ============================================================
-// FORMAT HELPERS
-// ============================================================
+/* -------------------------------------------------------------------------- */
+/* Helpers                                                                    */
+/* -------------------------------------------------------------------------- */
+
+const round = (value) => {
+  const number = Number(value);
+
+  return Number.isFinite(number) ? Number(number.toFixed(2)) : 0;
+};
+
+const normalizeStatus = (value) => {
+  const status = String(value || "pending")
+    .trim()
+    .toLowerCase();
+
+  return ORDER_STATUSES.includes(status) ? status : "pending";
+};
+
+const normalizePaymentStatus = (value) => {
+  const status = String(value || "pending")
+    .trim()
+    .toLowerCase();
+
+  return status;
+};
+
+const formatStatus = (value) => {
+  const status = normalizeStatus(value);
+
+  return STATUS_LABELS[status] || "Pending";
+};
+
+const getStatusBadge = (value) => {
+  const status = normalizeStatus(value);
+
+  return STATUS_BADGES[status] || "badge-ghost";
+};
+
+const getPaymentBadge = (value) => {
+  const status = normalizePaymentStatus(value);
+
+  return PAYMENT_BADGES[status] || "badge-ghost";
+};
+
+const getStatusIcon = (value) => {
+  const status = normalizeStatus(value);
+  const Icon = STATUS_ICONS[status] || FiClock;
+
+  return <Icon />;
+};
 
 const capitalize = (value = "") => {
   const text = String(value).trim();
@@ -166,24 +140,6 @@ const formatCurrency = (value) => {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
-};
-
-const formatDate = (value) => {
-  if (!value) {
-    return "—";
-  }
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "—";
-  }
-
-  return date.toLocaleDateString("en-BD", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
 };
 
 const formatDateTime = (value) => {
@@ -212,13 +168,14 @@ const formatPaymentMethod = (value) => {
   }
 
   return String(value)
-    .replaceAll("_", " ")
-    .split(" ")
+    .replace(/[_-]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
     .map(capitalize)
     .join(" ");
 };
 
-const getApiErrorMessage = (error, fallback) => {
+const getErrorMessage = (error, fallback) => {
   return (
     error?.response?.data?.message ||
     error?.response?.data?.error ||
@@ -227,27 +184,244 @@ const getApiErrorMessage = (error, fallback) => {
   );
 };
 
-const getOrderQuantity = (order) => {
-  if (Number.isFinite(Number(order?.totalQuantity))) {
-    return Number(order.totalQuantity);
+const toNumber = (value, fallback = 0) => {
+  if (value === null || value === undefined || value === "") {
+    return fallback;
   }
 
-  if (!Array.isArray(order?.items)) {
-    return 0;
+  const number = Number(value);
+
+  return Number.isFinite(number) ? number : fallback;
+};
+
+const getOrderId = (order) => {
+  return String(order?._id || order?.id || "");
+};
+
+const getOrderNumber = (order) => {
+  if (order?.orderNumber) {
+    return order.orderNumber;
   }
 
-  return order.items.reduce(
-    (total, item) => total + Number(item?.quantity || 0),
+  if (order?.orderNo) {
+    return order.orderNo;
+  }
+
+  if (order?.invoiceNumber) {
+    return order.invoiceNumber;
+  }
+
+  const id = getOrderId(order);
+
+  return id ? id.slice(-8).toUpperCase() : "—";
+};
+
+const getCustomer = (order) => {
+  return order?.customer && typeof order.customer === "object"
+    ? order.customer
+    : {};
+};
+
+const getItems = (order) => {
+  return Array.isArray(order?.items) ? order.items : [];
+};
+
+const getTimeline = (order) => {
+  if (Array.isArray(order?.timeline)) {
+    return order.timeline;
+  }
+
+  if (Array.isArray(order?.statusHistory)) {
+    return order.statusHistory;
+  }
+
+  return [];
+};
+
+const getItemQuantity = (item) => {
+  return Math.max(0, toNumber(item?.quantity, 0));
+};
+
+const getItemOriginalPrice = (item) => {
+  return Math.max(0, toNumber(item?.price, 0));
+};
+
+const getItemFinalPrice = (item) => {
+  const finalPrice = toNumber(item?.finalPrice, NaN);
+
+  if (Number.isFinite(finalPrice)) {
+    return Math.max(0, finalPrice);
+  }
+
+  const price = getItemOriginalPrice(item);
+
+  const discount = Math.max(0, toNumber(item?.discount, 0));
+
+  return Math.max(0, price - (price * discount) / 100);
+};
+
+const getItemSubtotal = (item) => {
+  const storedSubtotal = toNumber(item?.subtotal, NaN);
+
+  if (Number.isFinite(storedSubtotal)) {
+    return Math.max(0, storedSubtotal);
+  }
+
+  return round(getItemFinalPrice(item) * getItemQuantity(item));
+};
+
+const getItemDiscountAmount = (item) => {
+  const storedDiscountAmount = toNumber(item?.discountAmount, NaN);
+
+  if (Number.isFinite(storedDiscountAmount) && storedDiscountAmount >= 0) {
+    return storedDiscountAmount;
+  }
+
+  const quantity = getItemQuantity(item);
+  const originalPrice = getItemOriginalPrice(item);
+  const finalPrice = getItemFinalPrice(item);
+
+  const calculatedDiscount = Math.max(
+    0,
+    (originalPrice - finalPrice) * quantity,
+  );
+
+  if (calculatedDiscount > 0) {
+    return calculatedDiscount;
+  }
+
+  const discountPercent = Math.max(0, toNumber(item?.discount, 0));
+
+  return (originalPrice * discountPercent * quantity) / 100;
+};
+
+/* -------------------------------------------------------------------------- */
+/* Order Summary Helpers                                                      */
+/* -------------------------------------------------------------------------- */
+
+const getTotalQuantity = (order) => {
+  if (order?.totalQuantity !== undefined && order?.totalQuantity !== null) {
+    return Math.max(0, toNumber(order.totalQuantity, 0));
+  }
+
+  return getItems(order).reduce(
+    (total, item) => total + getItemQuantity(item),
     0,
   );
 };
 
 const getProductCount = (order) => {
-  if (Number.isFinite(Number(order?.totalItems))) {
-    return Number(order.totalItems);
+  if (order?.totalItems !== undefined && order?.totalItems !== null) {
+    return Math.max(0, toNumber(order.totalItems, 0));
   }
 
-  return Array.isArray(order?.items) ? order.items.length : 0;
+  return getItems(order).length;
+};
+
+/*
+ * IMPORTANT:
+ *
+ * Backend subtotal:
+ *
+ * finalPrice * quantity
+ *
+ * Therefore subtotal is already AFTER product discount.
+ */
+const getSubtotal = (order) => {
+  if (order?.subtotal !== undefined && order?.subtotal !== null) {
+    return Math.max(0, toNumber(order.subtotal, 0));
+  }
+
+  if (order?.subTotal !== undefined && order?.subTotal !== null) {
+    return Math.max(0, toNumber(order.subTotal, 0));
+  }
+
+  return round(
+    getItems(order).reduce(
+      (total, item) => total + getItemFinalPrice(item) * getItemQuantity(item),
+      0,
+    ),
+  );
+};
+
+const getDiscountTotal = (order) => {
+  if (order?.totalDiscount !== undefined && order?.totalDiscount !== null) {
+    return Math.max(0, toNumber(order.totalDiscount, 0));
+  }
+
+  if (order?.discountAmount !== undefined && order?.discountAmount !== null) {
+    return Math.max(0, toNumber(order.discountAmount, 0));
+  }
+
+  if (order?.discount !== undefined && order?.discount !== null) {
+    return Math.max(0, toNumber(order.discount, 0));
+  }
+
+  return round(
+    getItems(order).reduce(
+      (total, item) => total + getItemDiscountAmount(item),
+      0,
+    ),
+  );
+};
+
+const getShippingCost = (order) => {
+  if (order?.shipping !== undefined && order?.shipping !== null) {
+    return Math.max(0, toNumber(order.shipping, 0));
+  }
+
+  if (order?.shippingCost !== undefined && order?.shippingCost !== null) {
+    return Math.max(0, toNumber(order.shippingCost, 0));
+  }
+
+  if (order?.deliveryCharge !== undefined && order?.deliveryCharge !== null) {
+    return Math.max(0, toNumber(order.deliveryCharge, 0));
+  }
+
+  return 0;
+};
+
+const getTax = (order) => {
+  if (order?.tax !== undefined && order?.tax !== null) {
+    return Math.max(0, toNumber(order.tax, 0));
+  }
+
+  if (order?.taxAmount !== undefined && order?.taxAmount !== null) {
+    return Math.max(0, toNumber(order.taxAmount, 0));
+  }
+
+  return 0;
+};
+
+/*
+ * IMPORTANT:
+ *
+ * Your backend calculates:
+ *
+ * subtotal = discounted item total
+ *
+ * grandTotal = subtotal + shipping + tax
+ *
+ * Therefore DO NOT do:
+ *
+ * subtotal - totalDiscount + shipping + tax
+ *
+ * because that would subtract the discount twice.
+ */
+const getGrandTotal = (order) => {
+  if (order?.grandTotal !== undefined && order?.grandTotal !== null) {
+    return Math.max(0, toNumber(order.grandTotal, 0));
+  }
+
+  if (order?.total !== undefined && order?.total !== null) {
+    return Math.max(0, toNumber(order.total, 0));
+  }
+
+  if (order?.finalTotal !== undefined && order?.finalTotal !== null) {
+    return Math.max(0, toNumber(order.finalTotal, 0));
+  }
+
+  return round(getSubtotal(order) + getShippingCost(order) + getTax(order));
 };
 
 const getInitials = (name = "") => {
@@ -264,9 +438,9 @@ const getInitials = (name = "") => {
   return `${words[0][0]}${words[1][0]}`.toUpperCase();
 };
 
-// ============================================================
-// MAIN COMPONENT
-// ============================================================
+/* -------------------------------------------------------------------------- */
+/* Main Component                                                             */
+/* -------------------------------------------------------------------------- */
 
 const AdminOrderDetails = () => {
   const { user, loading: authLoading } = useContext(AuthContext);
@@ -276,36 +450,11 @@ const AdminOrderDetails = () => {
   const navigate = useNavigate();
 
   const [order, setOrder] = useState(null);
-
   const [loading, setLoading] = useState(true);
-
   const [refreshing, setRefreshing] = useState(false);
-
   const [updatingStatus, setUpdatingStatus] = useState(false);
-
   const [error, setError] = useState("");
-
   const [toast, setToast] = useState(null);
-
-  // ============================================================
-  // API REQUEST
-  // ============================================================
-
-  const apiRequest = useCallback(async (config) => {
-    return axiosSecure({
-      ...config,
-      timeout: REQUEST_TIMEOUT,
-      withCredentials: true,
-      headers: {
-        Accept: "application/json",
-        ...(config?.headers || {}),
-      },
-    });
-  }, []);
-
-  // ============================================================
-  // TOAST
-  // ============================================================
 
   const showToast = useCallback((type, message) => {
     setToast({
@@ -318,9 +467,17 @@ const AdminOrderDetails = () => {
     }, 3500);
   }, []);
 
-  // ============================================================
-  // FETCH ORDER
-  // ============================================================
+  const apiRequest = useCallback(async (config) => {
+    return axiosSecure({
+      ...config,
+      timeout: REQUEST_TIMEOUT,
+      withCredentials: true,
+      headers: {
+        Accept: "application/json",
+        ...(config?.headers || {}),
+      },
+    });
+  }, []);
 
   const fetchOrder = useCallback(
     async ({ silent = false } = {}) => {
@@ -342,21 +499,23 @@ const AdminOrderDetails = () => {
           url: `/orders/${id}`,
         });
 
-        const nextOrder = response?.data?.data;
+        const responseData = response?.data;
 
-        if (!nextOrder) {
+        const fetchedOrder =
+          responseData?.data || responseData?.order || responseData;
+
+        if (
+          !fetchedOrder ||
+          typeof fetchedOrder !== "object" ||
+          Array.isArray(fetchedOrder)
+        ) {
           throw new Error("Order information was not found.");
         }
 
-        setOrder(nextOrder);
-      } catch (error) {
-        console.error("FETCH ADMIN ORDER DETAILS ERROR:", error);
-
+        setOrder(fetchedOrder);
+      } catch (requestError) {
         setError(
-          getApiErrorMessage(
-            error,
-            "Failed to load order details. Please try again.",
-          ),
+          getErrorMessage(requestError, "Failed to load order details."),
         );
       } finally {
         setLoading(false);
@@ -366,10 +525,6 @@ const AdminOrderDetails = () => {
     [apiRequest, id, user],
   );
 
-  // ============================================================
-  // INITIAL LOAD
-  // ============================================================
-
   useEffect(() => {
     if (authLoading || !user || !id) {
       return;
@@ -378,18 +533,14 @@ const AdminOrderDetails = () => {
     fetchOrder();
   }, [authLoading, user, id, fetchOrder]);
 
-  // ============================================================
-  // UPDATE ORDER STATUS
-  // ============================================================
-
   const handleStatusChange = async (event) => {
-    const nextStatus = event.target.value;
+    const nextStatus = normalizeStatus(event.target.value);
 
-    if (!order?._id || !nextStatus) {
-      return;
-    }
+    const currentStatus = normalizeStatus(order?.status);
 
-    if (nextStatus === order.status) {
+    const orderId = getOrderId(order);
+
+    if (!orderId || nextStatus === currentStatus) {
       return;
     }
 
@@ -398,39 +549,37 @@ const AdminOrderDetails = () => {
 
       const response = await apiRequest({
         method: "PATCH",
-        url: `/orders/status/${order._id}`,
+        url: `/orders/status/${orderId}`,
         data: {
           status: nextStatus,
         },
       });
 
-      const updatedOrder = response?.data?.data;
+      const responseData = response?.data;
+
+      const updatedOrder = responseData?.data || responseData?.order || null;
 
       if (updatedOrder) {
         setOrder(updatedOrder);
       } else {
-        await fetchOrder({ silent: true });
+        await fetchOrder({
+          silent: true,
+        });
       }
 
       showToast(
         "success",
-        response?.data?.message || "Order status updated successfully.",
+        responseData?.message || "Order status updated successfully.",
       );
-    } catch (error) {
-      console.error("UPDATE ADMIN ORDER STATUS ERROR:", error);
-
+    } catch (requestError) {
       showToast(
         "error",
-        getApiErrorMessage(error, "Failed to update order status."),
+        getErrorMessage(requestError, "Failed to update order status."),
       );
     } finally {
       setUpdatingStatus(false);
     }
   };
-
-  // ============================================================
-  // REFRESH
-  // ============================================================
 
   const handleRefresh = async () => {
     await fetchOrder({
@@ -440,66 +589,64 @@ const AdminOrderDetails = () => {
     showToast("success", "Order details refreshed.");
   };
 
-  // ============================================================
-  // DERIVED DATA
-  // ============================================================
+  const customer = useMemo(() => getCustomer(order), [order]);
 
-  const customer = order?.customer || {};
+  const items = useMemo(() => getItems(order), [order]);
 
-  const items = Array.isArray(order?.items) ? order.items : [];
+  const timeline = useMemo(() => {
+    return [...getTimeline(order)].sort((a, b) => {
+      const first = new Date(a?.createdAt || 0).getTime();
 
-  const timeline = Array.isArray(order?.timeline) ? order.timeline : [];
+      const second = new Date(b?.createdAt || 0).getTime();
 
-  const quantity = getOrderQuantity(order);
+      return second - first;
+    });
+  }, [order]);
 
-  const productCount = getProductCount(order);
+  const currentStatus = normalizeStatus(order?.status);
 
-  const currentStatus = order?.status || "pending";
+  const paymentStatus = normalizePaymentStatus(order?.paymentStatus);
 
-  const paymentStatus = order?.paymentStatus || "pending";
-
-  const paymentMethod = order?.paymentMethod;
-
-  const customerName = customer?.name || order?.name || "Unknown Customer";
+  const customerName =
+    customer?.name || order?.customerName || "Unknown Customer";
 
   const email = order?.email || customer?.email || "—";
 
-  const orderNumber =
-    order?.orderNumber || String(order?._id || "").slice(-8) || "—";
+  const phone = customer?.phone || order?.phone || "—";
 
-  const statusLabel =
-    ORDER_STATUS_LABELS[currentStatus] || capitalize(currentStatus);
+  const paymentMethod =
+    order?.paymentMethod || customer?.paymentMethod || "cod";
 
-  const reversedTimeline = useMemo(() => {
-    return [...timeline].reverse();
-  }, [timeline]);
+  const orderNumber = getOrderNumber(order);
 
-  // ============================================================
-  // AUTH LOADING
-  // ============================================================
+  const totalQuantity = getTotalQuantity(order);
+
+  const productCount = getProductCount(order);
+
+  const subtotal = getSubtotal(order);
+
+  const totalDiscount = getDiscountTotal(order);
+
+  const shipping = getShippingCost(order);
+
+  const tax = getTax(order);
+
+  const grandTotal = getGrandTotal(order);
 
   if (authLoading) {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center p-6">
-        <span className="loading loading-spinner loading-lg text-primary" />
-      </div>
-    );
+    return <AdminOrderDetailsSkeleton />;
   }
-
-  // ============================================================
-  // AUTH REQUIRED
-  // ============================================================
 
   if (!user) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center p-6">
+      <div className="flex min-h-[60vh] items-center justify-center bg-base-200 p-4 sm:p-6">
         <div className="alert alert-warning w-full max-w-lg">
-          <FiUser />
+          <FiUser className="shrink-0 text-lg" />
 
-          <div>
+          <div className="min-w-0">
             <h3 className="font-semibold">Authentication required</h3>
 
-            <p className="text-sm">
+            <p className="mt-1 text-sm">
               Please log in with an authorized admin account.
             </p>
           </div>
@@ -508,21 +655,13 @@ const AdminOrderDetails = () => {
     );
   }
 
-  // ============================================================
-  // LOADING
-  // ============================================================
-
   if (loading) {
     return <AdminOrderDetailsSkeleton />;
   }
 
-  // ============================================================
-  // ERROR
-  // ============================================================
-
   if (error || !order) {
     return (
-      <div className="min-h-screen bg-base-200 p-3 sm:p-4 md:p-6 lg:p-8">
+      <div className="min-h-screen overflow-x-hidden bg-base-200 p-3 sm:p-4 md:p-6 lg:p-8">
         <div className="mx-auto w-full max-w-5xl">
           <button
             type="button"
@@ -533,13 +672,13 @@ const AdminOrderDetails = () => {
             Back to Orders
           </button>
 
-          <div className="alert alert-error">
-            <FiXCircle />
+          <div className="alert alert-error items-start">
+            <FiXCircle className="mt-0.5 shrink-0 text-lg" />
 
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <h3 className="font-semibold">Unable to load order</h3>
 
-              <p className="break-words text-sm">
+              <p className="mt-1 break-words text-sm">
                 {error || "Order information was not found."}
               </p>
             </div>
@@ -557,18 +696,14 @@ const AdminOrderDetails = () => {
     );
   }
 
-  // ============================================================
-  // UI
-  // ============================================================
-
   return (
     <div className="min-h-screen overflow-x-hidden bg-base-200 p-3 sm:p-4 md:p-6 lg:p-8">
       <div className="mx-auto w-full max-w-[1500px] space-y-4 sm:space-y-5 lg:space-y-6">
-        {/* ======================================================
-            HEADER
-        ====================================================== */}
+        {/* ---------------------------------------------------------------- */}
+        {/* Header                                                           */}
+        {/* ---------------------------------------------------------------- */}
 
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="min-w-0">
             <button
               type="button"
@@ -579,29 +714,31 @@ const AdminOrderDetails = () => {
               Back to Orders
             </button>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary sm:h-11 sm:w-11">
+            <div className="flex items-start gap-3 sm:gap-4">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-lg text-primary sm:h-12 sm:w-12 sm:text-xl">
                 <FiShoppingBag />
               </div>
 
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="truncate text-xl font-bold tracking-tight sm:text-2xl md:text-3xl">
+                  <h1 className="text-xl font-bold tracking-tight sm:text-2xl md:text-3xl">
                     Order Details
                   </h1>
 
-                  <span className="badge badge-outline">{statusLabel}</span>
+                  <span className={`badge ${getStatusBadge(currentStatus)}`}>
+                    {formatStatus(currentStatus)}
+                  </span>
                 </div>
 
-                <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-base-content/60 sm:text-sm">
-                  <span className="font-medium text-base-content/80">
-                    {orderNumber}
+                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-base-content/60 sm:text-sm">
+                  <span className="font-semibold text-base-content/80">
+                    #{orderNumber}
                   </span>
 
-                  <span>•</span>
+                  <span className="hidden sm:inline">•</span>
 
-                  <span>Created {formatDateTime(order?.createdAt)}</span>
-                </p>
+                  <span>Created {formatDateTime(order.createdAt)}</span>
+                </div>
               </div>
             </div>
           </div>
@@ -613,25 +750,26 @@ const AdminOrderDetails = () => {
             className="btn btn-outline btn-sm w-full gap-2 sm:w-auto sm:btn-md"
           >
             <FiRefreshCw className={refreshing ? "animate-spin" : ""} />
-            Refresh
+
+            {refreshing ? "Refreshing..." : "Refresh"}
           </button>
-        </div>
+        </header>
 
-        {/* ======================================================
-            TOP SUMMARY
-        ====================================================== */}
+        {/* ---------------------------------------------------------------- */}
+        {/* Quick Information                                               */}
+        {/* ---------------------------------------------------------------- */}
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <QuickInfoCard
             icon={<FiDollarSign />}
             label="Grand Total"
-            value={formatCurrency(order?.grandTotal)}
+            value={formatCurrency(grandTotal)}
           />
 
           <QuickInfoCard
             icon={<FiPackage />}
             label="Total Quantity"
-            value={quantity}
+            value={totalQuantity}
             description={`${productCount} product${
               productCount === 1 ? "" : "s"
             }`}
@@ -641,34 +779,34 @@ const AdminOrderDetails = () => {
             icon={<FiCreditCard />}
             label="Payment"
             value={capitalize(paymentStatus)}
-            badge={getPaymentStatusBadge(paymentStatus)}
+            badge={getPaymentBadge(paymentStatus)}
           />
 
           <QuickInfoCard
             icon={<FiTruck />}
             label="Order Status"
-            value={statusLabel}
+            value={formatStatus(currentStatus)}
             badge={getStatusBadge(currentStatus)}
           />
-        </div>
+        </section>
 
-        {/* ======================================================
-            STATUS CONTROL
-        ====================================================== */}
+        {/* ---------------------------------------------------------------- */}
+        {/* Status Update                                                    */}
+        {/* ---------------------------------------------------------------- */}
 
-        <div className="card border border-base-300 bg-base-100 shadow-sm">
+        <section className="card border border-base-300 bg-base-100 shadow-sm">
           <div className="card-body p-4 sm:p-5 lg:p-6">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <FiTruck className="text-primary" />
+                  <FiTruck className="shrink-0 text-primary" />
 
-                  <h2 className="font-semibold">Order Status</h2>
+                  <h2 className="font-semibold">Update Order Status</h2>
                 </div>
 
-                <p className="mt-1 text-xs text-base-content/60 sm:text-sm">
-                  Update the order status. The customer tracking timeline will
-                  automatically reflect the new status.
+                <p className="mt-1 max-w-2xl text-xs leading-5 text-base-content/60 sm:text-sm">
+                  Change the order status. The customer order tracking timeline
+                  will reflect the updated status.
                 </p>
               </div>
 
@@ -676,39 +814,37 @@ const AdminOrderDetails = () => {
                 <span
                   className={`badge badge-lg ${getStatusBadge(currentStatus)}`}
                 >
-                  {statusLabel}
+                  {formatStatus(currentStatus)}
                 </span>
 
                 <select
                   value={currentStatus}
-                  disabled={updatingStatus}
                   onChange={handleStatusChange}
+                  disabled={updatingStatus}
                   className="select select-bordered w-full sm:w-56"
                 >
-                  {STATUS_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
+                  {ORDER_STATUSES.map((status) => (
+                    <option key={status} value={status}>
+                      {formatStatus(status)}
                     </option>
                   ))}
                 </select>
 
                 {updatingStatus && (
-                  <span className="loading loading-spinner loading-sm text-primary" />
+                  <span className="loading loading-spinner loading-sm self-center text-primary" />
                 )}
               </div>
             </div>
           </div>
-        </div>
+        </section>
 
-        {/* ======================================================
-            CUSTOMER + PAYMENT
-        ====================================================== */}
+        {/* ---------------------------------------------------------------- */}
+        {/* Customer + Payment                                               */}
+        {/* ---------------------------------------------------------------- */}
 
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          {/* CUSTOMER */}
-
+        <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           <InfoCard title="Customer Information" icon={<FiUser />}>
-            <div className="mb-5 flex items-center gap-3 rounded-xl bg-base-200/50 p-3 sm:p-4">
+            <div className="mb-5 flex min-w-0 items-center gap-3 rounded-xl bg-base-200/60 p-3 sm:p-4">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary/10 font-bold text-primary">
                 {getInitials(customerName)}
               </div>
@@ -722,23 +858,17 @@ const AdminOrderDetails = () => {
               </div>
             </div>
 
-            <div className="space-y-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <InfoRow label="Name" value={customerName} />
 
               <InfoRow label="Email" value={email} />
 
-              <InfoRow
-                label="Phone"
-                value={customer?.phone}
-                icon={<FiPhone />}
-              />
+              <InfoRow label="Phone" value={phone} icon={<FiPhone />} />
             </div>
           </InfoCard>
 
-          {/* PAYMENT */}
-
           <InfoCard title="Payment Information" icon={<FiCreditCard />}>
-            <div className="space-y-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <InfoRow
                 label="Payment Method"
                 value={formatPaymentMethod(paymentMethod)}
@@ -747,38 +877,36 @@ const AdminOrderDetails = () => {
               <InfoRow
                 label="Payment Status"
                 value={
-                  <span
-                    className={`badge ${getPaymentStatusBadge(paymentStatus)}`}
-                  >
+                  <span className={`badge ${getPaymentBadge(paymentStatus)}`}>
                     {capitalize(paymentStatus)}
                   </span>
                 }
               />
 
               <InfoRow
-                label="Grand Total"
-                value={formatCurrency(order?.grandTotal)}
+                label="Order Total"
+                value={formatCurrency(grandTotal)}
                 strong
               />
 
               <InfoRow
                 label="Order Date"
-                value={formatDateTime(order?.createdAt)}
+                value={formatDateTime(order.createdAt)}
                 icon={<FiCalendar />}
               />
 
               <InfoRow
                 label="Last Updated"
-                value={formatDateTime(order?.updatedAt)}
+                value={formatDateTime(order.updatedAt)}
                 icon={<FiClock />}
               />
             </div>
           </InfoCard>
-        </div>
+        </section>
 
-        {/* ======================================================
-            SHIPPING ADDRESS
-        ====================================================== */}
+        {/* ---------------------------------------------------------------- */}
+        {/* Shipping Information                                             */}
+        {/* ---------------------------------------------------------------- */}
 
         <InfoCard title="Shipping Information" icon={<FiMapPin />}>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -793,7 +921,7 @@ const AdminOrderDetails = () => {
               value={customer?.zip || customer?.postalCode}
             />
 
-            <InfoRow label="Phone" value={customer?.phone} icon={<FiPhone />} />
+            <InfoRow label="Phone" value={phone} icon={<FiPhone />} />
 
             {customer?.note && (
               <InfoRow label="Customer Note" value={customer.note} />
@@ -801,41 +929,44 @@ const AdminOrderDetails = () => {
           </div>
         </InfoCard>
 
-        {/* ======================================================
-            ORDERED PRODUCTS
-        ====================================================== */}
+        {/* ---------------------------------------------------------------- */}
+        {/* Products                                                         */}
+        {/* ---------------------------------------------------------------- */}
 
-        <div className="card overflow-hidden border border-base-300 bg-base-100 shadow-sm">
+        <section className="card overflow-hidden border border-base-300 bg-base-100 shadow-sm">
           <div className="border-b border-base-300 p-4 sm:p-5 lg:p-6">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div>
+              <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <FiPackage className="text-primary" />
+                  <FiPackage className="shrink-0 text-primary" />
 
                   <h2 className="font-semibold">Ordered Products</h2>
                 </div>
 
                 <p className="mt-1 text-xs text-base-content/60 sm:text-sm">
-                  {quantity} total item
-                  {quantity === 1 ? "" : "s"} from {productCount} product
+                  {totalQuantity} total item
+                  {totalQuantity === 1 ? "" : "s"} from {productCount} product
                   {productCount === 1 ? "" : "s"}
                 </p>
               </div>
 
-              <span className="badge badge-outline">
-                {order?.totalItems || productCount} Products
+              <span className="badge badge-outline self-start sm:self-auto">
+                {productCount} Product
+                {productCount === 1 ? "" : "s"}
               </span>
             </div>
           </div>
 
           {!items.length ? (
-            <div className="p-10 text-center text-sm text-base-content/60">
-              No product items found.
+            <div className="m-4 rounded-xl border border-dashed border-base-300 p-8 text-center sm:m-6">
+              <FiPackage className="mx-auto text-3xl text-base-content/30" />
+
+              <p className="mt-3 text-sm text-base-content/60">
+                Product details are not available for this order.
+              </p>
             </div>
           ) : (
             <>
-              {/* DESKTOP TABLE */}
-
               <div className="hidden overflow-x-auto lg:block">
                 <table className="table w-full">
                   <thead>
@@ -860,8 +991,6 @@ const AdminOrderDetails = () => {
                 </table>
               </div>
 
-              {/* MOBILE / TABLET */}
-
               <div className="divide-y divide-base-300 lg:hidden">
                 {items.map((item, index) => (
                   <ProductMobileCard
@@ -872,14 +1001,14 @@ const AdminOrderDetails = () => {
               </div>
             </>
           )}
-        </div>
+        </section>
 
-        {/* ======================================================
-            SUMMARY + TIMELINE
-        ====================================================== */}
+        {/* ---------------------------------------------------------------- */}
+        {/* Summary + Timeline                                               */}
+        {/* ---------------------------------------------------------------- */}
 
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
-          {/* ORDER SUMMARY */}
+        <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+          {/* Summary */}
 
           <div className="card border border-base-300 bg-base-100 shadow-sm">
             <div className="card-body p-4 sm:p-5 lg:p-6">
@@ -890,30 +1019,24 @@ const AdminOrderDetails = () => {
               </div>
 
               <div className="space-y-4">
-                <SummaryRow
-                  label="Subtotal"
-                  value={formatCurrency(order?.subtotal)}
-                />
+                <SummaryRow label="Subtotal" value={formatCurrency(subtotal)} />
 
                 <SummaryRow
                   label="Discount"
-                  value={`-${formatCurrency(order?.totalDiscount)}`}
+                  value={`-${formatCurrency(totalDiscount)}`}
                   valueClass="text-success"
                 />
 
-                <SummaryRow
-                  label="Shipping"
-                  value={formatCurrency(order?.shipping)}
-                />
+                <SummaryRow label="Shipping" value={formatCurrency(shipping)} />
 
-                <SummaryRow label="Tax" value={formatCurrency(order?.tax)} />
+                <SummaryRow label="Tax" value={formatCurrency(tax)} />
 
                 <div className="border-t border-base-300 pt-4">
                   <div className="flex items-center justify-between gap-4">
-                    <span className="text-base font-semibold">Grand Total</span>
+                    <span className="font-semibold">Grand Total</span>
 
-                    <span className="text-xl font-bold text-primary sm:text-2xl">
-                      {formatCurrency(order?.grandTotal)}
+                    <span className="whitespace-nowrap text-xl font-bold text-primary sm:text-2xl">
+                      {formatCurrency(grandTotal)}
                     </span>
                   </div>
                 </div>
@@ -921,14 +1044,14 @@ const AdminOrderDetails = () => {
             </div>
           </div>
 
-          {/* TIMELINE */}
+          {/* Timeline */}
 
           <div className="card border border-base-300 bg-base-100 shadow-sm">
             <div className="card-body p-4 sm:p-5 lg:p-6">
-              <div className="mb-5 flex items-center justify-between gap-3">
-                <div>
+              <div className="mb-5 flex items-start justify-between gap-3">
+                <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <FiClock className="text-primary" />
+                    <FiClock className="shrink-0 text-primary" />
 
                     <h2 className="font-semibold">Order Timeline</h2>
                   </div>
@@ -938,38 +1061,40 @@ const AdminOrderDetails = () => {
                   </p>
                 </div>
 
-                <span className="badge badge-outline">
+                <span className="badge badge-outline shrink-0">
                   {timeline.length} event
                   {timeline.length === 1 ? "" : "s"}
                 </span>
               </div>
 
-              {!reversedTimeline.length ? (
-                <div className="rounded-xl bg-base-200/50 p-6 text-center text-sm text-base-content/60">
+              {!timeline.length ? (
+                <div className="rounded-xl bg-base-200/60 p-6 text-center text-sm text-base-content/60">
                   No timeline events found.
                 </div>
               ) : (
-                <div className="space-y-0">
-                  {reversedTimeline.map((event, index) => (
+                <div>
+                  {timeline.map((event, index) => (
                     <TimelineItem
-                      key={`${event?.status}-${event?.createdAt}-${index}`}
+                      key={`${event?.status || "event"}-${
+                        event?.createdAt || index
+                      }-${index}`}
                       event={event}
-                      isLast={index === reversedTimeline.length - 1}
+                      isLast={index === timeline.length - 1}
                     />
                   ))}
                 </div>
               )}
             </div>
           </div>
-        </div>
+        </section>
 
-        {/* ======================================================
-            ORDER META
-        ====================================================== */}
+        {/* ---------------------------------------------------------------- */}
+        {/* Metadata                                                         */}
+        {/* ---------------------------------------------------------------- */}
 
-        <div className="card border border-base-300 bg-base-100 shadow-sm">
+        <section className="card border border-base-300 bg-base-100 shadow-sm">
           <div className="card-body p-4 sm:p-5">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <MetaItem
                 icon={<FiHash />}
                 label="Order Number"
@@ -979,28 +1104,28 @@ const AdminOrderDetails = () => {
               <MetaItem
                 icon={<FiCalendar />}
                 label="Created"
-                value={formatDateTime(order?.createdAt)}
+                value={formatDateTime(order.createdAt)}
               />
 
               <MetaItem
                 icon={<FiClock />}
                 label="Updated"
-                value={formatDateTime(order?.updatedAt)}
+                value={formatDateTime(order.updatedAt)}
               />
 
               <MetaItem
                 icon={<FiPackage />}
                 label="Total Quantity"
-                value={quantity}
+                value={totalQuantity}
               />
             </div>
           </div>
-        </div>
+        </section>
       </div>
 
-      {/* ========================================================
-          TOAST
-      ======================================================== */}
+      {/* ------------------------------------------------------------------ */}
+      {/* Toast                                                              */}
+      {/* ------------------------------------------------------------------ */}
 
       {toast && (
         <div className="toast toast-end toast-bottom z-[100] w-[calc(100%-2rem)] max-w-sm sm:w-auto">
@@ -1017,16 +1142,16 @@ const AdminOrderDetails = () => {
   );
 };
 
-// ============================================================
-// QUICK INFO CARD
-// ============================================================
+/* -------------------------------------------------------------------------- */
+/* Quick Info Card                                                            */
+/* -------------------------------------------------------------------------- */
 
 const QuickInfoCard = ({ icon, label, value, description, badge }) => {
   return (
     <div className="card border border-base-300 bg-base-100 shadow-sm">
       <div className="card-body p-4 sm:p-5">
         <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="truncate text-xs text-base-content/60">{label}</p>
 
             <div className="mt-2">
@@ -1040,7 +1165,9 @@ const QuickInfoCard = ({ icon, label, value, description, badge }) => {
             </div>
 
             {description && (
-              <p className="mt-1 text-xs text-base-content/50">{description}</p>
+              <p className="mt-1 truncate text-xs text-base-content/50">
+                {description}
+              </p>
             )}
           </div>
 
@@ -1053,16 +1180,16 @@ const QuickInfoCard = ({ icon, label, value, description, badge }) => {
   );
 };
 
-// ============================================================
-// INFO CARD
-// ============================================================
+/* -------------------------------------------------------------------------- */
+/* Info Card                                                                  */
+/* -------------------------------------------------------------------------- */
 
 const InfoCard = ({ title, icon, children }) => {
   return (
     <div className="card border border-base-300 bg-base-100 shadow-sm">
       <div className="card-body p-4 sm:p-5 lg:p-6">
         <div className="mb-5 flex items-center gap-2">
-          <span className="text-primary">{icon}</span>
+          <span className="shrink-0 text-primary">{icon}</span>
 
           <h2 className="font-semibold">{title}</h2>
         </div>
@@ -1073,9 +1200,9 @@ const InfoCard = ({ title, icon, children }) => {
   );
 };
 
-// ============================================================
-// INFO ROW
-// ============================================================
+/* -------------------------------------------------------------------------- */
+/* Info Row                                                                   */
+/* -------------------------------------------------------------------------- */
 
 const InfoRow = ({ label, value, icon, strong = false }) => {
   return (
@@ -1097,19 +1224,25 @@ const InfoRow = ({ label, value, icon, strong = false }) => {
   );
 };
 
-// ============================================================
-// PRODUCT TABLE ROW
-// ============================================================
+/* -------------------------------------------------------------------------- */
+/* Product Table Row                                                          */
+/* -------------------------------------------------------------------------- */
 
 const ProductTableRow = ({ item }) => {
-  const quantity = Number(item?.quantity) || 0;
+  const quantity = getItemQuantity(item);
 
-  const subtotal = item?.subtotal ?? Number(item?.finalPrice || 0) * quantity;
+  const price = getItemFinalPrice(item);
+
+  const subtotal = getItemSubtotal(item);
+
+  const discount = Math.max(0, toNumber(item?.discount, 0));
+
+  const originalPrice = getItemOriginalPrice(item);
 
   return (
     <tr className="hover:bg-base-200/40">
       <td>
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           <ProductImage item={item} />
 
           <div className="min-w-0">
@@ -1128,13 +1261,25 @@ const ProductTableRow = ({ item }) => {
         </div>
       </td>
 
-      <td>{item?.sku || "—"}</td>
-
-      <td>{formatCurrency(item?.price)}</td>
+      <td>
+        <span className="whitespace-nowrap">{item?.sku || "—"}</span>
+      </td>
 
       <td>
-        {Number(item?.discount) > 0 ? (
-          <span className="text-success">-{item.discount}%</span>
+        <div className="whitespace-nowrap">
+          {discount > 0 && (
+            <div className="text-xs text-base-content/40 line-through">
+              {formatCurrency(originalPrice)}
+            </div>
+          )}
+
+          <div>{formatCurrency(price)}</div>
+        </div>
+      </td>
+
+      <td>
+        {discount > 0 ? (
+          <span className="text-success">-{discount}%</span>
         ) : (
           "—"
         )}
@@ -1147,14 +1292,20 @@ const ProductTableRow = ({ item }) => {
   );
 };
 
-// ============================================================
-// PRODUCT MOBILE CARD
-// ============================================================
+/* -------------------------------------------------------------------------- */
+/* Product Mobile Card                                                        */
+/* -------------------------------------------------------------------------- */
 
 const ProductMobileCard = ({ item }) => {
-  const quantity = Number(item?.quantity) || 0;
+  const quantity = getItemQuantity(item);
 
-  const subtotal = item?.subtotal ?? Number(item?.finalPrice || 0) * quantity;
+  const price = getItemFinalPrice(item);
+
+  const subtotal = getItemSubtotal(item);
+
+  const discount = Math.max(0, toNumber(item?.discount, 0));
+
+  const originalPrice = getItemOriginalPrice(item);
 
   return (
     <div className="p-4 sm:p-5">
@@ -1164,7 +1315,9 @@ const ProductMobileCard = ({ item }) => {
         <div className="min-w-0 flex-1">
           <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
             <div className="min-w-0">
-              <p className="font-semibold">{item?.name || "Unknown Product"}</p>
+              <p className="break-words font-semibold">
+                {item?.name || "Unknown Product"}
+              </p>
 
               {item?.brand && (
                 <p className="text-xs text-base-content/50">{item.brand}</p>
@@ -1175,23 +1328,37 @@ const ProductMobileCard = ({ item }) => {
               )}
             </div>
 
-            <p className="font-bold text-primary">{formatCurrency(subtotal)}</p>
+            <p className="whitespace-nowrap font-bold text-primary">
+              {formatCurrency(subtotal)}
+            </p>
           </div>
 
-          <div className="mt-3 grid grid-cols-2 gap-3 rounded-xl bg-base-200/50 p-3 sm:grid-cols-4">
+          <div className="mt-3 grid grid-cols-2 gap-3 rounded-xl bg-base-200/60 p-3 sm:grid-cols-4">
             <MobileProductInfo label="SKU" value={item?.sku} />
 
             <MobileProductInfo
               label="Price"
-              value={formatCurrency(item?.price)}
+              value={
+                discount > 0 ? (
+                  <span>
+                    <span className="mr-1 text-xs text-base-content/40 line-through">
+                      {formatCurrency(originalPrice)}
+                    </span>
+
+                    {formatCurrency(price)}
+                  </span>
+                ) : (
+                  formatCurrency(price)
+                )
+              }
             />
 
             <MobileProductInfo label="Qty" value={quantity} />
 
             <MobileProductInfo
               label="Discount"
-              value={Number(item?.discount) > 0 ? `-${item.discount}%` : "—"}
-              valueClass={Number(item?.discount) > 0 ? "text-success" : ""}
+              value={discount > 0 ? `-${discount}%` : "—"}
+              valueClass={discount > 0 ? "text-success" : ""}
             />
           </div>
         </div>
@@ -1200,19 +1367,24 @@ const ProductMobileCard = ({ item }) => {
   );
 };
 
-// ============================================================
-// PRODUCT IMAGE
-// ============================================================
+/* -------------------------------------------------------------------------- */
+/* Product Image                                                              */
+/* -------------------------------------------------------------------------- */
 
 const ProductImage = ({ item }) => {
+  const [imageError, setImageError] = useState(false);
+
+  const image = item?.image || item?.imageUrl || "";
+
   return (
     <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-base-300 bg-base-200 sm:h-16 sm:w-16">
-      {item?.image ? (
+      {image && !imageError ? (
         <img
-          src={item.image}
+          src={image}
           alt={item?.name || "Product"}
           className="h-full w-full object-cover"
           loading="lazy"
+          onError={() => setImageError(true)}
         />
       ) : (
         <div className="flex h-full w-full items-center justify-center text-xl text-base-content/30">
@@ -1223,9 +1395,9 @@ const ProductImage = ({ item }) => {
   );
 };
 
-// ============================================================
-// MOBILE PRODUCT INFO
-// ============================================================
+/* -------------------------------------------------------------------------- */
+/* Mobile Product Info                                                       */
+/* -------------------------------------------------------------------------- */
 
 const MobileProductInfo = ({ label, value, valueClass = "" }) => {
   return (
@@ -1241,28 +1413,28 @@ const MobileProductInfo = ({ label, value, valueClass = "" }) => {
   );
 };
 
-// ============================================================
-// SUMMARY ROW
-// ============================================================
+/* -------------------------------------------------------------------------- */
+/* Summary Row                                                                */
+/* -------------------------------------------------------------------------- */
 
 const SummaryRow = ({ label, value, valueClass = "" }) => {
   return (
     <div className="flex items-center justify-between gap-4">
       <span className="text-sm text-base-content/60">{label}</span>
 
-      <span className={`text-sm font-medium ${valueClass}`}>{value}</span>
+      <span className={`whitespace-nowrap text-sm font-medium ${valueClass}`}>
+        {value}
+      </span>
     </div>
   );
 };
 
-// ============================================================
-// TIMELINE ITEM
-// ============================================================
+/* -------------------------------------------------------------------------- */
+/* Timeline Item                                                              */
+/* -------------------------------------------------------------------------- */
 
 const TimelineItem = ({ event, isLast }) => {
-  const status = event?.status || "pending";
-
-  const statusLabel = ORDER_STATUS_LABELS[status] || capitalize(status);
+  const status = normalizeStatus(event?.status);
 
   return (
     <div className="flex gap-3 sm:gap-4">
@@ -1282,24 +1454,31 @@ const TimelineItem = ({ event, isLast }) => {
 
       <div className="min-w-0 flex-1 pb-6">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="font-semibold">{statusLabel}</span>
+          <span className="font-semibold">{formatStatus(status)}</span>
 
           {event?.createdAt && (
-            <span className="text-xs text-base-content/50">
-              {formatDateTime(event.createdAt)}
-            </span>
+            <>
+              <FiChevronRight className="hidden text-xs text-base-content/30 sm:block" />
+
+              <span className="text-xs text-base-content/50">
+                {formatDateTime(event.createdAt)}
+              </span>
+            </>
           )}
         </div>
 
         {event?.note && (
-          <p className="mt-1 break-words text-sm text-base-content/60">
+          <p className="mt-1 break-words text-sm leading-5 text-base-content/60">
             {event.note}
           </p>
         )}
 
         {event?.updatedBy && (
-          <p className="mt-1 text-xs text-base-content/40">
-            Updated by {event.updatedBy}
+          <p className="mt-1 break-words text-xs text-base-content/40">
+            Updated by{" "}
+            {typeof event.updatedBy === "object"
+              ? event.updatedBy?.name || event.updatedBy?.email || "Admin"
+              : event.updatedBy}
           </p>
         )}
       </div>
@@ -1307,13 +1486,13 @@ const TimelineItem = ({ event, isLast }) => {
   );
 };
 
-// ============================================================
-// META ITEM
-// ============================================================
+/* -------------------------------------------------------------------------- */
+/* Meta Item                                                                  */
+/* -------------------------------------------------------------------------- */
 
 const MetaItem = ({ icon, label, value }) => {
   return (
-    <div className="flex min-w-0 items-start gap-3 rounded-xl bg-base-200/50 p-3">
+    <div className="flex min-w-0 items-start gap-3 rounded-xl bg-base-200/60 p-3">
       <div className="mt-0.5 shrink-0 text-primary">{icon}</div>
 
       <div className="min-w-0">
@@ -1325,28 +1504,30 @@ const MetaItem = ({ icon, label, value }) => {
   );
 };
 
-// ============================================================
-// PAGE SKELETON
-// ============================================================
+/* -------------------------------------------------------------------------- */
+/* Skeleton                                                                   */
+/* -------------------------------------------------------------------------- */
 
 const AdminOrderDetailsSkeleton = () => {
   return (
     <div className="min-h-screen bg-base-200 p-3 sm:p-4 md:p-6 lg:p-8">
       <div className="mx-auto w-full max-w-[1500px] space-y-5">
-        <div className="h-10 w-32 animate-pulse rounded bg-base-300" />
+        <div className="h-9 w-32 animate-pulse rounded bg-base-300" />
 
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="space-y-3">
-            <div className="h-8 w-56 animate-pulse rounded bg-base-300" />
+            <div className="h-8 w-64 animate-pulse rounded bg-base-300" />
 
-            <div className="h-4 w-72 animate-pulse rounded bg-base-300" />
+            <div className="h-4 w-80 max-w-full animate-pulse rounded bg-base-300" />
           </div>
 
           <div className="h-10 w-full animate-pulse rounded bg-base-300 sm:w-28" />
         </div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, index) => (
+          {Array.from({
+            length: 4,
+          }).map((_, index) => (
             <div
               key={index}
               className="h-28 animate-pulse rounded-2xl bg-base-300"
@@ -1362,13 +1543,17 @@ const AdminOrderDetailsSkeleton = () => {
           <div className="h-64 animate-pulse rounded-2xl bg-base-300" />
         </div>
 
-        <div className="h-80 animate-pulse rounded-2xl bg-base-300" />
+        <div className="h-52 animate-pulse rounded-2xl bg-base-300" />
+
+        <div className="h-96 animate-pulse rounded-2xl bg-base-300" />
 
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           <div className="h-72 animate-pulse rounded-2xl bg-base-300" />
 
           <div className="h-72 animate-pulse rounded-2xl bg-base-300" />
         </div>
+
+        <div className="h-28 animate-pulse rounded-2xl bg-base-300" />
       </div>
     </div>
   );

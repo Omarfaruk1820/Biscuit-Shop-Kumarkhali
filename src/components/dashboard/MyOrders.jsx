@@ -22,6 +22,8 @@ import { auth } from "../../Auth/firebase.config";
 
 const API_URL = String(import.meta.env.VITE_API_URL || "").trim();
 
+const REQUEST_TIMEOUT = 15000;
+
 // ============================================================
 // CONSTANTS
 // ============================================================
@@ -29,32 +31,63 @@ const API_URL = String(import.meta.env.VITE_API_URL || "").trim();
 const ORDERS_PER_PAGE = 5;
 
 const STATUS_OPTIONS = [
-  { value: "all", label: "All" },
-  { value: "pending", label: "Pending" },
-  { value: "confirmed", label: "Confirmed" },
-  { value: "processing", label: "Processing" },
-  { value: "shipped", label: "Shipped" },
-  { value: "delivered", label: "Delivered" },
-  { value: "cancelled", label: "Cancelled" },
+  {
+    value: "all",
+    label: "All",
+  },
+  {
+    value: "pending",
+    label: "Pending",
+  },
+  {
+    value: "confirmed",
+    label: "Confirmed",
+  },
+  {
+    value: "processing",
+    label: "Processing",
+  },
+  {
+    value: "shipped",
+    label: "Shipped",
+  },
+  {
+    value: "delivered",
+    label: "Delivered",
+  },
+  {
+    value: "cancelled",
+    label: "Cancelled",
+  },
 ];
 
 const SORT_OPTIONS = [
-  { value: "newest", label: "Newest First" },
-  { value: "oldest", label: "Oldest First" },
+  {
+    value: "newest",
+    label: "Newest First",
+  },
+  {
+    value: "oldest",
+    label: "Oldest First",
+  },
 ];
+
+const TRACKABLE_STATUSES = ["confirmed", "processing", "shipped", "delivered"];
+
+const CANCELLABLE_STATUS = "pending";
 
 // ============================================================
 // HELPERS
 // ============================================================
 
 const formatCurrency = (value) => {
-  const number = Number(value);
+  const amount = Number(value);
 
-  if (!Number.isFinite(number)) {
+  if (!Number.isFinite(amount)) {
     return "৳0.00";
   }
 
-  return `৳${number.toFixed(2)}`;
+  return `৳${amount.toFixed(2)}`;
 };
 
 const formatDate = (value) => {
@@ -77,22 +110,22 @@ const formatDate = (value) => {
   });
 };
 
-const formatStatus = (status) => {
-  if (!status) {
+const formatStatus = (value) => {
+  if (!value) {
     return "Unknown";
   }
 
-  return String(status)
+  return String(value)
     .replace(/_/g, " ")
     .replace(/\b\w/g, (character) => character.toUpperCase());
 };
 
-const formatPaymentMethod = (paymentMethod) => {
-  if (!paymentMethod) {
+const formatPaymentMethod = (value) => {
+  if (!value) {
     return "N/A";
   }
 
-  return String(paymentMethod)
+  return String(value)
     .replace(/_/g, " ")
     .replace(/\b\w/g, (character) => character.toUpperCase());
 };
@@ -130,19 +163,23 @@ const getPaymentStatusBadgeClass = (status) => {
     case "pending":
       return "badge-warning";
 
+    case "unpaid":
+      return "badge-warning";
+
     case "failed":
       return "badge-error";
 
     case "refunded":
       return "badge-info";
 
-    case "unpaid":
-      return "badge-warning";
-
     default:
       return "badge-ghost";
   }
 };
+
+// ============================================================
+// ORDER HELPERS
+// ============================================================
 
 const getOrderId = (order) => {
   if (!order?._id) {
@@ -166,6 +203,10 @@ const getOrderNumber = (order) => {
   return `#${orderId.slice(-8).toUpperCase()}`;
 };
 
+const getOrderItems = (order) => {
+  return Array.isArray(order?.items) ? order.items : [];
+};
+
 const getItemKey = (item, index) => {
   return (
     item?.productId ||
@@ -178,13 +219,17 @@ const getItemKey = (item, index) => {
 const getItemPrice = (item) => {
   const price = Number(item?.price);
 
-  return Number.isFinite(price) ? price : 0;
+  return Number.isFinite(price) && price >= 0 ? price : 0;
 };
 
 const getItemDiscount = (item) => {
   const discount = Number(item?.discount);
 
-  return Number.isFinite(discount) ? discount : 0;
+  if (!Number.isFinite(discount) || discount < 0) {
+    return 0;
+  }
+
+  return discount;
 };
 
 const getItemQuantity = (item) => {
@@ -197,6 +242,23 @@ const getItemQuantity = (item) => {
   return quantity;
 };
 
+const getItemFinalPrice = (item) => {
+  const finalPrice = Number(item?.finalPrice);
+
+  if (Number.isFinite(finalPrice) && finalPrice >= 0) {
+    return finalPrice;
+  }
+
+  const price = getItemPrice(item);
+  const discount = getItemDiscount(item);
+
+  if (discount > 0) {
+    return price - price * (discount / 100);
+  }
+
+  return price;
+};
+
 const getItemSubtotal = (item) => {
   const subtotal = Number(item?.subtotal);
 
@@ -204,37 +266,74 @@ const getItemSubtotal = (item) => {
     return subtotal;
   }
 
-  const finalPrice = Number(item?.finalPrice);
+  const quantity = getItemQuantity(item);
 
-  if (Number.isFinite(finalPrice)) {
-    return finalPrice * getItemQuantity(item);
-  }
-
-  return getItemPrice(item) * getItemQuantity(item);
+  return getItemFinalPrice(item) * quantity;
 };
 
-const getOrderTotal = (order) => {
+const getOrderQuantity = (order) => {
+  const totalQuantity = Number(order?.totalQuantity);
+
+  if (Number.isFinite(totalQuantity) && totalQuantity >= 0) {
+    return totalQuantity;
+  }
+
+  return getOrderItems(order).reduce((total, item) => {
+    return total + getItemQuantity(item);
+  }, 0);
+};
+
+const getOrderItemCount = (order) => {
+  const totalItems = Number(order?.totalItems);
+
+  if (Number.isFinite(totalItems) && totalItems >= 0) {
+    return totalItems;
+  }
+
+  return getOrderItems(order).length;
+};
+
+const getOrderSubtotal = (order) => {
+  const subtotal = Number(order?.subtotal);
+
+  return Number.isFinite(subtotal) && subtotal >= 0 ? subtotal : 0;
+};
+
+const getOrderDiscount = (order) => {
+  const discount = Number(order?.totalDiscount);
+
+  return Number.isFinite(discount) && discount >= 0 ? discount : 0;
+};
+
+const getOrderShipping = (order) => {
+  const shipping = Number(order?.shipping);
+
+  return Number.isFinite(shipping) && shipping >= 0 ? shipping : 0;
+};
+
+const getOrderTax = (order) => {
+  const tax = Number(order?.tax);
+
+  return Number.isFinite(tax) && tax >= 0 ? tax : 0;
+};
+
+const getOrderGrandTotal = (order) => {
   const grandTotal = Number(order?.grandTotal);
 
   if (Number.isFinite(grandTotal)) {
     return grandTotal;
   }
 
-  const total = Number(order?.total);
-
-  if (Number.isFinite(total)) {
-    return total;
-  }
-
-  const subtotal = Number(order?.subtotal) || 0;
-  const shipping = Number(order?.shipping) || 0;
-  const tax = Number(order?.tax) || 0;
+  // Legacy fallback only.
+  const subtotal = getOrderSubtotal(order);
+  const shipping = getOrderShipping(order);
+  const tax = getOrderTax(order);
 
   return subtotal + shipping + tax;
 };
 
 // ============================================================
-// FIREBASE TOKEN
+// FIREBASE AUTH TOKEN
 // ============================================================
 
 const getFirebaseIdToken = async () => {
@@ -269,15 +368,11 @@ const MyOrders = () => {
   // ==========================================================
 
   const { data, isLoading, isFetching, isError, error, refetch } = useQuery({
-    queryKey: ["my-orders", user?.email, page, status, sort],
+    queryKey: ["my-orders", user?.email || "", page, status, sort],
 
     enabled: Boolean(user?.email) && !authLoading && Boolean(API_URL),
 
     queryFn: async () => {
-      if (!user?.email) {
-        throw new Error("User email is required.");
-      }
-
       const idToken = await getFirebaseIdToken();
 
       const params = new URLSearchParams();
@@ -296,7 +391,10 @@ const MyOrders = () => {
           headers: {
             Authorization: `Bearer ${idToken}`,
           },
+
           withCredentials: true,
+
+          timeout: REQUEST_TIMEOUT,
         },
       );
 
@@ -310,13 +408,16 @@ const MyOrders = () => {
     },
 
     staleTime: 1000 * 30,
+
     gcTime: 1000 * 60 * 5,
+
     retry: 1,
+
     refetchOnWindowFocus: false,
   });
 
   // ==========================================================
-  // RESPONSE DATA
+  // SERVER DATA
   // ==========================================================
 
   const orders = Array.isArray(data?.data) ? data.data : [];
@@ -356,19 +457,19 @@ const MyOrders = () => {
   // ==========================================================
 
   const pageSummary = useMemo(() => {
-    let totalQuantity = 0;
-    let totalValue = 0;
+    return orders.reduce(
+      (summary, order) => {
+        summary.totalQuantity += getOrderQuantity(order);
 
-    orders.forEach((order) => {
-      totalQuantity += Number(order?.totalQuantity || 0);
+        summary.totalValue += getOrderGrandTotal(order);
 
-      totalValue += getOrderTotal(order);
-    });
-
-    return {
-      totalQuantity,
-      totalValue,
-    };
+        return summary;
+      },
+      {
+        totalQuantity: 0,
+        totalValue: 0,
+      },
+    );
   }, [orders]);
 
   // ==========================================================
@@ -384,13 +485,16 @@ const MyOrders = () => {
       const idToken = await getFirebaseIdToken();
 
       const response = await axios.patch(
-        `${API_URL}/orders/cancel/${orderId}`,
+        `${API_URL}/orders/cancel/${encodeURIComponent(orderId)}`,
         {},
         {
           headers: {
             Authorization: `Bearer ${idToken}`,
           },
+
           withCredentials: true,
+
+          timeout: REQUEST_TIMEOUT,
         },
       );
 
@@ -531,7 +635,7 @@ const MyOrders = () => {
         <div className="mb-8">
           <div className="h-10 w-56 animate-pulse rounded bg-base-300" />
 
-          <div className="mt-3 h-5 w-96 animate-pulse rounded bg-base-300" />
+          <div className="mt-3 h-5 w-96 max-w-full animate-pulse rounded bg-base-300" />
         </div>
 
         <div className="mb-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
@@ -623,8 +727,6 @@ const MyOrders = () => {
       ====================================================== */}
 
       <div className="mb-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-        {/* TOTAL ORDERS */}
-
         <div className="card border border-base-300 bg-base-100 shadow-sm">
           <div className="card-body">
             <p className="text-sm text-gray-500">Total Orders</p>
@@ -632,8 +734,6 @@ const MyOrders = () => {
             <h2 className="text-3xl font-bold">{totalOrders}</h2>
           </div>
         </div>
-
-        {/* FILTERED ORDERS */}
 
         <div className="card border border-base-300 bg-base-100 shadow-sm">
           <div className="card-body">
@@ -645,8 +745,6 @@ const MyOrders = () => {
           </div>
         </div>
 
-        {/* ITEMS */}
-
         <div className="card border border-base-300 bg-base-100 shadow-sm">
           <div className="card-body">
             <p className="text-sm text-gray-500">Items on This Page</p>
@@ -655,14 +753,12 @@ const MyOrders = () => {
           </div>
         </div>
 
-        {/* PAGE */}
-
         <div className="card border border-base-300 bg-base-100 shadow-sm">
           <div className="card-body">
-            <p className="text-sm text-gray-500">Current Page</p>
+            <p className="text-sm text-gray-500">Page Value</p>
 
-            <h2 className="text-3xl font-bold">
-              {totalPages > 0 ? `${currentPage} / ${totalPages}` : "0"}
+            <h2 className="text-3xl font-bold text-primary">
+              {formatCurrency(pageSummary.totalValue)}
             </h2>
           </div>
         </div>
@@ -715,7 +811,7 @@ const MyOrders = () => {
       </div>
 
       {/* ======================================================
-          FETCHING
+          BACKGROUND FETCHING
       ====================================================== */}
 
       {isFetching && !isLoading && (
@@ -760,20 +856,32 @@ const MyOrders = () => {
             const orderId = getOrderId(order);
             const orderNumber = getOrderNumber(order);
 
-            const items = Array.isArray(order?.items) ? order.items : [];
+            const items = getOrderItems(order);
 
             const orderStatus = String(
               order?.status || "unknown",
             ).toLowerCase();
 
             const paymentStatus = String(
-              order?.paymentStatus || "unpaid",
+              order?.paymentStatus || "pending",
             ).toLowerCase();
 
             const paymentMethod =
-              order?.paymentMethod || order?.customer?.paymentMethod || "N/A";
+              order?.paymentMethod || order?.customer?.paymentMethod || "";
 
-            const grandTotal = getOrderTotal(order);
+            const grandTotal = getOrderGrandTotal(order);
+
+            const canTrack = TRACKABLE_STATUSES.includes(orderStatus);
+
+            const canCancel = orderStatus === CANCELLABLE_STATUS;
+
+            const isCancelling =
+              cancelMutation.isPending &&
+              String(cancelMutation.variables || "") === orderId;
+
+            const cancelError =
+              cancelMutation.isError &&
+              String(cancelMutation.variables || "") === orderId;
 
             return (
               <article
@@ -819,12 +927,10 @@ const MyOrders = () => {
                 </div>
 
                 {/* ==================================================
-                    ORDER TRACKING
+                    TRACKING
                 ================================================== */}
 
-                {["confirmed", "processing", "shipped", "delivered"].includes(
-                  orderStatus,
-                ) && (
+                {canTrack && orderId && (
                   <div className="border-b border-base-300 bg-base-200/40 px-6 py-6">
                     <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                       <div>
@@ -842,17 +948,15 @@ const MyOrders = () => {
                         </p>
                       </div>
 
-                      {orderId && (
-                        <Link
-                          to={`/dashboard/orders/${encodeURIComponent(
-                            orderId,
-                          )}/track`}
-                          className="btn btn-primary btn-sm gap-2"
-                        >
-                          <FaTruck />
-                          Track Order
-                        </Link>
-                      )}
+                      <Link
+                        to={`/dashboard/orders/${encodeURIComponent(
+                          orderId,
+                        )}/track`}
+                        className="btn btn-primary btn-sm gap-2"
+                      >
+                        <FaTruck />
+                        Track Order
+                      </Link>
                     </div>
                   </div>
                 )}
@@ -941,23 +1045,21 @@ const MyOrders = () => {
                       <p className="text-xs text-gray-500">Products</p>
 
                       <p className="font-semibold">
-                        {Number(order?.totalItems || items.length)}
+                        {getOrderItemCount(order)}
                       </p>
                     </div>
 
                     <div>
                       <p className="text-xs text-gray-500">Quantity</p>
 
-                      <p className="font-semibold">
-                        {Number(order?.totalQuantity || 0)}
-                      </p>
+                      <p className="font-semibold">{getOrderQuantity(order)}</p>
                     </div>
 
                     <div>
                       <p className="text-xs text-gray-500">Subtotal</p>
 
                       <p className="font-semibold">
-                        {formatCurrency(order?.subtotal)}
+                        {formatCurrency(getOrderSubtotal(order))}
                       </p>
                     </div>
 
@@ -965,7 +1067,7 @@ const MyOrders = () => {
                       <p className="text-xs text-gray-500">Discount</p>
 
                       <p className="font-semibold text-success">
-                        -{formatCurrency(order?.totalDiscount)}
+                        -{formatCurrency(getOrderDiscount(order))}
                       </p>
                     </div>
 
@@ -973,7 +1075,7 @@ const MyOrders = () => {
                       <p className="text-xs text-gray-500">Shipping</p>
 
                       <p className="font-semibold">
-                        {formatCurrency(order?.shipping)}
+                        {formatCurrency(getOrderShipping(order))}
                       </p>
                     </div>
 
@@ -981,7 +1083,7 @@ const MyOrders = () => {
                       <p className="text-xs text-gray-500">Tax</p>
 
                       <p className="font-semibold">
-                        {formatCurrency(order?.tax)}
+                        {formatCurrency(getOrderTax(order))}
                       </p>
                     </div>
                   </div>
@@ -1010,6 +1112,8 @@ const MyOrders = () => {
                         const discount = getItemDiscount(item);
 
                         const quantity = getItemQuantity(item);
+
+                        const finalPrice = getItemFinalPrice(item);
 
                         const subtotal = getItemSubtotal(item);
 
@@ -1049,7 +1153,7 @@ const MyOrders = () => {
                                   </p>
                                 )}
 
-                                <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-4">
+                                <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-5">
                                   <div>
                                     <p className="text-xs text-gray-500">
                                       Price
@@ -1066,6 +1170,16 @@ const MyOrders = () => {
                                     </p>
 
                                     <p className="font-semibold">{discount}%</p>
+                                  </div>
+
+                                  <div>
+                                    <p className="text-xs text-gray-500">
+                                      Final Price
+                                    </p>
+
+                                    <p className="font-semibold">
+                                      {formatCurrency(finalPrice)}
+                                    </p>
                                   </div>
 
                                   <div>
@@ -1095,7 +1209,7 @@ const MyOrders = () => {
                   )}
 
                   {/* ==================================================
-                      ORDER ACTIONS
+                      GRAND TOTAL + ACTIONS
                   ================================================== */}
 
                   <div className="mt-6 border-t border-base-300 pt-6">
@@ -1116,27 +1230,21 @@ const MyOrders = () => {
 
                       {/* ACTIONS */}
 
-                      <div className="flex flex-col gap-3 sm:flex-row">
-                        {/* TRACK ORDER */}
+                      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                        {/* TRACK */}
 
-                        {orderId &&
-                          [
-                            "confirmed",
-                            "processing",
-                            "shipped",
-                            "delivered",
-                          ].includes(orderStatus) && (
-                            <Link
-                              to={`/dashboard/orders/${encodeURIComponent(
-                                orderId,
-                              )}/track`}
-                              className="btn btn-primary gap-2"
-                            >
-                              <FaTruck />
+                        {orderId && canTrack && (
+                          <Link
+                            to={`/dashboard/orders/${encodeURIComponent(
+                              orderId,
+                            )}/track`}
+                            className="btn btn-primary gap-2"
+                          >
+                            <FaTruck />
 
-                              <span>Track Order</span>
-                            </Link>
-                          )}
+                            <span>Track Order</span>
+                          </Link>
+                        )}
 
                         {/* INVOICE */}
 
@@ -1155,16 +1263,14 @@ const MyOrders = () => {
 
                         {/* CANCEL */}
 
-                        {orderStatus === "pending" && (
+                        {canCancel && orderId && (
                           <button
                             type="button"
                             onClick={() => handleCancel(orderId)}
                             className="btn btn-error"
                             disabled={cancelMutation.isPending}
                           >
-                            {cancelMutation.isPending
-                              ? "Cancelling..."
-                              : "Cancel Order"}
+                            {isCancelling ? "Cancelling..." : "Cancel Order"}
                           </button>
                         )}
                       </div>
@@ -1172,18 +1278,17 @@ const MyOrders = () => {
 
                     {/* CANCEL ERROR */}
 
-                    {cancelMutation.isError &&
-                      cancelMutation.variables === orderId && (
-                        <div className="alert alert-error mt-5">
-                          <FaExclamationTriangle />
+                    {cancelError && (
+                      <div className="alert alert-error mt-5">
+                        <FaExclamationTriangle />
 
-                          <span>
-                            {cancelMutation.error?.response?.data?.message ||
-                              cancelMutation.error?.message ||
-                              "Failed to cancel order."}
-                          </span>
-                        </div>
-                      )}
+                        <span>
+                          {cancelMutation.error?.response?.data?.message ||
+                            cancelMutation.error?.message ||
+                            "Failed to cancel order."}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </article>
@@ -1225,7 +1330,11 @@ const MyOrders = () => {
               <FaChevronLeft />
             </button>
 
-            <button type="button" className="join-item btn btn-disabled">
+            <button
+              type="button"
+              className="join-item btn btn-disabled"
+              aria-label={`Current page ${currentPage}`}
+            >
               {currentPage}
             </button>
 
