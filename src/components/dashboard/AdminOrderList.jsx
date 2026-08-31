@@ -6,13 +6,11 @@ import {
   useRef,
   useState,
 } from "react";
-
 import {
   FiAlertCircle,
   FiCalendar,
   FiChevronLeft,
   FiChevronRight,
-  FiClock,
   FiDollarSign,
   FiEye,
   FiFilter,
@@ -22,7 +20,6 @@ import {
   FiShoppingBag,
   FiTruck,
 } from "react-icons/fi";
-
 import { useNavigate } from "react-router-dom";
 
 import { AuthContext } from "../../Auth/AuthProvider";
@@ -44,94 +41,34 @@ const ORDER_STATUSES = [
   "cancelled",
 ];
 
+const PAYMENT_STATUSES = ["pending", "unpaid", "paid", "failed", "refunded"];
+
 const STATUS_OPTIONS = [
-  {
-    value: "all",
-    label: "All Orders",
-  },
-  {
-    value: "pending",
-    label: "Pending",
-  },
-  {
-    value: "confirmed",
-    label: "Confirmed",
-  },
-  {
-    value: "processing",
-    label: "Processing",
-  },
-  {
-    value: "shipped",
-    label: "Shipped",
-  },
-  {
-    value: "delivered",
-    label: "Delivered",
-  },
-  {
-    value: "cancelled",
-    label: "Cancelled",
-  },
+  { value: "all", label: "All Orders" },
+  { value: "pending", label: "Pending" },
+  { value: "confirmed", label: "Confirmed" },
+  { value: "processing", label: "Processing" },
+  { value: "shipped", label: "Shipped" },
+  { value: "delivered", label: "Delivered" },
+  { value: "cancelled", label: "Cancelled" },
 ];
 
 const PAYMENT_STATUS_OPTIONS = [
-  {
-    value: "all",
-    label: "All Payments",
-  },
-  {
-    value: "pending",
-    label: "Pending",
-  },
-  {
-    value: "unpaid",
-    label: "Unpaid",
-  },
-  {
-    value: "paid",
-    label: "Paid",
-  },
-  {
-    value: "failed",
-    label: "Failed",
-  },
-  {
-    value: "refunded",
-    label: "Refunded",
-  },
+  { value: "all", label: "All Payments" },
+  { value: "pending", label: "Pending" },
+  { value: "unpaid", label: "Unpaid" },
+  { value: "paid", label: "Paid" },
+  { value: "failed", label: "Failed" },
+  { value: "refunded", label: "Refunded" },
 ];
 
 const SORT_OPTIONS = [
-  {
-    value: "newest",
-    label: "Newest First",
-  },
-  {
-    value: "oldest",
-    label: "Oldest First",
-  },
-  {
-    value: "highest",
-    label: "Highest Amount",
-  },
-  {
-    value: "lowest",
-    label: "Lowest Amount",
-  },
+  { value: "newest", label: "Newest First" },
+  { value: "oldest", label: "Oldest First" },
+  { value: "highest", label: "Highest Amount" },
+  { value: "lowest", label: "Lowest Amount" },
 ];
 
-// Backend-compatible status transitions.
-//
-// This mirrors the server's STATUS_TRANSITIONS object:
-//
-// pending    -> confirmed, cancelled
-// confirmed  -> processing, cancelled
-// processing -> shipped, cancelled
-// shipped    -> delivered
-// delivered  -> nothing
-// cancelled  -> nothing
-//
 const STATUS_TRANSITIONS = {
   pending: ["confirmed", "cancelled"],
   confirmed: ["processing", "cancelled"],
@@ -161,65 +98,6 @@ const PAYMENT_STATUS_LABELS = {
 // ============================================================
 // HELPERS
 // ============================================================
-
-const getStatusBadge = (status) => {
-  switch (status) {
-    case "pending":
-      return "badge-warning";
-
-    case "confirmed":
-      return "badge-primary";
-
-    case "processing":
-      return "badge-info";
-
-    case "shipped":
-      return "badge-secondary";
-
-    case "delivered":
-      return "badge-success";
-
-    case "cancelled":
-      return "badge-error";
-
-    default:
-      return "badge-ghost";
-  }
-};
-
-const getPaymentStatusBadge = (status) => {
-  switch (status) {
-    case "paid":
-      return "badge-success";
-
-    case "pending":
-    case "unpaid":
-      return "badge-warning";
-
-    case "failed":
-      return "badge-error";
-
-    case "refunded":
-      return "badge-info";
-
-    default:
-      return "badge-ghost";
-  }
-};
-
-const getInitials = (name = "") => {
-  const words = String(name).trim().split(/\s+/).filter(Boolean);
-
-  if (!words.length) {
-    return "CU";
-  }
-
-  if (words.length === 1) {
-    return words[0].slice(0, 2).toUpperCase();
-  }
-
-  return `${words[0][0]}${words[1][0]}`.toUpperCase();
-};
 
 const capitalize = (value = "") => {
   const text = String(value).trim();
@@ -333,9 +211,67 @@ const getApiErrorMessage = (error, fallback) => {
   );
 };
 
+const getInitials = (name = "") => {
+  const words = String(name).trim().split(/\s+/).filter(Boolean);
+
+  if (words.length === 0) {
+    return "CU";
+  }
+
+  if (words.length === 1) {
+    return words[0].slice(0, 2).toUpperCase();
+  }
+
+  return `${words[0][0]}${words[1][0]}`.toUpperCase();
+};
+
+const getStatusBadge = (status) => {
+  switch (status) {
+    case "pending":
+      return "badge-warning";
+
+    case "confirmed":
+      return "badge-primary";
+
+    case "processing":
+      return "badge-info";
+
+    case "shipped":
+      return "badge-secondary";
+
+    case "delivered":
+      return "badge-success";
+
+    case "cancelled":
+      return "badge-error";
+
+    default:
+      return "badge-ghost";
+  }
+};
+
+const getPaymentStatusBadge = (status) => {
+  switch (status) {
+    case "paid":
+      return "badge-success";
+
+    case "pending":
+    case "unpaid":
+      return "badge-warning";
+
+    case "failed":
+      return "badge-error";
+
+    case "refunded":
+      return "badge-info";
+
+    default:
+      return "badge-ghost";
+  }
+};
+
 const normalizePagination = (pagination = {}, fallbackPage = 1) => {
   const page = Number(pagination?.page);
-
   const limit = Number(pagination?.limit);
 
   const totalOrders =
@@ -346,48 +282,44 @@ const normalizePagination = (pagination = {}, fallbackPage = 1) => {
     Number(pagination?.totalPages) ||
     (totalOrders > 0 && limit > 0 ? Math.ceil(totalOrders / limit) : 0);
 
-  const safePage = Number.isFinite(page) && page > 0 ? page : fallbackPage;
-
-  const safeLimit =
-    Number.isFinite(limit) && limit > 0 ? limit : ORDERS_PER_PAGE;
-
   return {
-    page: safePage,
-    limit: safeLimit,
+    page: Number.isFinite(page) && page > 0 ? page : fallbackPage,
+
+    limit: Number.isFinite(limit) && limit > 0 ? limit : ORDERS_PER_PAGE,
+
     totalOrders,
+
     totalPages,
+
     hasNextPage:
       typeof pagination?.hasNextPage === "boolean"
         ? pagination.hasNextPage
-        : totalPages > 0 && safePage < totalPages,
+        : totalPages > 0 && page < totalPages,
+
     hasPrevPage:
       typeof pagination?.hasPrevPage === "boolean"
         ? pagination.hasPrevPage
-        : safePage > 1,
+        : page > 1,
   };
 };
 
 const normalizeStats = (data = {}) => {
-  const orderStats = data?.orders || {};
+  const orders = data?.orders || {};
 
   return {
     totalOrders: Number(data?.totalOrders) || 0,
 
-    pendingOrders: Number(data?.pendingOrders ?? orderStats?.pending) || 0,
+    pendingOrders: Number(data?.pendingOrders ?? orders?.pending) || 0,
 
-    confirmedOrders:
-      Number(data?.confirmedOrders ?? orderStats?.confirmed) || 0,
+    confirmedOrders: Number(data?.confirmedOrders ?? orders?.confirmed) || 0,
 
-    processingOrders:
-      Number(data?.processingOrders ?? orderStats?.processing) || 0,
+    processingOrders: Number(data?.processingOrders ?? orders?.processing) || 0,
 
-    shippedOrders: Number(data?.shippedOrders ?? orderStats?.shipped) || 0,
+    shippedOrders: Number(data?.shippedOrders ?? orders?.shipped) || 0,
 
-    deliveredOrders:
-      Number(data?.deliveredOrders ?? orderStats?.delivered) || 0,
+    deliveredOrders: Number(data?.deliveredOrders ?? orders?.delivered) || 0,
 
-    cancelledOrders:
-      Number(data?.cancelledOrders ?? orderStats?.cancelled) || 0,
+    cancelledOrders: Number(data?.cancelledOrders ?? orders?.cancelled) || 0,
 
     totalRevenue: Number(data?.totalRevenue) || 0,
 
@@ -398,6 +330,26 @@ const normalizeStats = (data = {}) => {
 };
 
 // ============================================================
+// STATUS OPTIONS
+// ============================================================
+
+const getAvailableStatusOptions = (currentStatus) => {
+  const normalizedStatus = ORDER_STATUSES.includes(currentStatus)
+    ? currentStatus
+    : "pending";
+
+  const allowed = STATUS_TRANSITIONS[normalizedStatus] || [];
+
+  return [
+    normalizedStatus,
+    ...allowed.filter((status) => status !== normalizedStatus),
+  ].map((status) => ({
+    value: status,
+    label: ORDER_STATUS_LABELS[status] || capitalize(status),
+  }));
+};
+
+// ============================================================
 // MAIN COMPONENT
 // ============================================================
 
@@ -405,10 +357,6 @@ const AdminOrderList = () => {
   const navigate = useNavigate();
 
   const { user, loading: authLoading } = useContext(AuthContext);
-
-  // ==========================================================
-  // STATE
-  // ==========================================================
 
   const [orders, setOrders] = useState([]);
 
@@ -435,32 +383,38 @@ const AdminOrderList = () => {
   });
 
   const [searchInput, setSearchInput] = useState("");
+
   const [search, setSearch] = useState("");
 
   const [status, setStatus] = useState("all");
+
   const [paymentStatus, setPaymentStatus] = useState("all");
+
   const [sort, setSort] = useState("newest");
 
   const [loading, setLoading] = useState(false);
+
   const [statsLoading, setStatsLoading] = useState(false);
 
   const [error, setError] = useState("");
+
   const [statsError, setStatsError] = useState("");
 
   const [updatingOrderId, setUpdatingOrderId] = useState(null);
+
+  const [updatingPaymentId, setUpdatingPaymentId] = useState(null);
 
   const [toast, setToast] = useState(null);
 
   const toastTimerRef = useRef(null);
 
-  // Prevent stale requests from overwriting newer results.
   const ordersRequestIdRef = useRef(0);
 
   const statsRequestIdRef = useRef(0);
 
-  // ==========================================================
+  // ============================================================
   // TOAST
-  // ==========================================================
+  // ============================================================
 
   const showToast = useCallback((type, message) => {
     if (toastTimerRef.current) {
@@ -486,15 +440,18 @@ const AdminOrderList = () => {
     };
   }, []);
 
-  // ==========================================================
-  // PROTECTED API REQUEST
-  // ==========================================================
+  // ============================================================
+  // API REQUEST
+  // ============================================================
 
   const apiRequest = useCallback(async (config) => {
     return axiosSecure({
       ...config,
+
       timeout: REQUEST_TIMEOUT,
+
       withCredentials: true,
+
       headers: {
         Accept: "application/json",
         ...(config?.headers || {}),
@@ -502,9 +459,9 @@ const AdminOrderList = () => {
     });
   }, []);
 
-  // ==========================================================
+  // ============================================================
   // FETCH ORDERS
-  // ==========================================================
+  // ============================================================
 
   const fetchOrders = useCallback(
     async ({
@@ -534,8 +491,6 @@ const AdminOrderList = () => {
           sort: currentSort,
         };
 
-        // Only send paymentStatus when an actual
-        // payment filter is selected.
         if (currentPaymentStatus && currentPaymentStatus !== "all") {
           params.paymentStatus = currentPaymentStatus;
         }
@@ -546,8 +501,6 @@ const AdminOrderList = () => {
           params,
         });
 
-        // Ignore an older response if another request
-        // has already started.
         if (requestId !== ordersRequestIdRef.current) {
           return;
         }
@@ -584,9 +537,9 @@ const AdminOrderList = () => {
     [apiRequest, user],
   );
 
-  // ==========================================================
+  // ============================================================
   // FETCH STATS
-  // ==========================================================
+  // ============================================================
 
   const fetchStats = useCallback(async () => {
     if (!user) {
@@ -618,7 +571,7 @@ const AdminOrderList = () => {
         return;
       }
 
-      console.error("FETCH ORDER STATS ERROR:", requestError);
+      console.error("FETCH STATS ERROR:", requestError);
 
       setStatsError(
         getApiErrorMessage(requestError, "Failed to load order statistics."),
@@ -630,9 +583,9 @@ const AdminOrderList = () => {
     }
   }, [apiRequest, user]);
 
-  // ==========================================================
+  // ============================================================
   // INITIAL LOAD
-  // ==========================================================
+  // ============================================================
 
   useEffect(() => {
     if (authLoading) {
@@ -657,9 +610,9 @@ const AdminOrderList = () => {
     fetchStats();
   }, [authLoading, user, fetchOrders, fetchStats]);
 
-  // ==========================================================
+  // ============================================================
   // SEARCH
-  // ==========================================================
+  // ============================================================
 
   const handleSearchSubmit = (event) => {
     event.preventDefault();
@@ -677,9 +630,9 @@ const AdminOrderList = () => {
     });
   };
 
-  // ==========================================================
-  // STATUS FILTER
-  // ==========================================================
+  // ============================================================
+  // ORDER STATUS FILTER
+  // ============================================================
 
   const handleStatusChange = (event) => {
     const nextStatus = event.target.value;
@@ -695,9 +648,9 @@ const AdminOrderList = () => {
     });
   };
 
-  // ==========================================================
+  // ============================================================
   // PAYMENT FILTER
-  // ==========================================================
+  // ============================================================
 
   const handlePaymentStatusChange = (event) => {
     const nextPaymentStatus = event.target.value;
@@ -713,9 +666,9 @@ const AdminOrderList = () => {
     });
   };
 
-  // ==========================================================
+  // ============================================================
   // SORT
-  // ==========================================================
+  // ============================================================
 
   const handleSortChange = (event) => {
     const nextSort = event.target.value;
@@ -731,9 +684,9 @@ const AdminOrderList = () => {
     });
   };
 
-  // ==========================================================
-  // RESET FILTERS
-  // ==========================================================
+  // ============================================================
+  // RESET
+  // ============================================================
 
   const handleResetFilters = () => {
     setSearchInput("");
@@ -751,9 +704,9 @@ const AdminOrderList = () => {
     });
   };
 
-  // ==========================================================
+  // ============================================================
   // QUICK STATUS FILTER
-  // ==========================================================
+  // ============================================================
 
   const handleQuickStatusFilter = (nextStatus) => {
     setStatus(nextStatus);
@@ -767,9 +720,9 @@ const AdminOrderList = () => {
     });
   };
 
-  // ==========================================================
-  // PAGE CHANGE
-  // ==========================================================
+  // ============================================================
+  // PAGE
+  // ============================================================
 
   const handlePageChange = (nextPage) => {
     const totalPages = Number(pagination.totalPages) || 0;
@@ -789,25 +742,24 @@ const AdminOrderList = () => {
     });
   };
 
-  // ==========================================================
-  // OPEN ORDER
-  // ==========================================================
+  // ============================================================
+  // VIEW ORDER
+  // ============================================================
 
   const handleOpenOrder = (order) => {
     const orderId = order?._id;
 
     if (!orderId) {
       showToast("error", "Order ID is missing.");
-
       return;
     }
 
     navigate(`/dashboard/orders/${encodeURIComponent(String(orderId))}`);
   };
 
-  // ==========================================================
+  // ============================================================
   // UPDATE ORDER STATUS
-  // ==========================================================
+  // ============================================================
 
   const handleOrderStatusUpdate = async (orderId, nextStatus) => {
     if (!orderId || !nextStatus || updatingOrderId === orderId) {
@@ -844,7 +796,9 @@ const AdminOrderList = () => {
 
       const response = await apiRequest({
         method: "PATCH",
+
         url: `/orders/status/${encodeURIComponent(String(orderId))}`,
+
         data: {
           status: nextStatus,
         },
@@ -883,36 +837,106 @@ const AdminOrderList = () => {
     }
   };
 
-  // ==========================================================
+  // ============================================================
+  // UPDATE PAYMENT STATUS
+  // ============================================================
+
+  const handlePaymentStatusUpdate = async (orderId, nextPaymentStatus) => {
+    if (!orderId || !nextPaymentStatus || updatingPaymentId === orderId) {
+      return;
+    }
+
+    if (!PAYMENT_STATUSES.includes(nextPaymentStatus)) {
+      showToast("error", "Invalid payment status.");
+
+      return;
+    }
+
+    const currentOrder = orders.find(
+      (order) => String(order?._id) === String(orderId),
+    );
+
+    if (!currentOrder) {
+      return;
+    }
+
+    const currentPaymentStatus = currentOrder?.paymentStatus || "pending";
+
+    if (currentPaymentStatus === nextPaymentStatus) {
+      return;
+    }
+
+    try {
+      setUpdatingPaymentId(orderId);
+
+      const response = await apiRequest({
+        method: "PATCH",
+
+        url: `/orders/payment-status/${encodeURIComponent(String(orderId))}`,
+
+        data: {
+          paymentStatus: nextPaymentStatus,
+        },
+      });
+
+      const updatedOrder = response?.data?.data;
+
+      setOrders((currentOrders) =>
+        currentOrders.map((order) =>
+          String(order?._id) === String(orderId)
+            ? {
+                ...order,
+                ...(updatedOrder || {}),
+                paymentStatus: updatedOrder?.paymentStatus || nextPaymentStatus,
+                updatedAt: updatedOrder?.updatedAt || new Date().toISOString(),
+              }
+            : order,
+        ),
+      );
+
+      showToast(
+        "success",
+        response?.data?.message || "Payment status updated successfully.",
+      );
+    } catch (requestError) {
+      console.error("UPDATE PAYMENT STATUS ERROR:", requestError);
+
+      showToast(
+        "error",
+        getApiErrorMessage(requestError, "Failed to update payment status."),
+      );
+    } finally {
+      setUpdatingPaymentId(null);
+    }
+  };
+
+  // ============================================================
   // REFRESH
-  // ==========================================================
+  // ============================================================
 
   const handleRefresh = async () => {
     if (!user) {
       return;
     }
 
-    try {
-      await Promise.all([
-        fetchOrders({
-          page: pagination.page || 1,
-          currentSearch: search,
-          currentStatus: status,
-          currentPaymentStatus: paymentStatus,
-          currentSort: sort,
-        }),
-        fetchStats(),
-      ]);
+    await Promise.all([
+      fetchOrders({
+        page: pagination.page || 1,
+        currentSearch: search,
+        currentStatus: status,
+        currentPaymentStatus: paymentStatus,
+        currentSort: sort,
+      }),
 
-      showToast("success", "Order data refreshed.");
-    } catch (refreshError) {
-      console.error("REFRESH ORDERS ERROR:", refreshError);
-    }
+      fetchStats(),
+    ]);
+
+    showToast("success", "Order data refreshed.");
   };
 
-  // ==========================================================
+  // ============================================================
   // PAGINATION
-  // ==========================================================
+  // ============================================================
 
   const paginationPages = useMemo(() => {
     const totalPages = Number(pagination.totalPages) || 0;
@@ -943,6 +967,7 @@ const AdminOrderList = () => {
 
     if (currentPage >= totalPages - 2) {
       startPage = totalPages - 4;
+
       endPage = totalPages;
     }
 
@@ -954,9 +979,9 @@ const AdminOrderList = () => {
     );
   }, [pagination.page, pagination.totalPages]);
 
-  // ==========================================================
-  // ACTIVE FILTERS
-  // ==========================================================
+  // ============================================================
+  // FILTER STATE
+  // ============================================================
 
   const hasActiveFilters =
     Boolean(search) ||
@@ -964,25 +989,25 @@ const AdminOrderList = () => {
     paymentStatus !== "all" ||
     sort !== "newest";
 
-  // ==========================================================
+  // ============================================================
   // AUTH LOADING
-  // ==========================================================
+  // ============================================================
 
   if (authLoading) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center p-6">
+      <div className="flex min-h-[60vh] items-center justify-center">
         <span className="loading loading-spinner loading-lg text-primary" />
       </div>
     );
   }
 
-  // ==========================================================
+  // ============================================================
   // NOT AUTHENTICATED
-  // ==========================================================
+  // ============================================================
 
   if (!user) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center p-4 sm:p-6">
+      <div className="flex min-h-[60vh] items-center justify-center p-4">
         <div className="alert alert-warning w-full max-w-lg">
           <FiAlertCircle />
 
@@ -998,35 +1023,28 @@ const AdminOrderList = () => {
     );
   }
 
-  // ==========================================================
+  // ============================================================
   // UI
-  // ==========================================================
+  // ============================================================
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-base-200 p-3 sm:p-4 md:p-6 lg:p-8">
-      <div className="mx-auto w-full max-w-[1600px] space-y-4 sm:space-y-5 lg:space-y-6">
-        {/* ======================================================
-            HEADER
-        ====================================================== */}
+    <div className="min-h-screen bg-base-200 p-3 sm:p-4 md:p-6">
+      <div className="mx-auto w-full max-w-[1600px] space-y-5">
+        {/* HEADER */}
 
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="min-w-0">
-            <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-base-content/60 sm:text-sm">
+          <div>
+            <div className="mb-2 flex items-center gap-2 text-sm text-base-content/60">
               <FiShoppingBag />
-
               <span>Dashboard</span>
-
               <span>/</span>
-
               <span>Orders</span>
             </div>
 
-            <h1 className="text-xl font-bold tracking-tight sm:text-2xl md:text-3xl">
-              Order Management
-            </h1>
+            <h1 className="text-2xl font-bold md:text-3xl">Order Management</h1>
 
-            <p className="mt-1 max-w-2xl text-xs text-base-content/60 sm:text-sm">
-              View, search, filter and manage customer orders from one place.
+            <p className="mt-1 text-sm text-base-content/60">
+              View, search, filter and manage customer orders.
             </p>
           </div>
 
@@ -1034,7 +1052,7 @@ const AdminOrderList = () => {
             type="button"
             onClick={handleRefresh}
             disabled={loading || statsLoading}
-            className="btn btn-outline btn-sm w-full gap-2 sm:w-auto sm:btn-md"
+            className="btn btn-outline btn-sm w-full sm:w-auto"
           >
             <FiRefreshCw
               className={loading || statsLoading ? "animate-spin" : ""}
@@ -1043,41 +1061,7 @@ const AdminOrderList = () => {
           </button>
         </div>
 
-        {/* ======================================================
-            STATS ERROR
-        ====================================================== */}
-
-        {statsError && (
-          <div className="alert alert-warning flex-col items-start gap-3 sm:flex-row sm:items-center">
-            <FiAlertCircle className="shrink-0" />
-
-            <div className="min-w-0 flex-1">
-              <p className="font-semibold">Statistics unavailable</p>
-
-              <p className="break-words text-sm">{statsError}</p>
-            </div>
-
-            <button
-              type="button"
-              onClick={fetchStats}
-              disabled={statsLoading}
-              className="btn btn-sm w-full sm:w-auto"
-            >
-              {statsLoading ? (
-                <>
-                  <span className="loading loading-spinner loading-xs" />
-                  Retrying...
-                </>
-              ) : (
-                "Retry"
-              )}
-            </button>
-          </div>
-        )}
-
-        {/* ======================================================
-            STATS
-        ====================================================== */}
+        {/* STATS */}
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
@@ -1090,7 +1074,7 @@ const AdminOrderList = () => {
           <StatCard
             title="Pending Orders"
             value={stats.pendingOrders}
-            icon={<FiClock />}
+            icon={<FiPackage />}
             loading={statsLoading}
             onClick={() => handleQuickStatusFilter("pending")}
           />
@@ -1098,7 +1082,7 @@ const AdminOrderList = () => {
           <StatCard
             title="Processing Orders"
             value={stats.processingOrders}
-            icon={<FiPackage />}
+            icon={<FiTruck />}
             loading={statsLoading}
             onClick={() => handleQuickStatusFilter("processing")}
           />
@@ -1111,72 +1095,12 @@ const AdminOrderList = () => {
           />
         </div>
 
-        {/* ======================================================
-            ORDER PIPELINE
-        ====================================================== */}
+        {/* FILTERS */}
 
         <div className="card border border-base-300 bg-base-100 shadow-sm">
-          <div className="card-body p-4 sm:p-5">
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <div>
-                <h2 className="font-semibold">Order Pipeline</h2>
-
-                <p className="text-xs text-base-content/60 sm:text-sm">
-                  Current order status overview
-                </p>
-              </div>
-
-              <FiTruck className="shrink-0 text-xl text-primary" />
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 lg:grid-cols-5">
-              {[
-                {
-                  label: "Pending",
-                  value: stats.pendingOrders,
-                  status: "pending",
-                },
-                {
-                  label: "Confirmed",
-                  value: stats.confirmedOrders,
-                  status: "confirmed",
-                },
-                {
-                  label: "Processing",
-                  value: stats.processingOrders,
-                  status: "processing",
-                },
-                {
-                  label: "Shipped",
-                  value: stats.shippedOrders,
-                  status: "shipped",
-                },
-                {
-                  label: "Delivered",
-                  value: stats.deliveredOrders,
-                  status: "delivered",
-                },
-              ].map((item) => (
-                <PipelineItem
-                  key={item.status}
-                  label={item.label}
-                  value={item.value}
-                  status={item.status}
-                  onClick={() => handleQuickStatusFilter(item.status)}
-                />
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* ======================================================
-            FILTERS
-        ====================================================== */}
-
-        <div className="card border border-base-300 bg-base-100 shadow-sm">
-          <div className="card-body p-4 sm:p-5">
+          <div className="card-body p-4 md:p-5">
             <div className="mb-4 flex items-center gap-2">
-              <FiFilter className="shrink-0 text-primary" />
+              <FiFilter className="text-primary" />
 
               <div>
                 <h2 className="font-semibold">Search & Filters</h2>
@@ -1187,31 +1111,27 @@ const AdminOrderList = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-[minmax(280px,1fr)_180px_180px_180px_auto]">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
               {/* SEARCH */}
 
               <form
                 onSubmit={handleSearchSubmit}
-                className="join w-full md:col-span-2 xl:col-span-1"
+                className="flex w-full md:col-span-2 xl:col-span-1"
               >
-                <div className="relative min-w-0 flex-1">
-                  <FiSearch className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40" />
-
-                  <input
-                    type="search"
-                    value={searchInput}
-                    onChange={(event) => setSearchInput(event.target.value)}
-                    placeholder="Order number, email, name, phone..."
-                    className="input input-bordered join-item w-full min-w-0 pl-10"
-                  />
-                </div>
+                <input
+                  type="search"
+                  value={searchInput}
+                  onChange={(event) => setSearchInput(event.target.value)}
+                  placeholder="Search orders..."
+                  className="input input-bordered min-w-0 flex-1"
+                />
 
                 <button
                   type="submit"
-                  className="btn btn-primary join-item"
                   disabled={loading}
+                  className="btn btn-primary"
                 >
-                  Search
+                  <FiSearch />
                 </button>
               </form>
 
@@ -1229,7 +1149,7 @@ const AdminOrderList = () => {
                 ))}
               </select>
 
-              {/* PAYMENT STATUS */}
+              {/* PAYMENT STATUS FILTER */}
 
               <select
                 value={paymentStatus}
@@ -1263,22 +1183,16 @@ const AdminOrderList = () => {
                 type="button"
                 onClick={handleResetFilters}
                 disabled={!hasActiveFilters && !searchInput}
-                className="btn btn-ghost border border-base-300 md:col-span-2 xl:col-span-1"
+                className="btn btn-ghost border border-base-300"
               >
                 Reset
               </button>
             </div>
 
-            {/* ACTIVE FILTERS */}
-
             {hasActiveFilters && (
-              <div className="mt-4 flex flex-wrap items-center gap-2 text-xs sm:text-sm">
-                <span className="text-base-content/60">Active filters:</span>
-
+              <div className="mt-4 flex flex-wrap gap-2 text-sm">
                 {search && (
-                  <span className="badge badge-outline max-w-full">
-                    <span className="truncate">Search: {search}</span>
-                  </span>
+                  <span className="badge badge-outline">Search: {search}</span>
                 )}
 
                 {status !== "all" && (
@@ -1298,10 +1212,7 @@ const AdminOrderList = () => {
                 {sort !== "newest" && (
                   <span className="badge badge-outline">
                     Sort:{" "}
-                    {
-                      SORT_OPTIONS.find((option) => option.value === sort)
-                        ?.label
-                    }
+                    {SORT_OPTIONS.find((item) => item.value === sort)?.label}
                   </span>
                 )}
               </div>
@@ -1309,23 +1220,20 @@ const AdminOrderList = () => {
           </div>
         </div>
 
-        {/* ======================================================
-            ERROR
-        ====================================================== */}
+        {/* ERROR */}
 
         {error && (
-          <div className="alert alert-error flex-col items-start gap-3 sm:flex-row sm:items-center">
-            <FiAlertCircle className="shrink-0" />
+          <div className="alert alert-error">
+            <FiAlertCircle />
 
-            <div className="min-w-0 flex-1">
-              <h3 className="font-semibold">Unable to load orders</h3>
+            <div className="flex-1">
+              <p className="font-semibold">Unable to load orders</p>
 
-              <p className="break-words text-sm">{error}</p>
+              <p className="text-sm">{error}</p>
             </div>
 
             <button
               type="button"
-              disabled={loading}
               onClick={() =>
                 fetchOrders({
                   page: pagination.page || 1,
@@ -1335,67 +1243,47 @@ const AdminOrderList = () => {
                   currentSort: sort,
                 })
               }
-              className="btn btn-sm w-full sm:w-auto"
+              className="btn btn-sm"
             >
-              {loading ? (
-                <>
-                  <span className="loading loading-spinner loading-xs" />
-                  Loading...
-                </>
-              ) : (
-                "Retry"
-              )}
+              Retry
             </button>
           </div>
         )}
 
-        {/* ======================================================
-            ORDER LIST
-        ====================================================== */}
+        {/* ORDERS */}
 
         <div className="card overflow-hidden border border-base-300 bg-base-100 shadow-sm">
-          {/* HEADER */}
-
-          <div className="border-b border-base-300 px-4 py-4 sm:px-5">
+          <div className="border-b border-base-300 p-4 md:p-5">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h2 className="text-lg font-semibold">Orders</h2>
 
-                <p className="text-xs text-base-content/60 sm:text-sm">
+                <p className="text-sm text-base-content/60">
                   {pagination.totalOrders} order
                   {pagination.totalOrders === 1 ? "" : "s"} found
                 </p>
               </div>
 
-              <div className="text-xs text-base-content/60 sm:text-sm">
+              <p className="text-sm text-base-content/60">
                 Page {pagination.page || 1} of {pagination.totalPages || 0}
-              </div>
+              </p>
             </div>
           </div>
 
-          {/* ====================================================
-              DESKTOP TABLE
-          ==================================================== */}
+          {/* DESKTOP */}
 
           <div className="hidden overflow-x-auto lg:block">
             <table className="table w-full">
               <thead>
                 <tr className="bg-base-200/60">
                   <th>Order</th>
-
                   <th>Customer</th>
-
                   <th>Date</th>
-
                   <th>Items</th>
-
                   <th>Total</th>
-
                   <th>Payment</th>
-
-                  <th>Status</th>
-
-                  <th className="text-right">Action</th>
+                  <th>Order Status</th>
+                  <th>Action</th>
                 </tr>
               </thead>
 
@@ -1418,7 +1306,9 @@ const AdminOrderList = () => {
                       order={order}
                       onView={() => handleOpenOrder(order)}
                       onStatusChange={handleOrderStatusUpdate}
+                      onPaymentStatusChange={handlePaymentStatusUpdate}
                       updatingOrderId={updatingOrderId}
+                      updatingPaymentId={updatingPaymentId}
                     />
                   ))
                 )}
@@ -1426,11 +1316,9 @@ const AdminOrderList = () => {
             </table>
           </div>
 
-          {/* ====================================================
-              MOBILE LIST
-          ==================================================== */}
+          {/* MOBILE */}
 
-          <div className="block lg:hidden">
+          <div className="lg:hidden">
             {loading ? (
               <OrderCardSkeleton />
             ) : orders.length === 0 ? (
@@ -1446,20 +1334,20 @@ const AdminOrderList = () => {
                     order={order}
                     onView={() => handleOpenOrder(order)}
                     onStatusChange={handleOrderStatusUpdate}
+                    onPaymentStatusChange={handlePaymentStatusUpdate}
                     updatingOrderId={updatingOrderId}
+                    updatingPaymentId={updatingPaymentId}
                   />
                 ))}
               </div>
             )}
           </div>
 
-          {/* ====================================================
-              PAGINATION
-          ==================================================== */}
+          {/* PAGINATION */}
 
           {!loading && orders.length > 0 && (
-            <div className="flex flex-col gap-4 border-t border-base-300 px-4 py-4 sm:px-5 md:flex-row md:items-center md:justify-between">
-              <p className="text-center text-xs text-base-content/60 sm:text-sm md:text-left">
+            <div className="flex flex-col gap-4 border-t border-base-300 p-4 md:flex-row md:items-center md:justify-between">
+              <p className="text-center text-sm text-base-content/60 md:text-left">
                 Showing {(pagination.page - 1) * pagination.limit + 1} to{" "}
                 {Math.min(
                   pagination.page * pagination.limit,
@@ -1475,15 +1363,14 @@ const AdminOrderList = () => {
                     className="btn btn-sm join-item"
                     disabled={!pagination.hasPrevPage}
                     onClick={() => handlePageChange(pagination.page - 1)}
-                    aria-label="Previous page"
                   >
                     <FiChevronLeft />
                   </button>
 
                   {paginationPages.map((page) => (
                     <button
-                      type="button"
                       key={page}
+                      type="button"
                       className={`btn btn-sm join-item ${
                         page === pagination.page ? "btn-primary" : ""
                       }`}
@@ -1498,7 +1385,6 @@ const AdminOrderList = () => {
                     className="btn btn-sm join-item"
                     disabled={!pagination.hasNextPage}
                     onClick={() => handlePageChange(pagination.page + 1)}
-                    aria-label="Next page"
                   >
                     <FiChevronRight />
                   </button>
@@ -1509,18 +1395,16 @@ const AdminOrderList = () => {
         </div>
       </div>
 
-      {/* ========================================================
-          TOAST
-      ======================================================== */}
+      {/* TOAST */}
 
       {toast && (
-        <div className="toast toast-end toast-bottom z-[100] w-[calc(100%-2rem)] max-w-sm sm:w-auto">
+        <div className="toast toast-end toast-bottom z-[100] w-[calc(100%-2rem)] max-w-sm">
           <div
             className={`alert ${
               toast.type === "success" ? "alert-success" : "alert-error"
             } shadow-lg`}
           >
-            <span className="break-words">{toast.message}</span>
+            {toast.message}
           </div>
         </div>
       )}
@@ -1540,29 +1424,23 @@ const StatCard = ({ title, value, icon, loading, onClick }) => {
       type="button"
       onClick={onClick}
       disabled={!clickable}
-      className={`card border border-base-300 bg-base-100 text-left shadow-sm transition ${
-        clickable
-          ? "cursor-pointer hover:-translate-y-0.5 hover:shadow-md"
-          : "cursor-default"
+      className={`card border border-base-300 bg-base-100 text-left shadow-sm ${
+        clickable ? "cursor-pointer hover:shadow-md" : "cursor-default"
       }`}
     >
-      <div className="card-body p-4 sm:p-5">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="truncate text-xs text-base-content/60 sm:text-sm">
-              {title}
-            </p>
+      <div className="card-body p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm text-base-content/60">{title}</p>
 
             {loading ? (
-              <div className="mt-2 h-8 w-24 animate-pulse rounded bg-base-300 sm:w-28" />
+              <div className="mt-2 h-8 w-24 animate-pulse rounded bg-base-300" />
             ) : (
-              <p className="mt-1 truncate text-xl font-bold sm:text-2xl">
-                {value}
-              </p>
+              <p className="mt-1 text-2xl font-bold">{value}</p>
             )}
           </div>
 
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-lg text-primary sm:h-11 sm:w-11 sm:text-xl">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-xl text-primary">
             {icon}
           </div>
         </div>
@@ -1572,62 +1450,17 @@ const StatCard = ({ title, value, icon, loading, onClick }) => {
 };
 
 // ============================================================
-// PIPELINE ITEM
-// ============================================================
-
-const PipelineItem = ({ label, value, status, onClick }) => {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="group min-w-0 rounded-xl border border-base-300 bg-base-100 p-3 text-left transition hover:border-primary hover:shadow-sm sm:p-4"
-    >
-      <div className="flex min-w-0 items-center justify-between gap-2">
-        <div className="min-w-0">
-          <p className="truncate text-xs text-base-content/60 sm:text-sm">
-            {label}
-          </p>
-
-          <p className="mt-1 text-lg font-bold sm:text-xl">{value}</p>
-        </div>
-
-        <span
-          className={`badge shrink-0 text-[10px] sm:text-xs ${getStatusBadge(
-            status,
-          )}`}
-        >
-          {label}
-        </span>
-      </div>
-    </button>
-  );
-};
-
-// ============================================================
-// STATUS OPTIONS FOR ONE ORDER
-// ============================================================
-
-const getAvailableStatusOptions = (currentStatus) => {
-  const normalizedStatus = ORDER_STATUSES.includes(currentStatus)
-    ? currentStatus
-    : "pending";
-
-  const allowed = STATUS_TRANSITIONS[normalizedStatus] || [];
-
-  return [
-    normalizedStatus,
-    ...allowed.filter((value) => value !== normalizedStatus),
-  ].map((value) => ({
-    value,
-    label: ORDER_STATUS_LABELS[value] || capitalize(value),
-  }));
-};
-
-// ============================================================
 // DESKTOP ORDER ROW
 // ============================================================
 
-const OrderRow = ({ order, onView, onStatusChange, updatingOrderId }) => {
+const OrderRow = ({
+  order,
+  onView,
+  onStatusChange,
+  onPaymentStatusChange,
+  updatingOrderId,
+  updatingPaymentId,
+}) => {
   const customerName = getCustomerName(order);
 
   const customerEmail = getCustomerEmail(order);
@@ -1640,9 +1473,13 @@ const OrderRow = ({ order, onView, onStatusChange, updatingOrderId }) => {
     ? order.status
     : "pending";
 
-  const paymentStatus = order?.paymentStatus || "unpaid";
+  const currentPaymentStatus = PAYMENT_STATUSES.includes(order?.paymentStatus)
+    ? order.paymentStatus
+    : "pending";
 
-  const isUpdating = String(updatingOrderId) === String(order?._id);
+  const isUpdatingOrder = String(updatingOrderId) === String(order?._id);
+
+  const isUpdatingPayment = String(updatingPaymentId) === String(order?._id);
 
   const statusOptions = getAvailableStatusOptions(currentStatus);
 
@@ -1651,37 +1488,31 @@ const OrderRow = ({ order, onView, onStatusChange, updatingOrderId }) => {
       {/* ORDER */}
 
       <td>
-        <div className="min-w-[180px]">
-          <button
-            type="button"
-            onClick={onView}
-            className="max-w-[220px] truncate font-semibold text-primary hover:underline"
-          >
-            {order?.orderNumber || String(order?._id || "").slice(-8) || "—"}
-          </button>
+        <button
+          type="button"
+          onClick={onView}
+          className="font-semibold text-primary hover:underline"
+        >
+          {order?.orderNumber || String(order?._id || "").slice(-8) || "—"}
+        </button>
 
-          <p className="mt-1 text-xs text-base-content/50">
-            ID: {String(order?._id || "").slice(-8) || "—"}
-          </p>
-        </div>
+        <p className="mt-1 text-xs text-base-content/50">
+          ID: {String(order?._id || "").slice(-8)}
+        </p>
       </td>
 
       {/* CUSTOMER */}
 
       <td>
         <div className="flex items-center gap-3">
-          <div className="avatar placeholder">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">
-              {getInitials(customerName)}
-            </div>
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">
+            {getInitials(customerName)}
           </div>
 
-          <div className="min-w-0">
-            <p className="max-w-[180px] truncate font-medium">{customerName}</p>
+          <div>
+            <p className="font-medium">{customerName}</p>
 
-            <p className="max-w-[220px] truncate text-xs text-base-content/50">
-              {customerEmail}
-            </p>
+            <p className="text-xs text-base-content/50">{customerEmail}</p>
           </div>
         </div>
       </td>
@@ -1689,9 +1520,8 @@ const OrderRow = ({ order, onView, onStatusChange, updatingOrderId }) => {
       {/* DATE */}
 
       <td>
-        <div className="flex min-w-[110px] items-center gap-2 text-sm">
+        <div className="flex items-center gap-2 text-sm">
           <FiCalendar className="text-base-content/40" />
-
           {formatDate(order?.createdAt)}
         </div>
       </td>
@@ -1723,20 +1553,46 @@ const OrderRow = ({ order, onView, onStatusChange, updatingOrderId }) => {
       {/* PAYMENT */}
 
       <td>
-        <span className={`badge ${getPaymentStatusBadge(paymentStatus)}`}>
-          {PAYMENT_STATUS_LABELS[paymentStatus] || capitalize(paymentStatus)}
-        </span>
+        <div className="space-y-2">
+          <span
+            className={`badge ${getPaymentStatusBadge(currentPaymentStatus)}`}
+          >
+            {PAYMENT_STATUS_LABELS[currentPaymentStatus] ||
+              capitalize(currentPaymentStatus)}
+          </span>
+
+          <select
+            value={currentPaymentStatus}
+            disabled={isUpdatingPayment}
+            onChange={(event) =>
+              onPaymentStatusChange(order?._id, event.target.value)
+            }
+            className="select select-bordered select-sm w-[140px]"
+          >
+            {PAYMENT_STATUSES.map((payment) => (
+              <option key={payment} value={payment}>
+                {PAYMENT_STATUS_LABELS[payment]}
+              </option>
+            ))}
+          </select>
+
+          {isUpdatingPayment && (
+            <div className="flex items-center gap-1 text-xs text-base-content/60">
+              <span className="loading loading-spinner loading-xs" />
+              Updating...
+            </div>
+          )}
+        </div>
       </td>
 
-      {/* STATUS */}
+      {/* ORDER STATUS */}
 
       <td>
         <select
           value={currentStatus}
-          disabled={isUpdating || statusOptions.length <= 1}
+          disabled={isUpdatingOrder || statusOptions.length <= 1}
           onChange={(event) => onStatusChange(order?._id, event.target.value)}
           className="select select-bordered select-sm w-[155px]"
-          aria-label="Order status"
         >
           {statusOptions.map((option) => (
             <option key={option.value} value={option.value}>
@@ -1745,8 +1601,8 @@ const OrderRow = ({ order, onView, onStatusChange, updatingOrderId }) => {
           ))}
         </select>
 
-        {isUpdating && (
-          <div className="mt-1 flex items-center gap-1 text-[11px] text-base-content/60">
+        {isUpdatingOrder && (
+          <div className="mt-1 flex items-center gap-1 text-xs text-base-content/60">
             <span className="loading loading-spinner loading-xs" />
             Updating...
           </div>
@@ -1756,16 +1612,13 @@ const OrderRow = ({ order, onView, onStatusChange, updatingOrderId }) => {
       {/* ACTION */}
 
       <td>
-        <div className="flex justify-end">
-          <button
-            type="button"
-            onClick={onView}
-            className="btn btn-square btn-sm btn-ghost"
-            title="View order details"
-          >
-            <FiEye />
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={onView}
+          className="btn btn-square btn-sm btn-ghost"
+        >
+          <FiEye />
+        </button>
       </td>
     </tr>
   );
@@ -1779,7 +1632,9 @@ const OrderMobileCard = ({
   order,
   onView,
   onStatusChange,
+  onPaymentStatusChange,
   updatingOrderId,
+  updatingPaymentId,
 }) => {
   const customerName = getCustomerName(order);
 
@@ -1791,16 +1646,20 @@ const OrderMobileCard = ({
     ? order.status
     : "pending";
 
-  const paymentStatus = order?.paymentStatus || "unpaid";
+  const currentPaymentStatus = PAYMENT_STATUSES.includes(order?.paymentStatus)
+    ? order.paymentStatus
+    : "pending";
 
-  const isUpdating = String(updatingOrderId) === String(order?._id);
+  const isUpdatingOrder = String(updatingOrderId) === String(order?._id);
+
+  const isUpdatingPayment = String(updatingPaymentId) === String(order?._id);
 
   const statusOptions = getAvailableStatusOptions(currentStatus);
 
   return (
     <article className="p-4 sm:p-5">
       <div className="space-y-4">
-        {/* TOP */}
+        {/* HEADER */}
 
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
@@ -1812,11 +1671,9 @@ const OrderMobileCard = ({
               <button
                 type="button"
                 onClick={onView}
-                className="block max-w-[220px] truncate text-left font-semibold text-primary hover:underline"
+                className="max-w-[230px] truncate font-semibold text-primary hover:underline"
               >
-                {order?.orderNumber ||
-                  String(order?._id || "").slice(-8) ||
-                  "—"}
+                {order?.orderNumber || "—"}
               </button>
 
               <p className="truncate text-xs text-base-content/60">
@@ -1828,14 +1685,13 @@ const OrderMobileCard = ({
           <button
             type="button"
             onClick={onView}
-            className="btn btn-square btn-sm btn-ghost shrink-0"
-            title="View order"
+            className="btn btn-square btn-sm btn-ghost"
           >
             <FiEye />
           </button>
         </div>
 
-        {/* ORDER INFO */}
+        {/* INFO */}
 
         <div className="grid grid-cols-2 gap-3 rounded-xl bg-base-200/50 p-3">
           <MobileInfo
@@ -1856,36 +1712,63 @@ const OrderMobileCard = ({
           />
 
           <MobileInfo
-            label="Payment"
-            value={
-              PAYMENT_STATUS_LABELS[paymentStatus] || capitalize(paymentStatus)
-            }
+            label="Payment Method"
+            value={formatPaymentMethod(getPaymentMethod(order))}
           />
         </div>
 
         {/* TOTAL */}
 
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-xs text-base-content/50">Grand Total</p>
+        <div>
+          <p className="text-xs text-base-content/50">Grand Total</p>
 
-            <p className="text-lg font-bold">
-              {formatCurrency(getOrderTotal(order))}
-            </p>
-
-            <p className="truncate text-xs text-base-content/50">
-              {formatPaymentMethod(getPaymentMethod(order))}
-            </p>
-          </div>
-
-          <span
-            className={`badge shrink-0 ${getPaymentStatusBadge(paymentStatus)}`}
-          >
-            {PAYMENT_STATUS_LABELS[paymentStatus] || capitalize(paymentStatus)}
-          </span>
+          <p className="text-xl font-bold">
+            {formatCurrency(getOrderTotal(order))}
+          </p>
         </div>
 
-        {/* STATUS */}
+        {/* PAYMENT STATUS */}
+
+        <div className="space-y-2">
+          <label className="text-xs font-medium text-base-content/60">
+            Payment Status
+          </label>
+
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <select
+              value={currentPaymentStatus}
+              disabled={isUpdatingPayment}
+              onChange={(event) =>
+                onPaymentStatusChange(order?._id, event.target.value)
+              }
+              className="select select-bordered w-full"
+            >
+              {PAYMENT_STATUSES.map((payment) => (
+                <option key={payment} value={payment}>
+                  {PAYMENT_STATUS_LABELS[payment]}
+                </option>
+              ))}
+            </select>
+
+            <span
+              className={`badge h-8 ${getPaymentStatusBadge(
+                currentPaymentStatus,
+              )}`}
+            >
+              {PAYMENT_STATUS_LABELS[currentPaymentStatus] ||
+                capitalize(currentPaymentStatus)}
+            </span>
+          </div>
+
+          {isUpdatingPayment && (
+            <div className="flex items-center gap-2 text-xs text-base-content/60">
+              <span className="loading loading-spinner loading-xs" />
+              Updating payment status...
+            </div>
+          )}
+        </div>
+
+        {/* ORDER STATUS */}
 
         <div className="space-y-2">
           <label className="text-xs font-medium text-base-content/60">
@@ -1894,10 +1777,9 @@ const OrderMobileCard = ({
 
           <select
             value={currentStatus}
-            disabled={isUpdating || statusOptions.length <= 1}
+            disabled={isUpdatingOrder || statusOptions.length <= 1}
             onChange={(event) => onStatusChange(order?._id, event.target.value)}
             className="select select-bordered w-full"
-            aria-label="Order status"
           >
             {statusOptions.map((option) => (
               <option key={option.value} value={option.value}>
@@ -1906,21 +1788,15 @@ const OrderMobileCard = ({
             ))}
           </select>
 
-          {isUpdating && (
+          {isUpdatingOrder && (
             <div className="flex items-center gap-2 text-xs text-base-content/60">
               <span className="loading loading-spinner loading-xs" />
               Updating order status...
             </div>
           )}
-
-          {!isUpdating && statusOptions.length <= 1 && (
-            <p className="text-[11px] text-base-content/50">
-              No further status changes are available.
-            </p>
-          )}
         </div>
 
-        {/* VIEW DETAILS */}
+        {/* VIEW */}
 
         <button
           type="button"
@@ -1942,9 +1818,8 @@ const OrderMobileCard = ({
 const MobileInfo = ({ label, value, icon }) => {
   return (
     <div className="min-w-0">
-      <div className="flex items-center gap-1 text-[11px] text-base-content/50">
+      <div className="flex items-center gap-1 text-xs text-base-content/50">
         {icon}
-
         <span>{label}</span>
       </div>
 
@@ -1959,16 +1834,14 @@ const MobileInfo = ({ label, value, icon }) => {
 
 const EmptyOrders = ({ hasFilters, onReset }) => {
   return (
-    <div className="flex min-h-[280px] flex-col items-center justify-center px-5 py-10 text-center sm:min-h-[320px]">
-      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-base-200 text-2xl text-base-content/40">
-        <FiShoppingBag />
-      </div>
+    <div className="flex min-h-[250px] flex-col items-center justify-center p-6 text-center">
+      <FiShoppingBag className="mb-4 text-4xl text-base-content/30" />
 
       <h3 className="text-lg font-semibold">No orders found</h3>
 
-      <p className="mt-1 max-w-md text-sm text-base-content/60">
+      <p className="mt-1 text-sm text-base-content/60">
         {hasFilters
-          ? "No orders match your current search or filters."
+          ? "No orders match your current filters."
           : "There are currently no orders available."}
       </p>
 
@@ -1986,7 +1859,7 @@ const EmptyOrders = ({ hasFilters, onReset }) => {
 };
 
 // ============================================================
-// DESKTOP TABLE SKELETON
+// DESKTOP SKELETON
 // ============================================================
 
 const OrderTableSkeleton = () => {
@@ -1994,8 +1867,8 @@ const OrderTableSkeleton = () => {
     <>
       {Array.from({
         length: 7,
-      }).map((_, rowIndex) => (
-        <tr key={rowIndex}>
+      }).map((_, index) => (
+        <tr key={index}>
           {Array.from({
             length: 8,
           }).map((_, cellIndex) => (
@@ -2010,7 +1883,7 @@ const OrderTableSkeleton = () => {
 };
 
 // ============================================================
-// MOBILE CARD SKELETON
+// MOBILE SKELETON
 // ============================================================
 
 const OrderCardSkeleton = () => {
@@ -2019,8 +1892,8 @@ const OrderCardSkeleton = () => {
       {Array.from({
         length: 5,
       }).map((_, index) => (
-        <div key={index} className="space-y-4 p-4 sm:p-5">
-          <div className="flex items-center gap-3">
+        <div key={index} className="space-y-4 p-5">
+          <div className="flex gap-3">
             <div className="h-10 w-10 animate-pulse rounded-full bg-base-300" />
 
             <div className="flex-1 space-y-2">
@@ -2031,13 +1904,14 @@ const OrderCardSkeleton = () => {
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <div className="h-14 animate-pulse rounded-xl bg-base-300" />
-
-            <div className="h-14 animate-pulse rounded-xl bg-base-300" />
-
-            <div className="h-14 animate-pulse rounded-xl bg-base-300" />
-
-            <div className="h-14 animate-pulse rounded-xl bg-base-300" />
+            {Array.from({
+              length: 4,
+            }).map((_, itemIndex) => (
+              <div
+                key={itemIndex}
+                className="h-14 animate-pulse rounded-xl bg-base-300"
+              />
+            ))}
           </div>
 
           <div className="h-10 animate-pulse rounded bg-base-300" />
